@@ -1,9 +1,13 @@
 "use client";
 
 import { Menu, Sparkles } from "lucide-react";
+import { useEffect, useRef } from "react";
 
+import { ConversationMetadataBar } from "@/components/chat/conversation-metadata";
+import { ChatErrorBanner } from "@/components/chat/chat-error-banner";
 import { ChatInput } from "@/components/chat/chat-input";
 import { ChatMessage } from "@/components/chat/chat-message";
+import { ModelSelector } from "@/components/chat/model-selector";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
@@ -13,6 +17,7 @@ import {
   SheetTrigger,
 } from "@/components/ui/sheet";
 import { ChatSidebar } from "@/components/chat/chat-sidebar";
+import type { ModelId } from "@/lib/ai/models";
 import type { Conversation } from "@/types/chat";
 
 interface ChatMainProps {
@@ -21,7 +26,15 @@ interface ChatMainProps {
   activeId: string | null;
   onSelect: (id: string) => void;
   onNewChat: () => void;
+  onRename: (id: string, title: string) => void;
+  onDelete: (id: string) => void;
+  isSummarizing?: (id: string) => boolean;
   onSend: (content: string) => void;
+  model: ModelId;
+  onModelChange: (model: ModelId) => void;
+  isLoading: boolean;
+  error: string | null;
+  onDismissError: () => void;
 }
 
 export function ChatMain({
@@ -30,10 +43,27 @@ export function ChatMain({
   activeId,
   onSelect,
   onNewChat,
+  onRename,
+  onDelete,
+  isSummarizing,
   onSend,
+  model,
+  onModelChange,
+  isLoading,
+  error,
+  onDismissError,
 }: ChatMainProps) {
   const title = conversation?.title ?? "New conversation";
   const messages = conversation?.messages ?? [];
+  const bottomRef = useRef<HTMLDivElement>(null);
+  const scrollKey =
+    messages.length > 0
+      ? `${messages.length}-${messages[messages.length - 1]?.content.length ?? 0}`
+      : "empty";
+
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [scrollKey]);
 
   return (
     <div className="flex h-full min-w-0 flex-1 flex-col bg-background">
@@ -58,12 +88,30 @@ export function ChatMain({
               activeId={activeId}
               onSelect={onSelect}
               onNewChat={onNewChat}
+              onRename={onRename}
+              onDelete={onDelete}
+              isSummarizing={isSummarizing}
               className="h-full w-full border-0"
             />
           </SheetContent>
         </Sheet>
-        <h1 className="truncate text-sm font-medium">{title}</h1>
+        <h1 className="min-w-0 flex-1 truncate text-sm font-medium">
+          {title}
+        </h1>
+        <ModelSelector
+          value={model}
+          onChange={onModelChange}
+          disabled={isLoading}
+        />
       </header>
+
+      {conversation?.metadata && (
+        <ConversationMetadataBar metadata={conversation.metadata} />
+      )}
+
+      {error && (
+        <ChatErrorBanner message={error} onDismiss={onDismissError} />
+      )}
 
       <ScrollArea className="flex-1">
         {messages.length === 0 ? (
@@ -76,8 +124,8 @@ export function ChatMain({
                 What would you like to remember?
               </h2>
               <p className="text-sm text-muted-foreground">
-                Start a conversation. PermaMind will help you chat, save
-                context, and recall memories — built for permanent AI memory.
+                Start a conversation. Your chats are saved locally and persist
+                across page refreshes.
               </p>
             </div>
           </div>
@@ -86,11 +134,12 @@ export function ChatMain({
             {messages.map((message) => (
               <ChatMessage key={message.id} message={message} />
             ))}
+            <div ref={bottomRef} />
           </div>
         )}
       </ScrollArea>
 
-      <ChatInput onSend={onSend} />
+      <ChatInput onSend={onSend} isLoading={isLoading} />
     </div>
   );
 }

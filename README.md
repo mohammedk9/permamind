@@ -13,6 +13,18 @@ AI memory platform — chat with AI, save conversations, search memories, and re
 
 ```bash
 npm install
+cp .env.example .env.local
+```
+
+Add your [OpenRouter](https://openrouter.ai/) API key to `.env.local`:
+
+```
+OPENROUTER_API_KEY=sk-or-v1-...
+```
+
+Then run:
+
+```bash
 npm run dev
 ```
 
@@ -37,7 +49,11 @@ docs/
 
 - Next.js 15 + TypeScript + Tailwind + shadcn/ui
 - ChatGPT-style layout with sidebar and responsive mobile menu
-- Local conversation state (no backend yet)
+- **OpenRouter** streaming chat (Claude, GPT-4o, Gemini, DeepSeek)
+- Model selector, loading states, and error handling
+- **localStorage** conversation persistence (auto-save, rename, delete)
+- **AI summaries** — auto-generated topics, tags, entities (Gemini Flash, debounced)
+- Supabase cloud sync planned in a later phase
 
 ## Roadmap
 
