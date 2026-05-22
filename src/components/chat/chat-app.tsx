@@ -1,17 +1,23 @@
 "use client";
 
 import { Loader2 } from "lucide-react";
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { needsSummary } from "@/lib/ai/summarize";
+import { buildMessagesWithMemory } from "@/lib/memory/context";
+import { retrieveRelevantMemories } from "@/lib/memory/retrieve";
 
 import { ChatMain } from "@/components/chat/chat-main";
 import { ChatSidebar } from "@/components/chat/chat-sidebar";
+import { OnboardingDialog } from "@/components/settings/onboarding-dialog";
+import { useAnalytics } from "@/hooks/use-analytics";
+import { useApiSettings } from "@/hooks/use-api-settings";
 import { useChatCompletion } from "@/hooks/use-chat-completion";
 import { useConversationSummary } from "@/hooks/use-conversation-summary";
 import { useConversations } from "@/hooks/use-conversations";
 import { createId, truncateTitle } from "@/lib/chat/conversation";
 import type { ChatCompletionMessage } from "@/lib/ai/types";
 import type { Message } from "@/types/chat";
+import type { RetrievedMemory } from "@/types/memory";
 
 function toApiMessages(messages: Message[]): ChatCompletionMessage[] {
   return messages
@@ -36,18 +42,60 @@ export function ChatApp() {
     getConversation,
   } = useConversations();
 
+  const [memoriesUsed, setMemoriesUsed] = useState<RetrievedMemory[]>([]);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+
+  const apiSettings = useApiSettings();
+  const {
+    mode,
+    setMode,
+    apiKey,
+    setApiKey,
+    connectionStatus,
+    validateKey,
+    clearKey,
+    getRequestHeaders,
+    canSendRequests,
+    defaultModelId,
+    showOnboarding,
+    dismissOnboarding,
+    hydrated: apiHydrated,
+  } = apiSettings;
+
+  const {
+    summary: analyticsSummary,
+    recordChat,
+    recordSummary,
+    recordMemoryRetrieval,
+    clearAll: clearAnalytics,
+  } = useAnalytics();
+
   const { model, setModel, isLoading, error, clearError, sendMessage } =
-    useChatCompletion();
+    useChatCompletion({
+      mode,
+      defaultModelId,
+      getRequestHeaders,
+    });
 
   const { queueSummary, isSummarizing } = useConversationSummary(
     getConversation,
-    updateConversation
+    updateConversation,
+    getRequestHeaders,
+    mode,
+    (params) => {
+      recordSummary({
+        model: params.model,
+        conversationId: params.conversationId,
+        conversationTitle: params.conversationTitle,
+        usage: params.usage,
+      });
+    }
   );
 
   const backfillDone = useRef(false);
 
   useEffect(() => {
-    if (!isHydrated || backfillDone.current) return;
+    if (!isHydrated || !apiHydrated || backfillDone.current) return;
     backfillDone.current = true;
 
     for (const conversation of conversations) {
@@ -55,23 +103,30 @@ export function ChatApp() {
         queueSummary(conversation.id);
       }
     }
-  }, [isHydrated, conversations, queueSummary]);
+  }, [isHydrated, apiHydrated, conversations, queueSummary]);
 
   const handleNewChat = useCallback(() => {
     createAndSelect();
     clearError();
+    setMemoriesUsed([]);
   }, [createAndSelect, clearError]);
 
   const handleSelect = useCallback(
     (id: string) => {
       selectConversation(id);
       clearError();
+      setMemoriesUsed([]);
     },
     [selectConversation, clearError]
   );
 
   const handleSend = useCallback(
     async (content: string) => {
+      if (!canSendRequests) {
+        clearError();
+        return;
+      }
+
       clearError();
 
       let conversationId = activeId;
@@ -80,6 +135,11 @@ export function ChatApp() {
         const conversation = createAndSelect(truncateTitle(content));
         conversationId = conversation.id;
       }
+
+      const conv =
+        getConversation(conversationId) ??
+        conversations.find((c) => c.id === conversationId);
+      const conversationTitle = conv?.title ?? truncateTitle(content);
 
       const userMessage: Message = {
         id: createId(),
@@ -102,7 +162,24 @@ export function ChatApp() {
           ? activeConversation.messages
           : []);
 
-      const apiMessages = toApiMessages([...priorMessages, userMessage]);
+      const memories = retrieveRelevantMemories(
+        content,
+        conversations,
+        conversationId
+      );
+      setMemoriesUsed(memories);
+
+      recordMemoryRetrieval({
+        conversationId,
+        conversationTitle,
+        query: content,
+        memories,
+      });
+
+      const apiMessages = buildMessagesWithMemory(
+        toApiMessages([...priorMessages, userMessage]),
+        memories
+      );
 
       updateConversation(conversationId, (c) => {
         const title =
@@ -115,7 +192,7 @@ export function ChatApp() {
         };
       });
 
-      const success = await sendMessage(apiMessages, (chunk) => {
+      const result = await sendMessage(apiMessages, (chunk) => {
         updateConversation(conversationId!, (c) => ({
           ...c,
           messages: c.messages.map((m) =>
@@ -134,7 +211,7 @@ export function ChatApp() {
             ? {
                 ...m,
                 isStreaming: false,
-                content: success
+                content: result.success
                   ? m.content
                   : m.content || "No response received.",
               }
@@ -143,23 +220,42 @@ export function ChatApp() {
         updatedAt: new Date(),
       }));
 
-      if (success) {
+      if (result.success && result.usage) {
+        recordChat({
+          model,
+          conversationId,
+          conversationTitle,
+          usage: result.usage,
+          memories,
+        });
         queueSummary(conversationId);
       }
     },
     [
       activeId,
       activeConversation,
+      canSendRequests,
       clearError,
       conversations,
       createAndSelect,
+      getConversation,
+      model,
       queueSummary,
+      recordChat,
+      recordMemoryRetrieval,
       sendMessage,
       updateConversation,
     ]
   );
 
-  if (!isHydrated) {
+  const apiBlockedMessage =
+    mode === "byok" && connectionStatus !== "connected"
+      ? "Validate your OpenRouter API key in Settings to send messages."
+      : !canSendRequests
+        ? "Configure free mode (server key) or add your API key in Settings."
+        : null;
+
+  if (!isHydrated || !apiHydrated) {
     return (
       <div className="flex h-dvh items-center justify-center bg-background">
         <Loader2 className="size-6 animate-spin text-muted-foreground" />
@@ -168,33 +264,69 @@ export function ChatApp() {
   }
 
   return (
-    <div className="flex h-dvh overflow-hidden">
-      <ChatSidebar
-        className="hidden md:flex"
-        conversations={conversations}
-        activeId={activeId}
-        onSelect={handleSelect}
-        onNewChat={handleNewChat}
-        onRename={renameConversation}
-        onDelete={deleteConversation}
-        isSummarizing={isSummarizing}
+    <>
+      <OnboardingDialog
+        open={showOnboarding}
+        onGetStarted={dismissOnboarding}
+        onOpenSettings={() => {
+          dismissOnboarding();
+          setSettingsOpen(true);
+        }}
       />
-      <ChatMain
-        conversation={activeConversation}
-        conversations={conversations}
-        activeId={activeId}
-        onSelect={handleSelect}
-        onNewChat={handleNewChat}
-        onRename={renameConversation}
-        onDelete={deleteConversation}
-        isSummarizing={isSummarizing}
-        onSend={handleSend}
-        model={model}
-        onModelChange={setModel}
-        isLoading={isLoading}
-        error={error}
-        onDismissError={clearError}
-      />
-    </div>
+
+      <div className="flex h-dvh overflow-hidden">
+        <ChatSidebar
+          className="hidden md:flex"
+          conversations={conversations}
+          activeId={activeId}
+          onSelect={handleSelect}
+          onNewChat={handleNewChat}
+          onRename={renameConversation}
+          onDelete={deleteConversation}
+          isSummarizing={isSummarizing}
+          analyticsSummary={analyticsSummary}
+          onClearAnalytics={clearAnalytics}
+          mode={mode}
+          apiKey={apiKey}
+          connectionStatus={connectionStatus}
+          onModeChange={setMode}
+          onApiKeyChange={setApiKey}
+          onValidateKey={validateKey}
+          onClearKey={clearKey}
+          settingsOpen={settingsOpen}
+          onSettingsOpenChange={setSettingsOpen}
+        />
+        <ChatMain
+          conversation={activeConversation}
+          conversations={conversations}
+          activeId={activeId}
+          onSelect={handleSelect}
+          onNewChat={handleNewChat}
+          onRename={renameConversation}
+          onDelete={deleteConversation}
+          isSummarizing={isSummarizing}
+          onSend={handleSend}
+          model={model}
+          onModelChange={setModel}
+          mode={mode}
+          isLoading={isLoading}
+          error={error ?? apiBlockedMessage}
+          onDismissError={clearError}
+          memoriesUsed={memoriesUsed}
+          onOpenMemory={handleSelect}
+          analyticsSummary={analyticsSummary}
+          onClearAnalytics={clearAnalytics}
+          canSend={canSendRequests}
+          apiKey={apiKey}
+          connectionStatus={connectionStatus}
+          onModeChange={setMode}
+          onApiKeyChange={setApiKey}
+          onValidateKey={validateKey}
+          onClearKey={clearKey}
+          settingsOpen={settingsOpen}
+          onSettingsOpenChange={setSettingsOpen}
+        />
+      </div>
+    </>
   );
 }

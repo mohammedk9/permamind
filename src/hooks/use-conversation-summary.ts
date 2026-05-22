@@ -7,6 +7,9 @@ import {
   getMessageFingerprint,
   needsSummary,
 } from "@/lib/ai/summarize";
+import { getSummaryModel } from "@/lib/ai/summary-model";
+import type { ApiKeyMode } from "@/lib/settings/api-key-storage";
+import type { TokenUsage } from "@/types/analytics";
 import type { Conversation, Message } from "@/types/chat";
 
 const DEBOUNCE_MS = 2000;
@@ -22,7 +25,15 @@ export function useConversationSummary(
   updateConversation: (
     id: string,
     updater: (c: Conversation) => Conversation
-  ) => void
+  ) => void,
+  getRequestHeaders: () => Record<string, string>,
+  mode: ApiKeyMode,
+  onSummaryComplete?: (params: {
+    conversationId: string;
+    conversationTitle: string;
+    usage: TokenUsage;
+    model: string;
+  }) => void
 ) {
   const timersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(
     new Map()
@@ -43,7 +54,10 @@ export function useConversationSummary(
       setSummarizingIds((prev) => new Set(prev).add(conversationId));
 
       const apiMessages = toApiMessages(conversation.messages);
-      const parsed = await fetchConversationSummary(apiMessages);
+      const parsed = await fetchConversationSummary(
+        apiMessages,
+        getRequestHeaders()
+      );
 
       inflightRef.current.delete(conversationId);
       setSummarizingIds((prev) => {
@@ -67,8 +81,17 @@ export function useConversationSummary(
           generatedAt: new Date(),
         },
       }));
+
+      if (parsed.usage && onSummaryComplete) {
+        onSummaryComplete({
+          conversationId,
+          conversationTitle: conversation.title,
+          usage: parsed.usage,
+          model: getSummaryModel(mode),
+        });
+      }
     },
-    [getConversation, updateConversation]
+    [getConversation, getRequestHeaders, mode, onSummaryComplete, updateConversation]
   );
 
   const queueSummary = useCallback(

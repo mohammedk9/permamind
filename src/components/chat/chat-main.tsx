@@ -17,8 +17,14 @@ import {
   SheetTrigger,
 } from "@/components/ui/sheet";
 import { ChatSidebar } from "@/components/chat/chat-sidebar";
-import type { ModelId } from "@/lib/ai/models";
+import { SettingsDialog } from "@/components/settings/settings-dialog";
+import type { ConnectionStatus } from "@/hooks/use-api-settings";
+import type { ApiKeyMode } from "@/lib/settings/api-key-storage";
+import { UsagePanel } from "@/components/analytics/usage-panel";
+import { MemoriesUsed } from "@/components/chat/memories-used";
+import type { AnalyticsSummary } from "@/types/analytics";
 import type { Conversation } from "@/types/chat";
+import type { RetrievedMemory } from "@/types/memory";
 
 interface ChatMainProps {
   conversation: Conversation | null;
@@ -30,11 +36,25 @@ interface ChatMainProps {
   onDelete: (id: string) => void;
   isSummarizing?: (id: string) => boolean;
   onSend: (content: string) => void;
-  model: ModelId;
-  onModelChange: (model: ModelId) => void;
+  model: string;
+  onModelChange: (model: string) => void;
+  mode: ApiKeyMode;
   isLoading: boolean;
   error: string | null;
   onDismissError: () => void;
+  canSend?: boolean;
+  apiKey?: string;
+  connectionStatus?: ConnectionStatus;
+  onModeChange?: (mode: ApiKeyMode) => void;
+  onApiKeyChange?: (key: string) => void;
+  onValidateKey?: () => Promise<boolean>;
+  onClearKey?: () => void;
+  settingsOpen?: boolean;
+  onSettingsOpenChange?: (open: boolean) => void;
+  memoriesUsed?: RetrievedMemory[];
+  onOpenMemory?: (conversationId: string) => void;
+  analyticsSummary: AnalyticsSummary;
+  onClearAnalytics: () => void;
 }
 
 export function ChatMain({
@@ -49,9 +69,23 @@ export function ChatMain({
   onSend,
   model,
   onModelChange,
+  mode,
   isLoading,
   error,
   onDismissError,
+  canSend = true,
+  apiKey = "",
+  connectionStatus = "unknown",
+  onModeChange,
+  onApiKeyChange,
+  onValidateKey,
+  onClearKey,
+  settingsOpen,
+  onSettingsOpenChange,
+  memoriesUsed = [],
+  onOpenMemory,
+  analyticsSummary,
+  onClearAnalytics,
 }: ChatMainProps) {
   const title = conversation?.title ?? "New conversation";
   const messages = conversation?.messages ?? [];
@@ -91,6 +125,15 @@ export function ChatMain({
               onRename={onRename}
               onDelete={onDelete}
               isSummarizing={isSummarizing}
+              analyticsSummary={analyticsSummary}
+              onClearAnalytics={onClearAnalytics}
+              mode={mode}
+              apiKey={apiKey}
+              connectionStatus={connectionStatus}
+              onModeChange={onModeChange!}
+              onApiKeyChange={onApiKeyChange!}
+              onValidateKey={onValidateKey!}
+              onClearKey={onClearKey!}
               className="h-full w-full border-0"
             />
           </SheetContent>
@@ -98,16 +141,49 @@ export function ChatMain({
         <h1 className="min-w-0 flex-1 truncate text-sm font-medium">
           {title}
         </h1>
-        <ModelSelector
-          value={model}
-          onChange={onModelChange}
-          disabled={isLoading}
-        />
+        <span className="hidden shrink-0 rounded-md bg-muted px-1.5 py-0.5 text-[10px] font-medium uppercase text-muted-foreground sm:inline">
+          {mode === "free" ? "Free" : "BYOK"}
+        </span>
+        <div className="flex items-center gap-2">
+          {onModeChange && onValidateKey && onClearKey && onApiKeyChange && (
+            <div className="md:hidden">
+              <SettingsDialog
+                mode={mode}
+                apiKey={apiKey}
+                connectionStatus={connectionStatus}
+                onModeChange={onModeChange}
+                onApiKeyChange={onApiKeyChange}
+                onValidate={onValidateKey}
+                onClearKey={onClearKey}
+                open={settingsOpen}
+                onOpenChange={onSettingsOpenChange}
+                triggerClassName="w-auto px-2"
+              />
+            </div>
+          )}
+          <div className="md:hidden">
+            <UsagePanel
+              summary={analyticsSummary}
+              onClear={onClearAnalytics}
+            />
+          </div>
+          <ModelSelector
+            value={model}
+            onChange={onModelChange}
+            mode={mode}
+            disabled={isLoading}
+          />
+        </div>
       </header>
 
       {conversation?.metadata && (
         <ConversationMetadataBar metadata={conversation.metadata} />
       )}
+
+      <MemoriesUsed
+        memories={memoriesUsed}
+        onOpenConversation={onOpenMemory}
+      />
 
       {error && (
         <ChatErrorBanner message={error} onDismiss={onDismissError} />
@@ -139,7 +215,7 @@ export function ChatMain({
         )}
       </ScrollArea>
 
-      <ChatInput onSend={onSend} isLoading={isLoading} />
+      <ChatInput onSend={onSend} isLoading={isLoading} disabled={!canSend} />
     </div>
   );
 }

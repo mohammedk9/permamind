@@ -16,11 +16,13 @@ npm install
 cp .env.example .env.local
 ```
 
-Add your [OpenRouter](https://openrouter.ai/) API key to `.env.local`:
+**Free mode (default):** Add a server key to `.env.local` so all users can use free OpenRouter models:
 
 ```
 OPENROUTER_API_KEY=sk-or-v1-...
 ```
+
+**BYOK (optional):** Users can add their own OpenRouter key in **Settings** — stored only in the browser, sent per request through `/api/chat` (never saved on the server).
 
 Then run:
 
@@ -53,6 +55,8 @@ docs/
 - Model selector, loading states, and error handling
 - **localStorage** conversation persistence (auto-save, rename, delete)
 - **AI summaries** — auto-generated topics, tags, entities (Gemini Flash, debounced)
+- **Memory-aware context** — retrieves relevant past chats and injects them before each reply
+- **Usage analytics** — local token/cost tracking, per-model stats, memory retrieval debug panel
 - Supabase cloud sync planned in a later phase
 
 ## Roadmap

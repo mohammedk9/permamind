@@ -7,7 +7,12 @@ import {
   createOpenRouterCompletion,
   parseOpenRouterError,
 } from "@/lib/ai/openrouter";
-import { SUMMARY_MODEL } from "@/lib/ai/summary-model";
+import { resolveRequestAuth } from "@/lib/ai/request-auth";
+import {
+  isModelUnavailableError,
+  resolveModelChain,
+} from "@/lib/ai/route-models";
+import { getSummaryModel } from "@/lib/ai/summary-model";
 import type { ChatCompletionMessage } from "@/lib/ai/types";
 import type { Message } from "@/types/chat";
 
@@ -32,6 +37,14 @@ export async function POST(request: Request) {
     body = await request.json();
   } catch {
     return Response.json({ error: "Invalid request body" }, { status: 400 });
+  }
+
+  let auth;
+  try {
+    auth = resolveRequestAuth(request);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Unauthorized";
+    return Response.json({ error: message }, { status: 401 });
   }
 
   const { messages } = body;
@@ -59,36 +72,57 @@ export async function POST(request: Request) {
     return Response.json({ error: "No content to summarize" }, { status: 400 });
   }
 
+  const summaryModel = getSummaryModel(auth.mode);
+  const modelChain = resolveModelChain(summaryModel, auth.mode);
+  const prompt = buildSummaryPrompt(formatted);
+  let lastError = "Summary model unavailable";
+
   try {
-    const upstream = await createOpenRouterCompletion(
-      SUMMARY_MODEL,
-      buildSummaryPrompt(formatted)
-    );
-
-    if (!upstream.ok) {
-      const error = await parseOpenRouterError(upstream);
-      return Response.json({ error }, { status: upstream.status });
-    }
-
-    const data = (await upstream.json()) as {
-      choices?: Array<{ message?: { content?: string } }>;
-    };
-
-    const content = data.choices?.[0]?.message?.content ?? "";
-    const parsed = parseSummaryResponse(content);
-
-    if (!parsed) {
-      return Response.json(
-        { error: "Failed to parse summary response" },
-        { status: 502 }
+    for (const tryModel of modelChain) {
+      const upstream = await createOpenRouterCompletion(
+        tryModel,
+        prompt,
+        auth.apiKey
       );
+
+      if (!upstream.ok) {
+        lastError = await parseOpenRouterError(upstream);
+        if (isModelUnavailableError(upstream.status, lastError)) {
+          continue;
+        }
+        return Response.json({ error: lastError }, { status: upstream.status });
+      }
+
+      const data = (await upstream.json()) as {
+        choices?: Array<{ message?: { content?: string } }>;
+        usage?: {
+          prompt_tokens?: number;
+          completion_tokens?: number;
+          total_tokens?: number;
+        };
+      };
+
+      const content = data.choices?.[0]?.message?.content ?? "";
+      const parsed = parseSummaryResponse(content);
+
+      if (!parsed) {
+        return Response.json(
+          { error: "Failed to parse summary response" },
+          { status: 502 }
+        );
+      }
+
+      return Response.json({
+        ...parsed,
+        usage: data.usage ?? null,
+        model: tryModel,
+      });
     }
 
-    return Response.json(parsed);
+    return Response.json({ error: lastError }, { status: 502 });
   } catch (err) {
     const message =
       err instanceof Error ? err.message : "Failed to generate summary";
-    const status = message.includes("not configured") ? 503 : 500;
-    return Response.json({ error: message }, { status });
+    return Response.json({ error: message }, { status: 500 });
   }
 }

@@ -2,6 +2,10 @@
 
 import { MessageSquarePlus, Search, X } from "lucide-react";
 
+import { UsagePanel } from "@/components/analytics/usage-panel";
+import { SettingsDialog } from "@/components/settings/settings-dialog";
+import type { ConnectionStatus } from "@/hooks/use-api-settings";
+import type { ApiKeyMode } from "@/lib/settings/api-key-storage";
 import { ConversationItem } from "@/components/chat/conversation-item";
 import { SearchResultItem } from "@/components/chat/search-result-item";
 import { Button } from "@/components/ui/button";
@@ -11,6 +15,7 @@ import { Separator } from "@/components/ui/separator";
 import { useMemorySearch } from "@/hooks/use-memory-search";
 import { APP_NAME } from "@/lib/constants";
 import { cn } from "@/lib/utils";
+import type { AnalyticsSummary } from "@/types/analytics";
 import type { Conversation } from "@/types/chat";
 
 interface ChatSidebarProps {
@@ -21,6 +26,17 @@ interface ChatSidebarProps {
   onRename: (id: string, title: string) => void;
   onDelete: (id: string) => void;
   isSummarizing?: (id: string) => boolean;
+  analyticsSummary: AnalyticsSummary;
+  onClearAnalytics: () => void;
+  mode: ApiKeyMode;
+  apiKey: string;
+  connectionStatus: ConnectionStatus;
+  onModeChange: (mode: ApiKeyMode) => void;
+  onApiKeyChange: (key: string) => void;
+  onValidateKey: () => Promise<boolean>;
+  onClearKey: () => void;
+  settingsOpen?: boolean;
+  onSettingsOpenChange?: (open: boolean) => void;
   className?: string;
 }
 
@@ -32,6 +48,17 @@ export function ChatSidebar({
   onRename,
   onDelete,
   isSummarizing,
+  analyticsSummary,
+  onClearAnalytics,
+  mode,
+  apiKey,
+  connectionStatus,
+  onModeChange,
+  onApiKeyChange,
+  onValidateKey,
+  onClearKey,
+  settingsOpen,
+  onSettingsOpenChange,
   className,
 }: ChatSidebarProps) {
   const { query, setQuery, results, isActive, clearSearch, resultCount } =
@@ -130,8 +157,23 @@ export function ChatSidebar({
         )}
       </ScrollArea>
 
-      <div className="border-t border-sidebar-border p-3">
-        <p className="text-xs text-muted-foreground">
+      <div className="space-y-2 border-t border-sidebar-border p-3">
+        <SettingsDialog
+          mode={mode}
+          apiKey={apiKey}
+          connectionStatus={connectionStatus}
+          onModeChange={onModeChange}
+          onApiKeyChange={onApiKeyChange}
+          onValidate={onValidateKey}
+          onClearKey={onClearKey}
+          open={settingsOpen}
+          onOpenChange={onSettingsOpenChange}
+        />
+        <UsagePanel
+          summary={analyticsSummary}
+          onClear={onClearAnalytics}
+        />
+        <p className="text-center text-xs text-muted-foreground">
           {isActive
             ? `${resultCount} result${resultCount === 1 ? "" : "s"}`
             : `Saved locally · ${conversations.length} conversation${conversations.length === 1 ? "" : "s"}`}
