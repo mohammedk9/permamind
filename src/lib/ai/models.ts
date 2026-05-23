@@ -1,59 +1,96 @@
-import {
-  DEFAULT_FREE_MODEL,
-  FREE_MODELS,
-  isFreeModelId,
-  type FreeModelIdSelectable,
-} from "@/lib/ai/free-models";
+export const AI_MODELS = [
+  /**
+   * FREE MODELS
+   * Used for onboarding + free tier
+   */
 
-export const PREMIUM_MODELS = [
   {
-    id: "anthropic/claude-sonnet-4",
-    label: "Claude Sonnet",
-    provider: "Anthropic",
+    id: "deepseek/deepseek-v4-flash:free",
+    label: "DeepSeek Flash (Free)",
+    provider: "DeepSeek",
+    tier: "free",
   },
+
   {
-    id: "openai/gpt-4o",
-    label: "GPT-4o",
-    provider: "OpenAI",
+    id: "qwen/qwen3-next-80b-a3b-instruct:free",
+    label: "Qwen Next (Free)",
+    provider: "Qwen",
+    tier: "free",
   },
+
   {
-    id: "google/gemini-2.5-flash-preview-05-20",
-    label: "Gemini 2.5 Flash",
+    id: "google/gemma-4-31b:free",
+    label: "Gemma 4 (Free)",
     provider: "Google",
+    tier: "free",
   },
+
+  /**
+   * PREMIUM MODELS
+   * Better quality + paid usage
+   */
+
+  {
+    id: "qwen/qwen-3.5-flash",
+    label: "Qwen 3.5 Flash",
+    provider: "Qwen",
+    tier: "premium",
+  },
+
   {
     id: "deepseek/deepseek-chat-v3-0324",
     label: "DeepSeek V3",
     provider: "DeepSeek",
+    tier: "premium",
+  },
+
+  /**
+   * BYOK / POWER USERS
+   */
+
+  {
+    id: "openai/gpt-4o",
+    label: "GPT-4o",
+    provider: "OpenAI",
+    tier: "byok",
+  },
+
+  {
+    id: "anthropic/claude-sonnet-4",
+    label: "Claude Sonnet",
+    provider: "Anthropic",
+    tier: "byok",
+  },
+
+  {
+    id: "google/gemini-2.5-flash-preview-05-20",
+    label: "Gemini 2.5 Flash",
+    provider: "Google",
+    tier: "byok",
   },
 ] as const;
 
-export type PremiumModelId = (typeof PREMIUM_MODELS)[number]["id"];
+export type ModelId = (typeof AI_MODELS)[number]["id"];
 
-export type ModelId = PremiumModelId | FreeModelIdSelectable;
+export const DEFAULT_MODEL_ID: ModelId =
+  "deepseek/deepseek-v4-flash:free";
 
-export const DEFAULT_PREMIUM_MODEL_ID: PremiumModelId = PREMIUM_MODELS[0].id;
-
-export { DEFAULT_FREE_MODEL, FREE_MODELS };
-
-export function isValidPremiumModelId(id: string): id is PremiumModelId {
-  return PREMIUM_MODELS.some((m) => m.id === id);
-}
-
-export function isValidModelId(id: string, mode: "free" | "byok"): boolean {
-  if (mode === "free") return isFreeModelId(id);
-  return isValidPremiumModelId(id) || isFreeModelId(id);
+export function isValidModelId(id: string): id is ModelId {
+  return AI_MODELS.some((m) => m.id === id);
 }
 
 export function getModelById(id: string) {
-  const premium = PREMIUM_MODELS.find((m) => m.id === id);
-  if (premium) return premium;
-  return FREE_MODELS.find((m) => m.id === id);
+  return AI_MODELS.find((m) => m.id === id);
 }
 
-export function getDefaultModelId(mode: "free" | "byok"): string {
-  return mode === "free" ? DEFAULT_FREE_MODEL : DEFAULT_PREMIUM_MODEL_ID;
+export function getFreeModels() {
+  return AI_MODELS.filter((m) => m.tier === "free");
 }
 
-/** @deprecated Use getDefaultModelId(mode) */
-export const DEFAULT_MODEL_ID = DEFAULT_PREMIUM_MODEL_ID;
+export function getPremiumModels() {
+  return AI_MODELS.filter((m) => m.tier === "premium");
+}
+
+export function getByokModels() {
+  return AI_MODELS.filter((m) => m.tier === "byok");
+}
