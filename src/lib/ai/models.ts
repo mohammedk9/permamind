@@ -1,7 +1,7 @@
 export const AI_MODELS = [
   /**
    * FREE MODELS
-   * Used for onboarding + free tier
+   * Instant onboarding experience
    */
 
   {
@@ -19,7 +19,7 @@ export const AI_MODELS = [
   },
 
   {
-    id: "google/gemma-4-31b:free",
+    id: "google/gemma-4-31b-it:free",
     label: "Gemma 4 (Free)",
     provider: "Google",
     tier: "free",
@@ -27,19 +27,26 @@ export const AI_MODELS = [
 
   /**
    * PREMIUM MODELS
-   * Better quality + paid usage
+   * Cheap + powerful app-hosted models
    */
 
   {
-    id: "qwen/qwen-3.5-flash",
-    label: "Qwen 3.5 Flash",
+    id: "google/gemini-3.1-flash-lite",
+    label: "Gemini 3.1 Flash Lite",
+    provider: "Google",
+    tier: "premium",
+  },
+
+  {
+    id: "qwen/qwen3.6-35b-a3b",
+    label: "Qwen 3.6 35B",
     provider: "Qwen",
     tier: "premium",
   },
 
   {
-    id: "deepseek/deepseek-chat-v3-0324",
-    label: "DeepSeek V3",
+    id: "deepseek/deepseek-v4-pro",
+    label: "DeepSeek V4 Pro",
     provider: "DeepSeek",
     tier: "premium",
   },
@@ -49,23 +56,23 @@ export const AI_MODELS = [
    */
 
   {
-    id: "openai/gpt-4o",
-    label: "GPT-4o",
-    provider: "OpenAI",
+    id: "openrouter/owl-alpha",
+    label: "Owl Alpha",
+    provider: "OpenRouter",
     tier: "byok",
   },
 
   {
-    id: "anthropic/claude-sonnet-4",
-    label: "Claude Sonnet",
+    id: "anthropic/claude-haiku-latest",
+    label: "Claude Haiku",
     provider: "Anthropic",
     tier: "byok",
   },
 
   {
-    id: "google/gemini-2.5-flash-preview-05-20",
-    label: "Gemini 2.5 Flash",
-    provider: "Google",
+    id: "openai/gpt-4o",
+    label: "GPT-4o",
+    provider: "OpenAI",
     tier: "byok",
   },
 ] as const;
@@ -74,6 +81,18 @@ export type ModelId = (typeof AI_MODELS)[number]["id"];
 
 export const DEFAULT_MODEL_ID: ModelId =
   "deepseek/deepseek-v4-flash:free";
+
+export const FREE_MODELS = AI_MODELS.filter(
+  (m) => m.tier === "free"
+);
+
+export const PREMIUM_MODELS = AI_MODELS.filter(
+  (m) => m.tier === "premium"
+);
+
+export const BYOK_MODELS = AI_MODELS.filter(
+  (m) => m.tier === "byok"
+);
 
 export function isValidModelId(id: string): id is ModelId {
   return AI_MODELS.some((m) => m.id === id);
@@ -84,13 +103,13 @@ export function getModelById(id: string) {
 }
 
 export function getFreeModels() {
-  return AI_MODELS.filter((m) => m.tier === "free");
+  return FREE_MODELS;
 }
 
 export function getPremiumModels() {
-  return AI_MODELS.filter((m) => m.tier === "premium");
+  return PREMIUM_MODELS;
 }
 
 export function getByokModels() {
-  return AI_MODELS.filter((m) => m.tier === "byok");
+  return BYOK_MODELS;
 }
