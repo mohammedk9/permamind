@@ -81,6 +81,9 @@ export type ModelId = (typeof AI_MODELS)[number]["id"];
 
 export const DEFAULT_MODEL_ID: ModelId =
   "deepseek/deepseek-v4-flash:free";
+  export function getDefaultModelId(): ModelId {
+    return DEFAULT_MODEL_ID;
+  }
 
 export const FREE_MODELS = AI_MODELS.filter(
   (m) => m.tier === "free"

@@ -100,7 +100,7 @@ export function ChatMain({
   }, [scrollKey]);
 
   return (
-    <div className="flex h-full min-w-0 flex-1 flex-col bg-background">
+    <div className="flex h-full min-h-0 min-w-0 flex-1 flex-col bg-background">
       <header className="flex h-14 shrink-0 items-center gap-2 border-b border-border px-4">
         <Sheet>
           <SheetTrigger
@@ -189,7 +189,7 @@ export function ChatMain({
         <ChatErrorBanner message={error} onDismiss={onDismissError} />
       )}
 
-      <ScrollArea className="flex-1">
+      <ScrollArea className="flex-1 min-h-0">
         {messages.length === 0 ? (
           <div className="flex h-full min-h-[50vh] flex-col items-center justify-center gap-4 px-4 text-center">
             <div className="flex size-14 items-center justify-center rounded-2xl bg-muted">

@@ -146,7 +146,7 @@ export function useApiSettings() {
       apiKey.trim().length > 0 &&
       connectionStatus === "connected");
 
-  const defaultModelId = getDefaultModelId(mode);
+      const defaultModelId = getDefaultModelId();
 
   return {
     hydrated,

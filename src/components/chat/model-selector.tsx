@@ -1,7 +1,7 @@
 "use client";
 
 import { FREE_MODELS } from "@/lib/ai/free-models";
-import { PREMIUM_MODELS } from "@/lib/ai/models";
+import { getPremiumModels } from "@/lib/ai/models";
 import type { ApiKeyMode } from "@/lib/settings/api-key-storage";
 import { cn } from "@/lib/utils";
 
@@ -20,7 +20,13 @@ export function ModelSelector({
   disabled,
   className,
 }: ModelSelectorProps) {
-  const models = mode === "free" ? FREE_MODELS : [...PREMIUM_MODELS, ...FREE_MODELS];
+
+  const premiumModels = getPremiumModels();
+
+  const models =
+    mode === "free"
+      ? FREE_MODELS
+      : [...premiumModels, ...FREE_MODELS];
 
   return (
     <select

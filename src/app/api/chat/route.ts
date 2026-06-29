@@ -35,7 +35,7 @@ export async function POST(request: Request) {
 
   const { model, messages } = body;
 
-  let auth;
+    let auth;
   try {
     auth = resolveRequestAuth(request);
   } catch (err) {
@@ -43,7 +43,7 @@ export async function POST(request: Request) {
     return Response.json({ error: message }, { status: 401 });
   }
 
-  if (!model || !isValidModelId(model, auth.mode)) {
+  if (!model || !isValidModelId(model)) {
     return Response.json(
       {
         error:
