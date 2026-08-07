@@ -31,7 +31,7 @@ export function useChatCompletion({
 
   useEffect(() => {
     setModel((current) =>
-      isValidModelId(current, mode) ? current : defaultModelId
+      isValidModelId(current) ? current : defaultModelId
     );
   }, [defaultModelId, mode]);
 

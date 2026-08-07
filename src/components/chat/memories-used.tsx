@@ -1,6 +1,6 @@
 "use client";
 
-import { Brain } from "lucide-react";
+import { StatusPill } from "@/components/ui/status-pill";
 
 import { formatConversationTime } from "@/lib/format/date";
 import type { RetrievedMemory } from "@/types/memory";
@@ -19,12 +19,7 @@ export function MemoriesUsed({
   return (
     <div className="border-b border-border bg-muted/20 px-4 py-2">
       <div className="mx-auto flex max-w-3xl flex-col gap-2">
-        <div className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
-          <Brain className="size-3.5" />
-          <span>
-            {memories.length} memor{memories.length === 1 ? "y" : "ies"} used
-          </span>
-        </div>
+        <StatusPill status="protected" label={`${memories.length} remembered ${memories.length === 1 ? "context" : "contexts"}`} detail="From your saved conversations" />
         <div className="flex flex-wrap gap-1.5">
           {memories.map((memory) => (
             <button

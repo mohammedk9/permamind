@@ -46,6 +46,13 @@
   --radius-2xl: calc(var(--radius) * 1.8);
   --radius-3xl: calc(var(--radius) * 2.2);
   --radius-4xl: calc(var(--radius) * 2.6);
+  --color-status-active: var(--status-active);
+  --color-status-success: var(--status-success);
+  --color-status-attention: var(--status-attention);
+  --color-status-error: var(--status-error);
+  --color-status-protected: var(--status-protected);
+  --color-status-neutral: var(--status-neutral);
+  --font-display: var(--font-sans);
 }
 
 :root {
@@ -81,6 +88,12 @@
   --sidebar-accent-foreground: oklch(0.205 0 0);
   --sidebar-border: oklch(0.922 0 0);
   --sidebar-ring: oklch(0.708 0 0);
+  --status-active: oklch(0.55 0.18 255);
+  --status-success: oklch(0.55 0.15 150);
+  --status-attention: oklch(0.72 0.16 75);
+  --status-error: oklch(0.577 0.245 27.325);
+  --status-protected: oklch(0.5 0.14 290);
+  --status-neutral: oklch(0.556 0 0);
 }
 
 .dark {
@@ -115,6 +128,12 @@
   --sidebar-accent-foreground: oklch(0.985 0 0);
   --sidebar-border: oklch(1 0 0 / 10%);
   --sidebar-ring: oklch(0.556 0 0);
+  --status-active: oklch(0.7 0.16 255);
+  --status-success: oklch(0.72 0.14 150);
+  --status-attention: oklch(0.8 0.15 80);
+  --status-error: oklch(0.704 0.191 22.216);
+  --status-protected: oklch(0.72 0.13 290);
+  --status-neutral: oklch(0.708 0 0);
 }
 
 @layer base {
@@ -126,5 +145,33 @@
   }
   html {
     @apply font-sans;
+  }
+  body {
+    overflow-x: hidden;
+  }
+  :focus-visible {
+    @apply outline-2 outline-offset-2 outline-ring;
+  }
+}
+
+@layer utilities {
+  .text-display { @apply font-display text-4xl font-semibold tracking-tight; }
+  .text-page-title { @apply font-display text-2xl font-semibold tracking-tight; }
+  .text-section-title { @apply text-lg font-semibold tracking-tight; }
+  .text-body { @apply text-sm leading-6; }
+  .text-label { @apply text-sm font-medium; }
+  .text-caption { @apply text-xs leading-5 text-muted-foreground; }
+  .surface-card { @apply rounded-xl border border-border bg-card text-card-foreground; }
+  .surface-elevated { @apply shadow-lg shadow-black/5 dark:shadow-black/20; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
   }
 }

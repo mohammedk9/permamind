@@ -5,23 +5,23 @@ export const AI_MODELS = [
    */
 
   {
-    id: "deepseek/deepseek-v4-flash:free",
-    label: "DeepSeek Flash (Free)",
-    provider: "DeepSeek",
-    tier: "free",
-  },
-
-  {
-    id: "qwen/qwen3-next-80b-a3b-instruct:free",
-    label: "Qwen Next (Free)",
-    provider: "Qwen",
-    tier: "free",
-  },
-
-  {
     id: "google/gemma-4-31b-it:free",
-    label: "Gemma 4 (Free)",
+    label: "Gemma 4 31B (Free)",
     provider: "Google",
+    tier: "free",
+  },
+
+  {
+    id: "google/gemma-4-26b-a4b-it:free",
+    label: "Gemma 4 26B (Free)",
+    provider: "Google",
+    tier: "free",
+  },
+
+  {
+    id: "nvidia/nemotron-3-super-120b-a12b:free",
+    label: "Nemotron 3 Super (Free)",
+    provider: "NVIDIA",
     tier: "free",
   },
 
@@ -30,6 +30,18 @@ export const AI_MODELS = [
    * Cheap + powerful app-hosted models
    */
 
+  {
+    id: "poolside/laguna-xs-2.1:free",
+    label: "Laguna XS 2.1 (Free)",
+    provider: "Poolside",
+    tier: "free",
+  },
+  {
+    id: "deepseek/deepseek-v4-flash",
+    label: "DeepSeek Flash",
+    provider: "DeepSeek",
+    tier: "premium",
+  },
   {
     id: "google/gemini-3.1-flash-lite",
     label: "Gemini 3.1 Flash Lite",
@@ -80,7 +92,7 @@ export const AI_MODELS = [
 export type ModelId = (typeof AI_MODELS)[number]["id"];
 
 export const DEFAULT_MODEL_ID: ModelId =
-  "deepseek/deepseek-v4-flash:free";
+  "google/gemma-4-31b-it:free";
   export function getDefaultModelId(): ModelId {
     return DEFAULT_MODEL_ID;
   }

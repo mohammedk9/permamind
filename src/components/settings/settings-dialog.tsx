@@ -23,6 +23,8 @@ import {
 import type { ConnectionStatus } from "@/hooks/use-api-settings";
 import type { ApiKeyMode } from "@/lib/settings/api-key-storage";
 import { cn } from "@/lib/utils";
+import { HelpSheet } from "@/components/help/how-permamind-works";
+import { resetFirstRun } from "@/lib/settings/first-run";
 
 interface SettingsDialogProps {
   mode: ApiKeyMode;
@@ -153,6 +155,14 @@ export function SettingsDialog({
             </div>
           </section>
 
+          <section className="space-y-3">
+            <h3 className="text-sm font-medium">Getting started</h3>
+            <HelpSheet triggerClassName="w-full justify-start gap-2" />
+            <Button size="sm" variant="outline" onClick={() => { resetFirstRun(); setOpen(false); window.location.reload(); }}>
+              Reset onboarding
+            </Button>
+          </section>
+
           {mode === "byok" && (
             <>
               <Separator />
@@ -220,6 +230,7 @@ export function SettingsDialog({
               </p>
             </section>
           )}
+
         </div>
       </SheetContent>
     </Sheet>

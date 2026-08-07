@@ -1,10 +1,11 @@
 import type { Conversation } from "@/types/chat";
+import { scoreMemory } from "@/lib/memory/retrieve";
 
 export interface MemorySearchResult {
   conversationId: string;
   conversationTitle: string;
   messageId: string | null;
-  matchType: "title" | "message";
+  matchType: "title" | "message" | "summary" | "entity" | "tag" | "topic";
   role?: "user" | "assistant";
   snippet: string;
   matchStart: number;
@@ -15,7 +16,7 @@ export interface MemoryIndexEntry {
   conversationId: string;
   conversationTitle: string;
   messageId: string | null;
-  matchType: "title" | "message";
+  matchType: "title" | "message" | "summary" | "entity" | "tag" | "topic";
   role?: "user" | "assistant";
   normalized: string;
   original: string;
@@ -62,23 +63,21 @@ export function buildMemoryIndex(
 
     const meta = conversation.metadata;
     if (meta) {
-      const metaText = [
-        meta.summary,
-        ...meta.topics,
-        ...meta.tags,
-        ...meta.entities,
-      ]
-        .filter(Boolean)
-        .join(" ");
-
-      if (metaText.trim()) {
+      const metadataFields = [
+        ["summary", meta.summary],
+        ["topic", meta.topics.join(" · ")],
+        ["tag", meta.tags.join(" · ")],
+        ["entity", meta.entities.join(" · ")],
+      ] as const;
+      for (const [matchType, original] of metadataFields) {
+        if (!original.trim()) continue;
         entries.push({
           conversationId: conversation.id,
           conversationTitle: conversation.title,
           messageId: null,
-          matchType: "title",
-          normalized: normalize(metaText),
-          original: meta.summary || metaText,
+          matchType,
+          normalized: normalize(original),
+          original,
         });
       }
     }
@@ -108,7 +107,7 @@ export function searchMemoryIndex(
   const q = normalize(query.trim());
   if (q.length < MIN_QUERY_LENGTH) return [];
 
-  const results: MemorySearchResult[] = [];
+  const results: Array<MemorySearchResult & { relevance: number }> = [];
 
   for (const entry of index) {
     const matchIndex = entry.normalized.indexOf(q);
@@ -120,6 +119,15 @@ export function searchMemoryIndex(
       q.length
     );
 
+    const conversationEntries = index.filter((candidate) => candidate.conversationId === entry.conversationId);
+    const metadata = conversationEntries.reduce<{ summary?: string; entities?: string[]; tags?: string[] }>((acc, candidate) => {
+      if (candidate.matchType === "summary") acc.summary = candidate.original;
+      if (candidate.matchType === "entity") acc.entities = candidate.original.split(" · ");
+      if (candidate.matchType === "tag") acc.tags = candidate.original.split(" · ");
+      return acc;
+    }, {});
+    const memory = { conversationId: entry.conversationId, conversationTitle: entry.conversationTitle, source: entry.matchType === "message" ? "message" : "summary", excerpt: entry.original, score: 0, updatedAt: new Date() } as const;
+    const relevance = scoreMemory(query, memory, metadata).total + (entry.matchType === "title" ? 1 : 0);
     results.push({
       conversationId: entry.conversationId,
       conversationTitle: entry.conversationTitle,
@@ -129,15 +137,16 @@ export function searchMemoryIndex(
       snippet,
       matchStart,
       matchEnd,
+      relevance,
     });
 
-    if (results.length >= MAX_RESULTS) break;
   }
 
   return results.sort((a, b) => {
-    if (a.matchType !== b.matchType) {
-      return a.matchType === "title" ? -1 : 1;
-    }
-    return 0;
+    return b.relevance - a.relevance;
+  }).slice(0, MAX_RESULTS).map((result) => {
+    const { relevance, ...withoutRelevance } = result;
+    void relevance;
+    return withoutRelevance;
   });
 }

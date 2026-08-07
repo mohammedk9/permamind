@@ -18,8 +18,8 @@ export function ChatMessage({ message }: ChatMessageProps) {
   return (
     <div
       className={cn(
-        "flex gap-3 px-4 py-5",
-        isUser ? "bg-transparent" : "bg-muted/30"
+        "flex gap-3 px-4 py-6 sm:px-6",
+        isUser ? "bg-transparent" : "bg-muted/25"
       )}
     >
       <Avatar className="size-8 shrink-0">
@@ -35,7 +35,7 @@ export function ChatMessage({ message }: ChatMessageProps) {
       </Avatar>
       <div className="min-w-0 flex-1 space-y-1">
         <div className="flex items-center gap-2">
-          <p className="text-xs font-medium text-muted-foreground">
+          <p className="text-xs font-semibold text-foreground/70">
             {isUser ? "You" : "PermaMind"}
           </p>
           {!isThinking && (
@@ -50,7 +50,7 @@ export function ChatMessage({ message }: ChatMessageProps) {
             <span>Thinking...</span>
           </div>
         ) : (
-          <p className="text-sm leading-relaxed whitespace-pre-wrap">
+          <p className="text-sm leading-7 whitespace-pre-wrap sm:text-[15px]">
             {message.content}
             {message.isStreaming && (
               <span className="ml-0.5 inline-block h-4 w-0.5 animate-pulse bg-foreground align-middle" />

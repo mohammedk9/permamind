@@ -1,9 +1,11 @@
 export const FREE_MODEL_FALLBACK_CHAIN = [
   "google/gemma-4-31b-it:free",
   "google/gemma-4-26b-a4b-it:free",
-  "openai/gpt-oss-120b:free",
-  "qwen/qwen3-next-80b-a3b-instruct:free",
+  "nvidia/nemotron-3-super-120b-a12b:free",
+  "poolside/laguna-xs-2.1:free",
 ] as const;
+
+export const PAID_FALLBACK_MODEL = "deepseek/deepseek-v4-flash";
 
 export type FreeModelId =
   (typeof FREE_MODEL_FALLBACK_CHAIN)[number];
@@ -23,14 +25,14 @@ export const FREE_MODELS = [
     provider: "Google",
   },
   {
-    id: "openai/gpt-oss-120b:free",
-    label: "GPT OSS 120B (Free)",
-    provider: "OpenAI",
+    id: "nvidia/nemotron-3-super-120b-a12b:free",
+    label: "Nemotron 3 Super (Free)",
+    provider: "NVIDIA",
   },
   {
-    id: "qwen/qwen3-next-80b-a3b-instruct:free",
-    label: "Qwen3 Next 80B (Free)",
-    provider: "Qwen",
+    id: "poolside/laguna-xs-2.1:free",
+    label: "Laguna XS 2.1 (Free)",
+    provider: "Poolside",
   },
 ] as const;
 

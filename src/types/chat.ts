@@ -24,4 +24,7 @@ export interface Conversation {
   createdAt: Date;
   updatedAt: Date;
   metadata?: ConversationMetadata;
+  /** User-controlled permanent storage flags. Optional for backwards compatibility. */
+  permanentMemory?: boolean;
+  starred?: boolean;
 }

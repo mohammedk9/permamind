@@ -1,6 +1,6 @@
 "use client";
 
-import { Check, Loader2, Pencil, Trash2, X } from "lucide-react";
+import { Check, Loader2, Pencil, Trash2, X, Star, ShieldCheck } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -16,6 +16,8 @@ interface ConversationItemProps {
   onSelect: () => void;
   onRename: (title: string) => void;
   onDelete: () => void;
+  onTogglePermanentMemory?: () => void;
+  onToggleStar?: () => void;
 }
 
 export function ConversationItem({
@@ -25,6 +27,8 @@ export function ConversationItem({
   onSelect,
   onRename,
   onDelete,
+  onTogglePermanentMemory,
+  onToggleStar,
 }: ConversationItemProps) {
   const [isEditing, setIsEditing] = useState(false);
   const [editTitle, setEditTitle] = useState(conversation.title);
@@ -115,6 +119,10 @@ export function ConversationItem({
         <span className="line-clamp-1 text-sm font-medium">
           {conversation.title}
         </span>
+        <span className="mt-1 flex gap-1 text-[10px]">
+          {conversation.starred && <span className="flex items-center gap-0.5 text-amber-600"><Star className="size-3 fill-current" /> Important</span>}
+          {conversation.permanentMemory && <span className="flex items-center gap-0.5 text-primary"><ShieldCheck className="size-3" /> Permanent</span>}
+        </span>
         {isSummarizing ? (
           <span className="mt-1 flex items-center gap-1 text-xs text-muted-foreground">
             <Loader2 className="size-3 animate-spin" />
@@ -142,6 +150,8 @@ export function ConversationItem({
         </span>
       </button>
       <div className="absolute top-1.5 right-1 flex gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
+        <Button variant="ghost" size="icon-xs" onClick={(e) => { e.stopPropagation(); onToggleStar?.(); }} aria-label="Toggle important"><Star className={cn("size-3", conversation.starred && "fill-current text-amber-500")} /></Button>
+        <Button variant="ghost" size="icon-xs" onClick={(e) => { e.stopPropagation(); onTogglePermanentMemory?.(); }} aria-label="Toggle permanent memory"><ShieldCheck className={cn("size-3", conversation.permanentMemory && "text-primary")} /></Button>
         <Button
           variant="ghost"
           size="icon-xs"

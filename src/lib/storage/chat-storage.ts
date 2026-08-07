@@ -25,6 +25,8 @@ interface StoredConversation {
   createdAt: string;
   updatedAt: string;
   metadata?: StoredMetadata;
+  permanentMemory?: boolean;
+  starred?: boolean;
 }
 
 interface StoredChatData {
@@ -83,6 +85,8 @@ function serializeConversation(conversation: Conversation): StoredConversation {
     metadata: conversation.metadata
       ? serializeMetadata(conversation.metadata)
       : undefined,
+    permanentMemory: conversation.permanentMemory,
+    starred: conversation.starred,
   };
 }
 
@@ -106,6 +110,8 @@ function deserializeConversation(stored: StoredConversation): Conversation {
     metadata: stored.metadata
       ? deserializeMetadata(stored.metadata)
       : undefined,
+    permanentMemory: stored.permanentMemory,
+    starred: stored.starred,
   };
 }
 

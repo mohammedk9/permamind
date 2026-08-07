@@ -87,7 +87,11 @@ export async function POST(request: Request) {
       }
 
       lastError = await parseOpenRouterError(upstream);
-      if (!isModelUnavailableError(upstream.status, lastError)) {
+
+console.log("MODEL:", tryModel);
+console.log("STATUS:", upstream.status);
+console.log("ERROR:", lastError);
+      if (auth.mode === "byok" || (!isModelUnavailableError(upstream.status, lastError) && tryModel === modelChain.at(-1))) {
         return Response.json({ error: lastError }, { status: upstream.status });
       }
     }

@@ -87,6 +87,10 @@ export async function POST(request: Request) {
 
       if (!upstream.ok) {
         lastError = await parseOpenRouterError(upstream);
+
+console.log("MODEL:", tryModel);
+console.log("STATUS:", upstream.status);
+console.log("ERROR:", lastError);
         if (isModelUnavailableError(upstream.status, lastError)) {
           continue;
         }

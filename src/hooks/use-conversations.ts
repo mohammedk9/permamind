@@ -11,7 +11,20 @@ import type { Conversation } from "@/types/chat";
 
 const SAVE_DEBOUNCE_MS = 300;
 
-export function useConversations() {
+/**
+ * Options for the useConversations hook.
+ */
+interface UseConversationsOptions {
+  /**
+   * Optional callback invoked when the active conversation changes.
+   * Receives the new active conversation ID (or null if no conversation is active).
+   * Used by useSnapshot to detect conversation switches and trigger snapshots.
+   */
+  onConversationSwitch?: (newActiveId: string | null) => void;
+}
+
+export function useConversations(options: UseConversationsOptions = {}) {
+  const { onConversationSwitch } = options;
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [isHydrated, setIsHydrated] = useState(false);
@@ -21,6 +34,12 @@ export function useConversations() {
     setConversations(loaded);
     setActiveId(loadedActiveId);
     setIsHydrated(true);
+  }, []);
+
+  const reload = useCallback(() => {
+    const loaded = loadChatData();
+    setConversations(loaded.conversations);
+    setActiveId(loaded.activeId);
   }, []);
 
   useEffect(() => {
@@ -75,15 +94,18 @@ export function useConversations() {
       const next = prev.filter((c) => c.id !== id);
       setActiveId((currentActive) => {
         if (currentActive !== id) return currentActive;
-        return next[0]?.id ?? null;
+        const newActiveId = next[0]?.id ?? null;
+        onConversationSwitch?.(newActiveId);
+        return newActiveId;
       });
       return next;
     });
-  }, []);
+  }, [onConversationSwitch]);
 
   const selectConversation = useCallback((id: string) => {
     setActiveId(id);
-  }, []);
+    onConversationSwitch?.(id);
+  }, [onConversationSwitch]);
 
   const getConversation = useCallback(
     (id: string) => conversations.find((c) => c.id === id),
@@ -103,5 +125,6 @@ export function useConversations() {
     selectConversation,
     getConversation,
     setActiveId,
+    reload,
   };
 }

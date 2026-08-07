@@ -31,7 +31,7 @@ export function resolveRequestAuth(request: Request): ResolvedRequestAuth {
   if (userKey) {
     return { apiKey: userKey, mode: "byok", isUserKey: true };
   }
-  console.log("ENV KEY:", process.env.OPENROUTER_API_KEY?.slice(0, 15));
+
   const serverKey = process.env.OPENROUTER_API_KEY?.trim();
   if (serverKey) {
     return { apiKey: serverKey, mode: "free", isUserKey: false };

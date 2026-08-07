@@ -3,6 +3,7 @@ import {
   type FreeModelId,
   isFreeModelId,
   isModelUnavailableError,
+  PAID_FALLBACK_MODEL,
 } from "@/lib/ai/free-models";
 import type { ApiKeyMode } from "@/lib/settings/api-key-storage";
 
@@ -23,7 +24,7 @@ export function resolveModelChain(
     }
   }
 
-  return chain;
+  return [...chain, PAID_FALLBACK_MODEL];
 }
 
 export { isModelUnavailableError };

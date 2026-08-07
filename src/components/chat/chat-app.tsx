@@ -4,20 +4,30 @@ import { Loader2 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { needsSummary } from "@/lib/ai/summarize";
 import { buildMessagesWithMemory } from "@/lib/memory/context";
-import { retrieveRelevantMemories } from "@/lib/memory/retrieve";
+import { isPreviousConversationQuery, previousConversationSearchQuery, retrieveRelevantMemories } from "@/lib/memory/retrieve";
 
 import { ChatMain } from "@/components/chat/chat-main";
 import { ChatSidebar } from "@/components/chat/chat-sidebar";
-import { OnboardingDialog } from "@/components/settings/onboarding-dialog";
+import { AppShell, type ProductArea } from "@/components/layout/app-shell";
+import { HelpSheet } from "@/components/help/how-permamind-works";
+import { FirstLaunchOnboarding } from "@/components/settings/first-launch-onboarding";
 import { useAnalytics } from "@/hooks/use-analytics";
 import { useApiSettings } from "@/hooks/use-api-settings";
 import { useChatCompletion } from "@/hooks/use-chat-completion";
 import { useConversationSummary } from "@/hooks/use-conversation-summary";
 import { useConversations } from "@/hooks/use-conversations";
+import { useSnapshot } from "@/hooks/use-snapshot";
 import { createId, truncateTitle } from "@/lib/chat/conversation";
+import { startProcessor, stopProcessor } from "@/lib/arweave/queue-processor";
 import type { ChatCompletionMessage } from "@/lib/ai/types";
 import type { Message } from "@/types/chat";
 import type { RetrievedMemory } from "@/types/memory";
+import { dismissPermanentMemoryWarning, isPermanentMemoryWarningDismissed } from "@/lib/arweave/storage-policy";
+import { hasCompletedFirstRun } from "@/lib/settings/first-run";
+import { MemoryExperience } from "@/components/memory/memory-experience";
+import { SettingsShell } from "@/components/settings/settings-shell";
+
+const SNAPSHOT_AFTER_RESPONSE_DELAY_MS = 350;
 
 function toApiMessages(messages: Message[]): ChatCompletionMessage[] {
   return messages
@@ -29,6 +39,8 @@ function toApiMessages(messages: Message[]): ChatCompletionMessage[] {
 }
 
 export function ChatApp() {
+  const snapshotPassphrase = "";
+  const snapshotsEnabled = false;
   const {
     conversations,
     activeConversation,
@@ -42,13 +54,56 @@ export function ChatApp() {
     getConversation,
   } = useConversations();
 
+  const togglePermanentMemory = useCallback((id: string, updater: (c: import("@/types/chat").Conversation) => import("@/types/chat").Conversation) => {
+    const current = getConversation(id);
+    if (current && !current.permanentMemory && !isPermanentMemoryWarningDismissed()) {
+      if (!window.confirm("This conversation will be encrypted locally and permanently stored on the Arweave network. Permanent storage cannot be deleted after upload.")) return;
+      if (window.confirm("Don't show this warning again?")) dismissPermanentMemoryWarning();
+    }
+    updateConversation(id, updater);
+  }, [getConversation, updateConversation]);
+
+  const snapshot = useSnapshot(
+    conversations,
+    activeId,
+    snapshotsEnabled ? snapshotPassphrase : null
+  );
+
+  useEffect(() => {
+    if (snapshotsEnabled && snapshotPassphrase) {
+      startProcessor(snapshotPassphrase);
+    } else {
+      stopProcessor();
+    }
+
+    return () => stopProcessor();
+  }, [snapshotsEnabled, snapshotPassphrase]);
+
   const [memoriesUsed, setMemoriesUsed] = useState<RetrievedMemory[]>([]);
-  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [area, setArea] = useState<ProductArea>("chat");
+  const [firstRunOpen, setFirstRunOpen] = useState(false);
+  useEffect(() => setFirstRunOpen(!hasCompletedFirstRun()), []);
+  useEffect(() => {
+    const fromPath = () => (window.location.pathname.split("/")[1] as ProductArea) || "chat";
+    const initial = fromPath();
+    if (["chat", "memory", "backup", "settings"].includes(initial)) setArea(initial);
+    const onPopState = () => setArea(fromPath());
+    window.addEventListener("popstate", onPopState);
+    return () => window.removeEventListener("popstate", onPopState);
+  }, []);
+  const navigate = useCallback((next: ProductArea) => {
+    if (next === "backup") {
+      window.location.href = "/backup";
+      return;
+    }
+    setArea(next);
+    const path = next === "chat" ? "/chat" : `/${next}`;
+    if (window.location.pathname !== path) window.history.pushState({}, "", path);
+  }, []);
 
   const apiSettings = useApiSettings();
   const {
     mode,
-    setMode,
     apiKey,
     setApiKey,
     connectionStatus,
@@ -57,8 +112,6 @@ export function ChatApp() {
     getRequestHeaders,
     canSendRequests,
     defaultModelId,
-    showOnboarding,
-    dismissOnboarding,
     hydrated: apiHydrated,
   } = apiSettings;
 
@@ -126,7 +179,6 @@ export function ChatApp() {
         clearError();
         return;
       }
-
       clearError();
 
       let conversationId = activeId;
@@ -162,10 +214,12 @@ export function ChatApp() {
           ? activeConversation.messages
           : []);
 
+      const previousConversationQuery = isPreviousConversationQuery(content);
       const memories = retrieveRelevantMemories(
-        content,
+        previousConversationQuery ? previousConversationSearchQuery(content) || content : content,
         conversations,
-        conversationId
+        conversationId,
+        previousConversationQuery
       );
       setMemoriesUsed(memories);
 
@@ -178,7 +232,8 @@ export function ChatApp() {
 
       const apiMessages = buildMessagesWithMemory(
         toApiMessages([...priorMessages, userMessage]),
-        memories
+        memories,
+        previousConversationQuery
       );
 
       updateConversation(conversationId, (c) => {
@@ -230,6 +285,16 @@ export function ChatApp() {
         });
         queueSummary(conversationId);
       }
+
+      // Wait for useConversations' localStorage debounce to persist the
+      // completed assistant response before taking the snapshot. The
+      // snapshot hook reads localStorage, so streaming state cannot leak into
+      // the snapshot and failed responses never trigger one.
+      if (result.success) {
+        window.setTimeout(() => {
+          void snapshot.triggerSnapshot();
+        }, SNAPSHOT_AFTER_RESPONSE_DELAY_MS);
+      }
     },
     [
       activeId,
@@ -244,16 +309,15 @@ export function ChatApp() {
       recordChat,
       recordMemoryRetrieval,
       sendMessage,
+      mode,
+      snapshot,
       updateConversation,
     ]
   );
 
-  const apiBlockedMessage =
-    mode === "byok" && connectionStatus !== "connected"
-      ? "Validate your OpenRouter API key in Settings to send messages."
-      : !canSendRequests
-        ? "Configure free mode (server key) or add your API key in Settings."
-        : null;
+  const apiBlockedMessage = !canSendRequests
+    ? "Connect an AI provider in Settings to send messages."
+    : null;
 
   if (!isHydrated || !apiHydrated) {
     return (
@@ -265,16 +329,9 @@ export function ChatApp() {
 
   return (
     <>
-      <OnboardingDialog
-        open={showOnboarding}
-        onGetStarted={dismissOnboarding}
-        onOpenSettings={() => {
-          dismissOnboarding();
-          setSettingsOpen(true);
-        }}
-      />
-
-      <div className="flex h-dvh overflow-hidden">
+      <FirstLaunchOnboarding open={firstRunOpen} onComplete={() => setFirstRunOpen(false)} />
+      <AppShell activeArea={area} onNavigate={navigate} utility={<HelpSheet triggerClassName="w-full justify-start gap-2" />}>
+        <div className={area === "chat" ? "flex min-h-0 min-w-0 flex-1 overflow-hidden" : "hidden"} aria-hidden={area !== "chat"}>
         <ChatSidebar
           className="hidden md:flex"
           conversations={conversations}
@@ -283,18 +340,15 @@ export function ChatApp() {
           onNewChat={handleNewChat}
           onRename={renameConversation}
           onDelete={deleteConversation}
+          onUpdateConversation={(id, updater) => {
+            const conversation = getConversation(id);
+            if (updater(conversation ?? { id, title: "", messages: [], createdAt: new Date(), updatedAt: new Date() }).permanentMemory !== conversation?.permanentMemory) {
+              togglePermanentMemory(id, updater);
+            } else {
+              updateConversation(id, updater);
+            }
+          }}
           isSummarizing={isSummarizing}
-          analyticsSummary={analyticsSummary}
-          onClearAnalytics={clearAnalytics}
-          mode={mode}
-          apiKey={apiKey}
-          connectionStatus={connectionStatus}
-          onModeChange={setMode}
-          onApiKeyChange={setApiKey}
-          onValidateKey={validateKey}
-          onClearKey={clearKey}
-          settingsOpen={settingsOpen}
-          onSettingsOpenChange={setSettingsOpen}
         />
         <ChatMain
           conversation={activeConversation}
@@ -317,16 +371,11 @@ export function ChatApp() {
           analyticsSummary={analyticsSummary}
           onClearAnalytics={clearAnalytics}
           canSend={canSendRequests}
-          apiKey={apiKey}
-          connectionStatus={connectionStatus}
-          onModeChange={setMode}
-          onApiKeyChange={setApiKey}
-          onValidateKey={validateKey}
-          onClearKey={clearKey}
-          settingsOpen={settingsOpen}
-          onSettingsOpenChange={setSettingsOpen}
         />
-      </div>
+        </div>
+        {area === "memory" && <MemoryExperience conversations={conversations} onOpenConversation={(id) => { selectConversation(id); navigate("chat"); }} />}
+        {area === "settings" && <SettingsShell apiKey={apiKey} connectionStatus={connectionStatus} onApiKeyChange={setApiKey} onValidate={validateKey} onClearKey={clearKey} onClearAnalytics={clearAnalytics} />}
+      </AppShell>
     </>
   );
 }
