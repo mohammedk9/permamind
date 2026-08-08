@@ -18,8 +18,10 @@ import { loadStoragePolicy, saveStoragePolicy, type StoragePolicy } from "@/lib/
 import { getQueueStatus } from "@/lib/arweave/upload-queue";
 import { restoreLatestSnapshot, type RestoreResult } from "@/lib/arweave/restore";
 import type { QueueStatusSummary } from "@/lib/arweave/snapshot-types";
+import { startProcessor, stopProcessor } from "@/lib/arweave/queue-processor";
 
 const emptyQueue: QueueStatusSummary = { total: 0, pending: 0, uploading: 0, done: 0, failed: 0, lastUploadedAt: null };
+const BACKUP_PASSPHRASE_STORAGE_KEY = "permamind.backup-passphrase";
 
 function formatDate(value: string | null) {
   return value ? new Date(value).toLocaleString() : "Never";
@@ -40,22 +42,63 @@ export default function BackupPage() {
   const [policy, setPolicy] = useState<StoragePolicy>("store_everything");
   const [usage, setUsage] = useState<StorageUsage | null>(null);
   const [queue, setQueue] = useState<QueueStatusSummary>(emptyQueue);
-  const [lastSnapshot, setLastSnapshot] = useState(getLastSnapshot());
+  // Browser-only registry data must not be read during the initial render.
+  // Reading it here makes the server render "Not created yet" while the
+  // browser can immediately render an existing version, causing hydration
+  // to fail.
+  const [lastSnapshot, setLastSnapshot] = useState<ReturnType<typeof getLastSnapshot>>(null);
   const [confirm, setConfirm] = useState<"backup" | "restore" | null>(null);
   const [restoreResult, setRestoreResult] = useState<RestoreResult | null>(null);
   const [restoreWorking, setRestoreWorking] = useState(false);
+  const [passphraseHydrated, setPassphraseHydrated] = useState(false);
+  const [browserReady, setBrowserReady] = useState(false);
   const snapshot = useSnapshot(conversations.conversations, conversations.activeId, passphrase || null);
+
+  // Keep the passphrase on this browser so leaving and reopening the page does
+  // not clear it. It is never read by the server or included in API requests.
+  useEffect(() => {
+    const savedPassphrase = window.localStorage.getItem(BACKUP_PASSPHRASE_STORAGE_KEY);
+    if (savedPassphrase) setPassphrase(savedPassphrase);
+    setPassphraseHydrated(true);
+  }, []);
+
+  useEffect(() => {
+    if (!passphraseHydrated) return;
+    if (passphrase) {
+      window.localStorage.setItem(BACKUP_PASSPHRASE_STORAGE_KEY, passphrase);
+    } else {
+      window.localStorage.removeItem(BACKUP_PASSPHRASE_STORAGE_KEY);
+    }
+  }, [passphrase, passphraseHydrated]);
+
+  // The backup page is also a queue-worker host. Without this processor,
+  // manual backups are encrypted and persisted locally but never uploaded.
+  useEffect(() => {
+    if (passphrase.length >= 8) {
+      startProcessor(passphrase);
+    } else {
+      stopProcessor();
+    }
+
+    return () => stopProcessor();
+  }, [passphrase]);
 
   const refresh = useCallback(() => {
     setUsage(getStorageUsage());
     setQueue(getQueueStatus());
     setLastSnapshot(getLastSnapshot());
   }, []);
-  useEffect(() => { setPolicy(loadStoragePolicy()); refresh(); const timer = setInterval(refresh, 2000); return () => clearInterval(timer); }, [refresh]);
+  useEffect(() => {
+    setPolicy(loadStoragePolicy());
+    refresh();
+    setBrowserReady(true);
+    const timer = setInterval(refresh, 2000);
+    return () => clearInterval(timer);
+  }, [refresh]);
   useEffect(() => { refresh(); }, [snapshot.isProcessing, snapshot.lastSnapshotVersion, refresh]);
 
   const state = queueState(queue, snapshot.isProcessing);
-  const latestAvailable = getAllSnapshots().filter((item) => item.txId).at(-1) ?? null;
+  const latestAvailable = browserReady ? getAllSnapshots().filter((item) => item.txId).at(-1) ?? null : null;
   const savePolicy = (value: StoragePolicy) => { setPolicy(value); saveStoragePolicy(value); };
   const manualBackup = async () => { setConfirm(null); await snapshot.triggerSnapshot(true); refresh(); };
   const restore = async () => {

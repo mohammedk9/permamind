@@ -103,7 +103,7 @@ export function ChatMain({
   return (
     <div className="flex h-full min-h-0 min-w-0 flex-1 flex-col bg-background">
       <PageHeader
-        className="min-h-16 shrink-0 gap-2 border-b px-12 py-3 sm:flex-row sm:items-center sm:px-4 sm:pb-3"
+        className="min-h-16 shrink-0 gap-2 border-b bg-card/70 px-12 py-3 backdrop-blur sm:flex-row sm:items-center sm:px-4 sm:pb-3"
         title={title}
         eyebrow="Chat"
         actions={<div className="flex min-w-0 flex-wrap items-center justify-end gap-1.5 sm:gap-2">

@@ -38,7 +38,12 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Snapshot storage is not configured" }, { status: 503 });
     }
 
-    const wallet = JSON.parse(walletJson);
+    let wallet: Parameters<typeof createTransaction>[2];
+    try {
+      wallet = JSON.parse(walletJson) as Parameters<typeof createTransaction>[2];
+    } catch {
+      return NextResponse.json({ error: "ARWEAVE_APP_WALLET_JWK is not valid JSON" }, { status: 503 });
+    }
     const transaction = await createTransaction(payload, buildTags(body.metadata), wallet);
     const txId = await uploadTransaction(transaction.transaction);
     recordUpload(userId, payload.byteLength);

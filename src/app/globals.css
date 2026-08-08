@@ -142,12 +142,10 @@
   }
   body {
     @apply bg-background text-foreground;
+    overflow-x: hidden;
   }
   html {
     @apply font-sans;
-  }
-  body {
-    overflow-x: hidden;
   }
   :focus-visible {
     @apply outline-2 outline-offset-2 outline-ring;

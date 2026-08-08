@@ -47,11 +47,11 @@ export function ChatSidebar({
   return (
     <aside
       className={cn(
-        "flex h-full w-72 shrink-0 flex-col border-r border-sidebar-border bg-sidebar text-sidebar-foreground",
+        "flex h-full min-h-0 w-full shrink-0 flex-col bg-sidebar text-sidebar-foreground",
         className
       )}
     >
-      <div className="space-y-3 px-3">
+      <div className="space-y-3 px-0">
         <Button
           className="w-full justify-start gap-2"
           variant="default"

@@ -330,26 +330,22 @@ export function ChatApp() {
   return (
     <>
       <FirstLaunchOnboarding open={firstRunOpen} onComplete={() => setFirstRunOpen(false)} />
-      <AppShell activeArea={area} onNavigate={navigate} utility={<HelpSheet triggerClassName="w-full justify-start gap-2" />}>
+      <AppShell activeArea={area} onNavigate={navigate} utility={<HelpSheet triggerClassName="w-full justify-start gap-2" />} sidebar={<ChatSidebar
+        className="mt-5 min-h-0 flex-1 border-0 border-t border-sidebar-border pt-4"
+        conversations={conversations}
+        activeId={activeId}
+        onSelect={handleSelect}
+        onNewChat={handleNewChat}
+        onRename={renameConversation}
+        onDelete={deleteConversation}
+        onUpdateConversation={(id, updater) => {
+          const conversation = getConversation(id);
+          if (updater(conversation ?? { id, title: "", messages: [], createdAt: new Date(), updatedAt: new Date() }).permanentMemory !== conversation?.permanentMemory) togglePermanentMemory(id, updater);
+          else updateConversation(id, updater);
+        }}
+        isSummarizing={isSummarizing}
+      />}>
         <div className={area === "chat" ? "flex min-h-0 min-w-0 flex-1 overflow-hidden" : "hidden"} aria-hidden={area !== "chat"}>
-        <ChatSidebar
-          className="hidden md:flex"
-          conversations={conversations}
-          activeId={activeId}
-          onSelect={handleSelect}
-          onNewChat={handleNewChat}
-          onRename={renameConversation}
-          onDelete={deleteConversation}
-          onUpdateConversation={(id, updater) => {
-            const conversation = getConversation(id);
-            if (updater(conversation ?? { id, title: "", messages: [], createdAt: new Date(), updatedAt: new Date() }).permanentMemory !== conversation?.permanentMemory) {
-              togglePermanentMemory(id, updater);
-            } else {
-              updateConversation(id, updater);
-            }
-          }}
-          isSummarizing={isSummarizing}
-        />
         <ChatMain
           conversation={activeConversation}
           conversations={conversations}

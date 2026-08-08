@@ -23,11 +23,12 @@ function Navigation({ activeArea, onNavigate, compact = false }: { activeArea: P
   </nav>;
 }
 
-export function AppShell({ activeArea, onNavigate, children, utility }: { activeArea: ProductArea; onNavigate: (area: ProductArea) => void; children: ReactNode; utility?: ReactNode }) {
+export function AppShell({ activeArea, onNavigate, children, utility, sidebar }: { activeArea: ProductArea; onNavigate: (area: ProductArea) => void; children: ReactNode; utility?: ReactNode; sidebar?: ReactNode }) {
   return <div className="flex h-dvh overflow-hidden bg-background">
     <aside className="hidden w-52 shrink-0 flex-col border-r bg-sidebar p-3 md:flex lg:w-56">
       <div className="mb-6 flex items-center gap-2 px-2 font-semibold"><span className="flex size-7 items-center justify-center rounded-md bg-primary text-primary-foreground">P</span>PermaMind</div>
       <Navigation activeArea={activeArea} onNavigate={onNavigate} />
+      {sidebar}
       <div className="mt-auto">{utility}</div>
     </aside>
     <Sheet>

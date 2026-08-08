@@ -1,7 +1,7 @@
 "use client";
 
-import { ArrowUp, Loader2 } from "lucide-react";
-import { useCallback, useRef } from "react";
+import { ArrowUp, FileText, ImagePlus, Loader2, Paperclip, X } from "lucide-react";
+import { useCallback, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -14,16 +14,25 @@ interface ChatInputProps {
 
 export function ChatInput({ onSend, disabled, isLoading }: ChatInputProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [files, setFiles] = useState<File[]>([]);
+
+  const addFiles = (selected: FileList | null) => {
+    if (!selected) return;
+    setFiles((current) => [...current, ...Array.from(selected)].slice(0, 5));
+  };
 
   const handleSubmit = useCallback(() => {
     const value = textareaRef.current?.value.trim();
-    if (!value || disabled || isLoading) return;
-    onSend(value);
+    if ((!value && files.length === 0) || disabled || isLoading) return;
+    const attachmentText = files.length ? `\n\n[Attachments: ${files.map((file) => file.name).join(", ")}]` : "";
+    onSend(`${value}${attachmentText}`.trim());
+    setFiles([]);
     if (textareaRef.current) {
       textareaRef.current.value = "";
       textareaRef.current.style.height = "auto";
     }
-  }, [onSend, disabled, isLoading]);
+  }, [files, onSend, disabled, isLoading]);
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === "Enter" && !e.shiftKey) {
@@ -34,7 +43,11 @@ export function ChatInput({ onSend, disabled, isLoading }: ChatInputProps) {
 
   return (
     <div className="sticky bottom-0 z-10 border-t border-border bg-background/95 p-2 pb-[max(0.75rem,env(safe-area-inset-bottom))] backdrop-blur sm:p-4">
-      <div className="surface-elevated mx-auto flex max-w-3xl items-end gap-2 rounded-2xl border border-input bg-card p-1.5 sm:p-2">
+      <div className="surface-elevated mx-auto max-w-3xl rounded-2xl border border-input bg-card p-2 sm:p-3">
+        {files.length > 0 && <div className="mb-2 flex flex-wrap gap-2 px-1">{files.map((file, index) => <div key={`${file.name}-${index}`} className="flex items-center gap-2 rounded-lg border bg-muted/60 px-2 py-1.5 text-xs"><span className="flex size-6 items-center justify-center rounded bg-background">{file.type.startsWith("image/") ? <ImagePlus className="size-3.5" /> : <FileText className="size-3.5" />}</span><span className="max-w-40 truncate">{file.name}</span><button type="button" onClick={() => setFiles((current) => current.filter((_, itemIndex) => itemIndex !== index))} aria-label={`Remove ${file.name}`}><X className="size-3.5 text-muted-foreground" /></button></div>)}</div>}
+        <div className="flex items-end gap-2">
+        <input ref={fileRef} type="file" multiple accept="image/*,.pdf,.txt,.md,.doc,.docx,.csv" className="sr-only" onChange={(event) => { addFiles(event.target.files); event.currentTarget.value = ""; }} />
+        <Button type="button" variant="ghost" size="icon" className="mb-0.5 rounded-xl" onClick={() => fileRef.current?.click()} disabled={disabled || isLoading} aria-label="Attach images or files"><Paperclip className="size-4" /></Button>
         <Textarea
           ref={textareaRef}
           placeholder={
@@ -66,6 +79,7 @@ export function ChatInput({ onSend, disabled, isLoading }: ChatInputProps) {
             <ArrowUp aria-hidden="true" className="size-4" />
           )}
         </Button>
+        </div>
       </div>
     </div>
   );
