@@ -16,7 +16,7 @@ import { getStorageUsage, type StorageUsage } from "@/lib/arweave/storage-quota"
 import { getAllSnapshots, getLastSnapshot } from "@/lib/arweave/snapshot-registry";
 import { loadStoragePolicy, saveStoragePolicy, type StoragePolicy } from "@/lib/arweave/storage-policy";
 import { getQueueStatus } from "@/lib/arweave/upload-queue";
-import { restoreLatestSnapshot, type RestoreResult } from "@/lib/arweave/restore";
+import { restoreLatestSnapshot, restoreSnapshotByTxId, type RestoreResult } from "@/lib/arweave/restore";
 import type { QueueStatusSummary } from "@/lib/arweave/snapshot-types";
 import { startProcessor, stopProcessor } from "@/lib/arweave/queue-processor";
 import Arweave from "arweave";
@@ -63,6 +63,7 @@ export default function BackupPage() {
   const [confirm, setConfirm] = useState<"backup" | "restore" | null>(null);
   const [restoreResult, setRestoreResult] = useState<RestoreResult | null>(null);
   const [restoreWorking, setRestoreWorking] = useState(false);
+  const [manualTxId, setManualTxId] = useState("");
   const [browserReady, setBrowserReady] = useState(false);
   const [copiedTxId, setCopiedTxId] = useState(false);
   const [walletAddress, setWalletAddress] = useState<string | null>(null);
@@ -157,6 +158,12 @@ export default function BackupPage() {
   const restore = async () => {
     setConfirm(null); setRestoreWorking(true); setRestoreResult(null);
     const result = await restoreLatestSnapshot({ passphrase, confirm: true });
+    setRestoreResult(result); setRestoreWorking(false);
+    if (result.status === "restored") conversations.reload();
+  };
+  const restoreManual = async () => {
+    setRestoreWorking(true); setRestoreResult(null);
+    const result = await restoreSnapshotByTxId({ txId: manualTxId.trim(), passphrase, confirm: true });
     setRestoreResult(result); setRestoreWorking(false);
     if (result.status === "restored") conversations.reload();
   };
@@ -348,10 +355,11 @@ export default function BackupPage() {
             <div className="relative mt-2"><Input id="backup-passphrase" type={showPassphrase ? "text" : "password"} value={passphrase} onChange={(event) => setPassphrase(event.target.value)} aria-describedby="passphrase-help" aria-invalid={passphrase.length > 0 && passphrase.length < 8} autoComplete="off" placeholder="Enter your recovery passphrase" className="pr-11" /><button type="button" className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-1" onClick={() => setShowPassphrase((visible) => !visible)} aria-label={showPassphrase ? "Hide passphrase" : "Show passphrase"}>{showPassphrase ? <EyeOff className="size-4" /> : <Eye className="size-4" />}</button></div>
             <p id="passphrase-help" className="mt-2 text-caption">Use the same passphrase for restore. It is never displayed after you hide it.</p>{passphrase.length > 0 && passphrase.length < 8 && <p className="mt-1 text-sm text-status-error" role="alert">Use at least 8 characters for a stronger recovery passphrase.</p>}
           </SurfaceCard>
-          <SurfaceCard title="Latest restore" description="Restoring replaces the current local conversation data with the latest available encrypted snapshot.">
+           <SurfaceCard title="Latest restore" description="Restoring replaces the current local conversation data with the latest available encrypted snapshot.">
             {latestAvailable ? <div className="space-y-3 text-sm"><div className="flex items-center gap-2"><CheckCircle2 className="size-4 text-status-success" /><span>Version {latestAvailable.version} is available and stored on Arweave</span></div><p className="text-muted-foreground">Created {formatDate(latestAvailable.createdAt)} · Uploaded {formatDate(latestAvailable.uploadedAt ?? latestAvailable.createdAt)} · {latestAvailable.conversationIds.length} conversations · {latestAvailable.messageCount} messages</p><div className="rounded-md border border-border bg-muted/30 p-3"><p className="text-caption">Arweave transaction</p><p className="mt-1 break-all font-mono text-xs">{latestAvailable.txId}</p><div className="mt-2 flex flex-wrap gap-2"><Button type="button" variant="outline" size="sm" onClick={copyTxId}>{copiedTxId ? "Copied" : "Copy transaction ID"}</Button><Button type="button" variant="outline" size="sm" onClick={downloadRecoveryCard}>Download recovery card</Button><a className="inline-flex items-center rounded-md border px-3 py-2 text-xs hover:bg-muted" href={`https://viewblock.io/arweave/tx/${latestAvailable.txId}`} target="_blank" rel="noreferrer">Open in ViewBlock</a><a className="inline-flex items-center rounded-md border px-3 py-2 text-xs hover:bg-muted" href={`https://arweave.net/${latestAvailable.txId}`} target="_blank" rel="noreferrer">Open gateway</a></div></div><p className="text-status-attention">Restore is destructive to current local data and cannot be undone by this UI.</p></div> : <div className="flex items-center gap-3 text-sm text-muted-foreground"><Archive className="size-5" />Create and upload a backup before restoring.</div>}
             {restoreResult && <p className={restoreResult.status === "restored" ? "mt-4 text-sm text-status-success" : "mt-4 text-sm text-status-error"} role="status">{restoreResult.message}{restoreResult.error ? `: ${restoreResult.error}` : ""}</p>}
-          </SurfaceCard>
+             <div className="mt-5 border-t pt-4"><p className="text-label">Recover from another browser</p><p className="mt-1 text-caption">Paste the 43-character transaction ID from your recovery card. This requires the same passphrase.</p><div className="mt-2 flex gap-2"><Input value={manualTxId} onChange={(e) => setManualTxId(e.target.value)} placeholder="Arweave transaction ID" aria-label="Arweave transaction ID" /><Button variant="outline" disabled={restoreWorking || !passphrase || !/^[A-Za-z0-9_-]{43}$/.test(manualTxId.trim())} onClick={() => void restoreManual()}>Restore by ID</Button></div></div>
+           </SurfaceCard>
         </div>
       </div>
     </main>

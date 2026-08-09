@@ -28,6 +28,10 @@ export interface RestoreOptions {
   fetcher?: typeof fetch;
 }
 
+export interface ManualRestoreOptions extends RestoreOptions {
+  txId: string;
+}
+
 export interface RestoreResult {
   status: "restored" | "cancelled" | "failed";
   conversationCount: number;
@@ -118,6 +122,45 @@ async function download(meta: SnapshotMeta, options: RestoreOptions): Promise<Sn
   } catch (error) {
     if (error instanceof CorruptSnapshotError) throw error;
     throw new CorruptSnapshotError(`unable to decrypt or decode v${meta.version}`);
+  }
+}
+
+function manualMeta(txId: string, tags: Record<string, string>): SnapshotMeta {
+  const version = Number(tags["Snapshot-Version"]);
+  const epoch = Number(tags["Snapshot-Epoch"]);
+  if (!/^[A-Za-z0-9_-]{43}$/.test(txId) || !Number.isInteger(version) || !Number.isInteger(epoch) ||
+      (tags["Snapshot-Type"] !== "full" && tags["Snapshot-Type"] !== "delta") ||
+      !/^[a-f0-9]{64}$/.test(tags["Content-Hash"] ?? "")) {
+    throw new CorruptSnapshotError("transaction is not a valid PermaMind snapshot");
+  }
+  return { version, epoch, type: tags["Snapshot-Type"] as "full" | "delta", parentVersion: null,
+    parentTxId: null, createdAt: tags["Created-At"] ?? new Date(0).toISOString(), contentHash: tags["Content-Hash"],
+    conversationIds: [], messageCount: 0, compressedSize: 0, encryptedSize: 0, txId };
+}
+
+export async function restoreSnapshotByTxId(options: ManualRestoreOptions): Promise<RestoreResult> {
+  try {
+    if (!options.passphrase) throw new Error("A passphrase is required");
+    const fetcher = options.fetcher ?? fetch;
+    const response = await fetcher(`${options.gateway ?? GATEWAY}/tx/${options.txId}`);
+    if (!response.ok) throw new Error(`Unable to find snapshot (HTTP ${response.status})`);
+    const transaction = await response.json() as { tags?: Array<{ name?: string; value?: string }> };
+    const tags = Object.fromEntries((transaction.tags ?? []).filter((tag) => tag.name && tag.value).map((tag) => [tag.name!, tag.value!]));
+    if (tags["App-Name"] !== "PermaMind") throw new CorruptSnapshotError("transaction does not belong to PermaMind");
+    const meta = manualMeta(options.txId, tags);
+    if (meta.type !== "full") throw new CorruptSnapshotError("manual recovery requires a full snapshot");
+    const payload = await download(meta, options);
+    const messageCount = payload.conversations.reduce((total, conversation) => total + conversation.messages.length, 0);
+    if (payload.conversations.length > MAX_RESTORE_CONVERSATIONS || messageCount > MAX_RESTORE_MESSAGES) {
+      throw new CorruptSnapshotError("restored snapshot exceeds conversation or message limits");
+    }
+    const confirmed = typeof options.confirm === "function" ? await options.confirm() : options.confirm;
+    if (!confirmed) return { status: "cancelled", conversationCount: 0, snapshotVersion: meta.version, message: "Restore cancelled; local data was not changed", error: null };
+    const conversations = payload.conversations.map(toConversation);
+    saveChatData(conversations, conversations[0]?.id ?? null);
+    return { status: "restored", conversationCount: conversations.length, snapshotVersion: meta.version, message: `Restored ${conversations.length} conversations`, error: null };
+  } catch (error) {
+    return { status: "failed", conversationCount: 0, snapshotVersion: null, message: "Restore failed", error: error instanceof Error ? error.message : String(error) };
   }
 }
 
