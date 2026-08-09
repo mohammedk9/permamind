@@ -10,8 +10,8 @@ import { FREE_STORAGE_QUOTA_BYTES, MAX_UPLOAD_SIZE_BYTES } from "../constants";
 describe("managed upload protection", () => {
   beforeEach(() => resetUploadProtection());
 
-  it("defines and recognizes uploads larger than 25 MB", () => {
-    expect(MAX_UPLOAD_SIZE_BYTES).toBe(25 * 1024 * 1024);
+  it("defines and recognizes uploads larger than 50 MB", () => {
+    expect(MAX_UPLOAD_SIZE_BYTES).toBe(50 * 1024 * 1024);
     expect(MAX_UPLOAD_SIZE_BYTES + 1 > MAX_UPLOAD_SIZE_BYTES).toBe(true);
   });
 

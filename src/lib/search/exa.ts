@@ -16,8 +16,8 @@ export interface InternetSearchResult {
 const EXA_SEARCH_URL = "https://api.exa.ai/search";
 const DEFAULT_TIMEOUT_MS = 15_000;
 const RETRY_DELAY_MS = 1_500;
-const DEFAULT_NUM_RESULTS = 8;
-const MAX_TEXT_CHARACTERS = 4_000;
+const DEFAULT_NUM_RESULTS = 3;
+const MAX_TEXT_CHARACTERS = 2_500;
 
 /** Exa `/search` response shape (only fields we read). */
 interface ExaSearchResponse {
@@ -53,7 +53,7 @@ function buildExaSearchBody(query: string): string {
   return JSON.stringify({
     query,
     type: "auto",
-    numResults: DEFAULT_NUM_RESULTS,
+    numResults: Math.max(1, Math.min(10, Number(process.env.SEARCH_MAX_RESULTS) || DEFAULT_NUM_RESULTS)),
     contents: {
       text: { maxCharacters: MAX_TEXT_CHARACTERS },
     },

@@ -178,14 +178,15 @@ async function processItem(item: QueueItem): Promise<boolean> {
     */
 
     // Step 4: Update the queue and registry
-    updateTxId(item.snapshotVersion, txId);
+    const uploadedAt = new Date().toISOString();
+    updateTxId(item.snapshotVersion, txId, uploadedAt);
     updateDedupTxId(item.snapshotHash, txId);
     updateStatus(item.queueId, "done", txId);
-    recordSuccessfulUpload({ uploadedBytes: result.uploadedBytes ?? new TextEncoder().encode(item.encryptedPayload).byteLength, uploadedAt: new Date().toISOString(), arweavePrice: result.arweavePrice ?? null, txId });
+    recordSuccessfulUpload({ uploadedBytes: result.uploadedBytes ?? new TextEncoder().encode(item.encryptedPayload).byteLength, uploadedAt, arweavePrice: result.arweavePrice ?? null, txId });
 
     // Update counters
     state.uploadedCount++;
-    state.lastUploadedAt = new Date().toISOString();
+    state.lastUploadedAt = uploadedAt;
 
     return true;
   } catch {

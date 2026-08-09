@@ -1,5 +1,6 @@
 import {
-  createOpenRouterStream,
+  createProviderStream,
+  createCustomStream,
   parseOpenRouterError,
 } from "@/lib/ai/openrouter";
 import { isValidModelId } from "@/lib/ai/models";
@@ -11,6 +12,8 @@ import {
 import type { ChatCompletionMessage, ChatRequestBody } from "@/lib/ai/types";
 
 export const runtime = "nodejs";
+const MAX_MESSAGES = 100;
+const MAX_CONTENT_LENGTH = 20_000;
 
 function isValidMessage(
   msg: unknown
@@ -20,7 +23,7 @@ function isValidMessage(
   return (
     (m.role === "user" || m.role === "assistant" || m.role === "system") &&
     typeof m.content === "string" &&
-    m.content.length > 0
+    m.content.length > 0 && m.content.length <= MAX_CONTENT_LENGTH
   );
 }
 
@@ -55,7 +58,7 @@ export async function POST(request: Request) {
     );
   }
 
-  if (!Array.isArray(messages) || messages.length === 0) {
+  if (!Array.isArray(messages) || messages.length === 0 || messages.length > MAX_MESSAGES) {
     return Response.json({ error: "Messages are required" }, { status: 400 });
   }
 
@@ -68,11 +71,14 @@ export async function POST(request: Request) {
 
   try {
     for (const tryModel of modelChain) {
-      const upstream = await createOpenRouterStream(
-        tryModel,
-        messages,
-        auth.apiKey
-      );
+      const upstream = auth.provider === "custom"
+        ? await createCustomStream(auth.baseUrl ?? "", auth.modelName ?? tryModel, messages, auth.apiKey)
+        : await createProviderStream(
+          auth.provider,
+          tryModel,
+          messages,
+          auth.apiKey
+          );
 
       if (upstream.ok && upstream.body) {
         const headers: Record<string, string> = {
@@ -88,9 +94,6 @@ export async function POST(request: Request) {
 
       lastError = await parseOpenRouterError(upstream);
 
-console.log("MODEL:", tryModel);
-console.log("STATUS:", upstream.status);
-console.log("ERROR:", lastError);
       if (auth.mode === "byok" || (!isModelUnavailableError(upstream.status, lastError) && tryModel === modelChain.at(-1))) {
         return Response.json({ error: lastError }, { status: upstream.status });
       }

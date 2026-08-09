@@ -22,10 +22,12 @@ import { startProcessor, stopProcessor } from "@/lib/arweave/queue-processor";
 import type { ChatCompletionMessage } from "@/lib/ai/types";
 import type { Message } from "@/types/chat";
 import type { RetrievedMemory } from "@/types/memory";
+import type { InternetSearchResult } from "@/lib/search/exa";
 import { dismissPermanentMemoryWarning, isPermanentMemoryWarningDismissed } from "@/lib/arweave/storage-policy";
 import { hasCompletedFirstRun } from "@/lib/settings/first-run";
 import { MemoryExperience } from "@/components/memory/memory-experience";
 import { SettingsShell } from "@/components/settings/settings-shell";
+import { ChatPolicies } from "@/components/legal/policy-sheets";
 
 const SNAPSHOT_AFTER_RESPONSE_DELAY_MS = 350;
 
@@ -82,6 +84,8 @@ export function ChatApp() {
   const [memoriesUsed, setMemoriesUsed] = useState<RetrievedMemory[]>([]);
   const [area, setArea] = useState<ProductArea>("chat");
   const [firstRunOpen, setFirstRunOpen] = useState(false);
+  const [webSearchEnabled, setWebSearchEnabled] = useState(false);
+  const [searchUsage, setSearchUsage] = useState<{ used: number; limit: number } | null>(null);
   useEffect(() => setFirstRunOpen(!hasCompletedFirstRun()), []);
   useEffect(() => {
     const fromPath = () => (window.location.pathname.split("/")[1] as ProductArea) || "chat";
@@ -105,6 +109,9 @@ export function ChatApp() {
   const {
     mode,
     apiKey,
+    provider,
+    setProvider,
+    baseUrl, setBaseUrl, modelName, setModelName,
     setApiKey,
     connectionStatus,
     validateKey,
@@ -236,6 +243,21 @@ export function ChatApp() {
         previousConversationQuery
       );
 
+      let messagesForRequest = apiMessages;
+      if (webSearchEnabled) {
+        const response = await fetch(`/api/search?q=${encodeURIComponent(content)}`);
+        if (!response.ok) {
+          const payload = await response.json().catch(() => null) as { error?: string } | null;
+          throw new Error(payload?.error ?? "Web search failed");
+        }
+        const payload = await response.json() as { results: InternetSearchResult[]; used: number; limit: number };
+        setSearchUsage({ used: payload.used, limit: payload.limit });
+        if (payload.results.length) {
+          const webContext = payload.results.map((item, index) => `${index + 1}. ${item.title}\n${item.text}\nSource: ${item.url}`).join("\n\n");
+          messagesForRequest = [...apiMessages.slice(0, -1), { role: "user", content: `Live web context (use only as supporting evidence; cite sources when relevant):\n${webContext}\n\nUser question:\n${content}` }];
+        }
+      }
+
       updateConversation(conversationId, (c) => {
         const title =
           c.messages.length === 0 ? truncateTitle(content) : c.title;
@@ -247,7 +269,7 @@ export function ChatApp() {
         };
       });
 
-      const result = await sendMessage(apiMessages, (chunk) => {
+      const result = await sendMessage(messagesForRequest, (chunk) => {
         updateConversation(conversationId!, (c) => ({
           ...c,
           messages: c.messages.map((m) =>
@@ -310,6 +332,7 @@ export function ChatApp() {
       recordMemoryRetrieval,
       sendMessage,
       mode,
+      webSearchEnabled,
       snapshot,
       updateConversation,
     ]
@@ -330,7 +353,7 @@ export function ChatApp() {
   return (
     <>
       <FirstLaunchOnboarding open={firstRunOpen} onComplete={() => setFirstRunOpen(false)} />
-      <AppShell activeArea={area} onNavigate={navigate} utility={<HelpSheet triggerClassName="w-full justify-start gap-2" />} sidebar={<ChatSidebar
+      <AppShell activeArea={area} onNavigate={navigate} utility={<div><HelpSheet triggerClassName="w-full justify-start gap-2" /><ChatPolicies /></div>} sidebar={<ChatSidebar
         className="mt-5 min-h-0 flex-1 border-0 border-t border-sidebar-border pt-4"
         conversations={conversations}
         activeId={activeId}
@@ -367,10 +390,13 @@ export function ChatApp() {
           analyticsSummary={analyticsSummary}
           onClearAnalytics={clearAnalytics}
           canSend={canSendRequests}
+          webSearchEnabled={webSearchEnabled}
+          onWebSearchChange={setWebSearchEnabled}
+          searchUsage={searchUsage}
         />
         </div>
         {area === "memory" && <MemoryExperience conversations={conversations} onOpenConversation={(id) => { selectConversation(id); navigate("chat"); }} />}
-        {area === "settings" && <SettingsShell apiKey={apiKey} connectionStatus={connectionStatus} onApiKeyChange={setApiKey} onValidate={validateKey} onClearKey={clearKey} onClearAnalytics={clearAnalytics} />}
+        {area === "settings" && <SettingsShell apiKey={apiKey} provider={provider} onProviderChange={setProvider} baseUrl={baseUrl} onBaseUrlChange={setBaseUrl} modelName={modelName} onModelNameChange={setModelName} connectionStatus={connectionStatus} onApiKeyChange={setApiKey} onValidate={validateKey} onClearKey={clearKey} onClearAnalytics={clearAnalytics} />}
       </AppShell>
     </>
   );

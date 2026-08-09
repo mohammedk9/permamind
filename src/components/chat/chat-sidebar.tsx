@@ -12,6 +12,7 @@ import { Separator } from "@/components/ui/separator";
 import { useMemorySearch } from "@/hooks/use-memory-search";
 import { cn } from "@/lib/utils";
 import type { Conversation } from "@/types/chat";
+import { useLocale } from "@/hooks/use-locale";
 
 interface ChatSidebarProps {
   conversations: Conversation[];
@@ -36,6 +37,8 @@ export function ChatSidebar({
   isSummarizing,
   className,
 }: ChatSidebarProps) {
+  const { locale } = useLocale();
+  const ar = locale === "ar";
   const { query, setQuery, results, isActive, clearSearch, resultCount } =
     useMemorySearch(conversations);
 
@@ -58,14 +61,14 @@ export function ChatSidebar({
           onClick={onNewChat}
         >
           <MessageSquarePlus className="size-4" />
-          New chat
+          {ar ? "محادثة جديدة" : "New chat"}
         </Button>
         <SearchField
             className="[&_input]:bg-sidebar-accent/50 [&_input]:border-sidebar-border"
-            placeholder="Search conversations..."
+            placeholder={ar ? "ابحث في المحادثات..." : "Search conversations..."}
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            aria-label="Search conversations and messages"
+            aria-label={ar ? "البحث في المحادثات والرسائل" : "Search conversations and messages"}
             onClear={clearSearch}
             resultCount={isActive ? resultCount : undefined}
         />
@@ -77,7 +80,7 @@ export function ChatSidebar({
         {isActive ? (
           <nav className="space-y-0.5 pb-4">
             {results.length === 0 ? (
-              <EmptyState className="min-h-32 border-0 bg-transparent p-4" title="No matches" description={`Nothing in your conversations matches “${query}”.`} />
+              <EmptyState className="min-h-32 border-0 bg-transparent p-4" title={ar ? "لا توجد نتائج" : "No matches"} description={ar ? `لا يوجد شيء يطابق “${query}”.` : `Nothing in your conversations matches “${query}”.`} />
             ) : (
               results.map((result) => (
                 <SearchResultItem
@@ -91,7 +94,7 @@ export function ChatSidebar({
         ) : (
           <nav className="space-y-0.5 pb-4">
             {conversations.length === 0 ? (
-              <EmptyState className="min-h-40 border-0 bg-transparent p-4" title="No conversations yet" description="Start a new chat and your local history will appear here." action={<Button size="sm" variant="outline" onClick={onNewChat}>Start chatting</Button>} />
+              <EmptyState className="min-h-40 border-0 bg-transparent p-4" title={ar ? "لا توجد محادثات بعد" : "No conversations yet"} description={ar ? "ابدأ محادثة جديدة وستظهر سجلاتك هنا." : "Start a new chat and your local history will appear here."} action={<Button size="sm" variant="outline" onClick={onNewChat}>{ar ? "ابدأ المحادثة" : "Start chatting"}</Button>} />
             ) : (
               conversations.map((conversation) => (
                 <ConversationItem

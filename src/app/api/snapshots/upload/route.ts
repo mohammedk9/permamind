@@ -3,17 +3,20 @@ import type { SnapshotMeta } from "@/lib/arweave/snapshot-types";
 import { buildTags, createTransaction, uploadTransaction } from "@/lib/arweave/arweave-client";
 import { MAX_UPLOAD_SIZE_BYTES } from "@/lib/arweave/upload-protection";
 import { checkStorage, checkUploadRate, recordUpload } from "@/lib/arweave/upload-protection";
+import { requireUser } from "@/lib/supabase/server";
 
 /** Uploads an encrypted snapshot using the application-owned Arweave wallet. */
 export async function POST(request: Request) {
   try {
+    const { user } = await requireUser();
+    if (!user) return NextResponse.json({ error: "Sign in required" }, { status: 401 });
     const contentLength = Number(request.headers.get("content-length"));
     if (Number.isFinite(contentLength) && contentLength > MAX_UPLOAD_SIZE_BYTES) {
       return NextResponse.json({ error: "Upload exceeds the maximum size" }, { status: 413 });
     }
 
-    const userId = request.headers.get("x-user-id") ?? "anonymous";
-    const isPro = request.headers.get("x-plan") === "pro";
+    const userId = user.id;
+    const isPro = false;
     const rate = checkUploadRate(userId, isPro);
     if (!rate.ok) return NextResponse.json({ code: "RATE_LIMITED", retryAfter: rate.retryAfter }, { status: 429 });
 

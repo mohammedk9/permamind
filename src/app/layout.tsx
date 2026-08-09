@@ -4,6 +4,7 @@ import { Geist, Geist_Mono } from "next/font/google";
 import { QueueStatus } from "@/components/arweave/queue-status";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { APP_DESCRIPTION, APP_NAME } from "@/lib/constants";
+import { LocaleProvider } from "@/components/i18n/locale-provider";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -29,10 +30,10 @@ export default function RootLayout({
   return (
     <html lang="en" className="dark">
       <body
-        className={`${geistSans.variable} ${geistMono.variable} h-dvh overflow-hidden antialiased`}
+        className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
         <TooltipProvider>
-          {children}
+          <LocaleProvider>{children}</LocaleProvider>
           <QueueStatus className="fixed bottom-4 right-4 z-50" />
         </TooltipProvider>
       </body>

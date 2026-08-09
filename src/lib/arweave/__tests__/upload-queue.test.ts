@@ -5,6 +5,7 @@ import {
   peek,
   updateStatus,
   recordFailedAttempt,
+  retryFailedUploads,
   resetStaleUploading,
   coalesceSuperseded,
   clearCompleted,
@@ -236,6 +237,18 @@ describe("upload-queue", () => {
       const status = getQueueStatus();
       expect(status.uploading).toBe(1);
       expect(status.pending).toBe(0);
+    });
+  });
+
+  describe("retryFailedUploads", () => {
+    it("resets exhausted failed uploads and makes them immediately eligible", () => {
+      enqueue(createQueueItem({ queueId: "failed-item", status: "failed", attempts: 5, nextRetryAt: null }));
+
+      expect(retryFailedUploads()).toBe(1);
+      expect(getQueueStatus().pending).toBe(1);
+      expect(getQueueStatus().failed).toBe(0);
+      expect(peek()?.queueId).toBe("failed-item");
+      expect(peek()?.attempts).toBe(0);
     });
   });
 

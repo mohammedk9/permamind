@@ -32,7 +32,10 @@ export function loadStorageAccount(): StorageAccount {
   try {
     const parsed = JSON.parse(localStorage.getItem(STORAGE_ACCOUNT_KEY) ?? "null") as Partial<StorageAccount> | null;
     if (!parsed) return defaultStorageAccount();
-    return { ...defaultStorageAccount(), ...parsed };
+    // The free allowance is a product limit, not user-editable state. Always
+    // use the current default so accounts created with the old 25 MB limit are
+    // migrated to 15 MB instead of keeping the stale localStorage value.
+    return { ...defaultStorageAccount(), ...parsed, freeQuotaBytes: DEFAULT_FREE_STORAGE_QUOTA_BYTES };
   } catch { return defaultStorageAccount(); }
 }
 
@@ -63,4 +66,11 @@ export function recordSuccessfulUpload(record: UploadCostRecord): StorageUsage {
 
 export function addPurchasedQuota(bytes: number): StorageUsage {
   const account = loadStorageAccount(); account.purchasedQuotaBytes += bytes; save(account); return getStorageUsage(account);
+}
+
+export function setPurchasedQuota(bytes: number): StorageUsage {
+  const account = loadStorageAccount();
+  account.purchasedQuotaBytes = Math.max(0, Math.floor(bytes));
+  save(account);
+  return getStorageUsage(account);
 }

@@ -200,7 +200,7 @@ export function removeSnapshot(version: number): void {
  * @param version - The snapshot version number to update.
  * @param txId - The Arweave transaction ID to record.
  */
-export function updateTxId(version: number, txId: string): void {
+export function updateTxId(version: number, txId: string, uploadedAt = new Date().toISOString()): void {
   withLease("snapshot-registry", () => {
   const registry = loadRegistry();
 
@@ -208,6 +208,7 @@ export function updateTxId(version: number, txId: string): void {
   if (!snapshot) throw new Error(`Snapshot metadata not found: v${version}`);
 
   snapshot.txId = txId;
+  snapshot.uploadedAt = uploadedAt;
   saveRegistry(registry);
   });
 }

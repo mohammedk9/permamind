@@ -17,8 +17,9 @@ export const UPLOAD_QUEUE_KEY = "permamind:upload:queue:v1";
 export const STORAGE_ACCOUNT_KEY = "permamind:storage:account:v1";
 
 /** Managed upload-service limits. Sizes are measured in binary megabytes. */
-export const MAX_UPLOAD_SIZE_MB = 25;
-export const FREE_STORAGE_QUOTA_MB = 25;
+/** Maximum size of one uploaded file/snapshot. This is separate from the free quota. */
+export const MAX_UPLOAD_SIZE_MB = 50;
+export const FREE_STORAGE_QUOTA_MB = 15;
 export const FREE_UPLOADS_PER_HOUR = 10;
 export const PRO_UPLOADS_PER_HOUR = 100;
 export const UPLOAD_RATE_WINDOW_MS = 60 * 60 * 1000;

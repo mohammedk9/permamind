@@ -1,6 +1,6 @@
 "use client";
 
-import { KeyRound, Sparkles } from "lucide-react";
+import { KeyRound, LockKeyhole, Sparkles, UploadCloud } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -43,6 +43,24 @@ export function OnboardingDialog({
                 <p className="text-xs text-muted-foreground">
                   Use free OpenRouter models instantly — no signup required in
                   the app.
+                </p>
+              </div>
+            </div>
+            <div className="flex gap-3 rounded-lg border border-border p-3">
+              <LockKeyhole className="mt-0.5 size-5 shrink-0 text-primary" />
+              <div>
+                <p className="text-sm font-medium">Privacy first</p>
+                <p className="text-xs text-muted-foreground">
+                  Your conversations stay on your device by default. Data is encrypted locally before any permanent backup.
+                </p>
+              </div>
+            </div>
+            <div className="flex gap-3 rounded-lg border border-border p-3">
+              <UploadCloud className="mt-0.5 size-5 shrink-0 text-primary" />
+              <div>
+                <p className="text-sm font-medium">Permanent Arweave storage</p>
+                <p className="text-xs text-muted-foreground">
+                  Permanent storage is optional. Once uploaded to Arweave, it cannot be deleted or undone, so review before confirming.
                 </p>
               </div>
             </div>

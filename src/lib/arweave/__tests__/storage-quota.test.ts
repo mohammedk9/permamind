@@ -13,8 +13,8 @@ describe("storage quota", () => {
 
   it("calculates remaining storage and percentage", () => {
     const usage = getStorageUsage({ ...defaultStorageAccount(), usedBytes: 5 * 1024 * 1024 });
-    expect(usage.remainingBytes).toBe(20 * 1024 * 1024);
-    expect(usage.percentageUsed).toBe(20);
+    expect(usage.remainingBytes).toBe(10 * 1024 * 1024);
+    expect(usage.percentageUsed).toBeCloseTo(33.333333, 5);
   });
 
   it("blocks at quota and allows uploads below it", () => {
@@ -25,8 +25,21 @@ describe("storage quota", () => {
 
   it("includes purchased quota in the effective limit", () => {
     const usage = addPurchasedQuota(10 * 1024 * 1024);
-    expect(usage.effectiveQuotaBytes).toBe(35 * 1024 * 1024);
-    expect(canUpload(30 * 1024 * 1024)).toBe(true);
+    expect(usage.effectiveQuotaBytes).toBe(25 * 1024 * 1024);
+    expect(canUpload(20 * 1024 * 1024)).toBe(true);
+    expect(canUpload(25 * 1024 * 1024 + 1)).toBe(false);
+  });
+
+  it("migrates stale accounts to the current 15 MB free quota", () => {
+    localStorage.setItem("permamind:storage:account:v1", JSON.stringify({
+      freeQuotaBytes: 25 * 1024 * 1024,
+      purchasedQuotaBytes: 10 * 1024 * 1024,
+      usedBytes: 0,
+    }));
+
+    const usage = getStorageUsage();
+    expect(usage.freeQuotaBytes).toBe(15 * 1024 * 1024);
+    expect(usage.effectiveQuotaBytes).toBe(25 * 1024 * 1024);
   });
 
   it("persists and accounts only successful uploads", () => {

@@ -24,6 +24,7 @@ import { PageHeader } from "@/components/ui/page-header";
 import type { AnalyticsSummary } from "@/types/analytics";
 import type { Conversation } from "@/types/chat";
 import type { RetrievedMemory } from "@/types/memory";
+import { useLocale } from "@/hooks/use-locale";
 
 interface ChatMainProps {
   conversation: Conversation | null;
@@ -55,6 +56,9 @@ interface ChatMainProps {
   analyticsSummary: AnalyticsSummary;
   onClearAnalytics: () => void;
   freeMessagesRemaining?: number | null;
+  webSearchEnabled?: boolean;
+  onWebSearchChange?: (enabled: boolean) => void;
+  searchUsage?: { used: number; limit: number } | null;
 }
 
 export function ChatMain({
@@ -87,8 +91,13 @@ export function ChatMain({
   analyticsSummary,
   onClearAnalytics,
   freeMessagesRemaining = null,
+  webSearchEnabled = false,
+  onWebSearchChange,
+  searchUsage,
 }: ChatMainProps) {
-  const title = conversation?.title ?? "New conversation";
+  const { locale } = useLocale();
+  const ar = locale === "ar";
+  const title = conversation?.title ?? (ar ? "محادثة جديدة" : "New conversation");
   const messages = conversation?.messages ?? [];
   const bottomRef = useRef<HTMLDivElement>(null);
   const scrollKey =
@@ -105,7 +114,7 @@ export function ChatMain({
       <PageHeader
         className="min-h-16 shrink-0 gap-2 border-b bg-card/70 px-12 py-3 backdrop-blur sm:flex-row sm:items-center sm:px-4 sm:pb-3"
         title={title}
-        eyebrow="Chat"
+        eyebrow={ar ? "المحادثة" : "Chat"}
         actions={<div className="flex min-w-0 flex-wrap items-center justify-end gap-1.5 sm:gap-2">
         <Sheet>
           <SheetTrigger
@@ -114,14 +123,14 @@ export function ChatMain({
                 variant="ghost"
                 size="icon"
                 className="md:hidden"
-                aria-label="Open menu"
+                aria-label={ar ? "فتح القائمة" : "Open menu"}
               />
             }
           >
             <Menu className="size-5" />
           </SheetTrigger>
           <SheetContent side="left" className="w-64 p-0">
-            <SheetTitle className="sr-only">Navigation</SheetTitle>
+            <SheetTitle className="sr-only">{ar ? "التنقل" : "Navigation"}</SheetTitle>
             <ChatSidebar
               conversations={conversations}
               activeId={activeId}
@@ -150,9 +159,9 @@ export function ChatMain({
         <ChatErrorBanner message={error} onDismiss={onDismissError} />
       )}
 
-      <ScrollArea aria-label="Conversation messages" className="min-h-0 flex-1 overflow-hidden [scrollbar-gutter:stable]">
+      <ScrollArea aria-label={ar ? "رسائل المحادثة" : "Conversation messages"} className="min-h-0 flex-1 overflow-hidden [scrollbar-gutter:stable]">
         {messages.length === 0 ? (
-          <EmptyState className="mx-auto mt-10 min-h-[38vh] max-w-xl border-0 bg-transparent" icon={Sparkles} title="What would you like to remember?" description="Start a conversation. Your chats are saved locally and persist across page refreshes." />
+          <EmptyState className="mx-auto mt-10 min-h-[38vh] max-w-xl border-0 bg-transparent" icon={Sparkles} title={ar ? "ماذا تريد أن تتذكر؟" : "What would you like to remember?"} description={ar ? "ابدأ محادثة. يتم حفظ محادثاتك محليًا وتبقى بعد تحديث الصفحة." : "Start a conversation. Your chats are saved locally and persist across page refreshes."} />
         ) : (
             <div className="mx-auto max-w-3xl divide-y divide-border/60 px-2 sm:px-4" aria-live={isLoading ? "polite" : undefined} aria-busy={isLoading}>
             {messages.map((message) => (
@@ -163,7 +172,10 @@ export function ChatMain({
         )}
       </ScrollArea>
 
-      <ChatInput onSend={onSend} isLoading={isLoading} disabled={!canSend} />
+      <div className="relative">
+        {webSearchEnabled && searchUsage && <p className="absolute bottom-1 right-5 z-20 text-[10px] text-muted-foreground">{ar ? `بحث الويب: ${searchUsage.used}/${searchUsage.limit}` : `Web search: ${searchUsage.used}/${searchUsage.limit}`}</p>}
+        <ChatInput onSend={onSend} isLoading={isLoading} disabled={!canSend} webSearchEnabled={webSearchEnabled} onWebSearchChange={onWebSearchChange} />
+      </div>
     </div>
   );
 }

@@ -9,7 +9,8 @@ import {
   PERIODIC_TRIGGER_MS,
 } from "@/lib/arweave/constants";
 import { runSnapshotPipeline } from "@/lib/arweave/pipeline";
-import { getQueueStatus } from "@/lib/arweave/upload-queue";
+import { getQueueStatus, retryFailedUploads } from "@/lib/arweave/upload-queue";
+import { startProcessor } from "@/lib/arweave/queue-processor";
 import { getLastSnapshot, loadRegistry } from "@/lib/arweave/snapshot-registry";
 import { loadChatData } from "@/lib/storage/chat-storage";
 import type { PipelineResult } from "@/lib/arweave/snapshot-types";
@@ -175,14 +176,11 @@ export function useSnapshot(
    * Resets their status to "pending" so the queue processor can pick them up.
    */
   const retryFailed = useCallback(() => {
-    // Import dynamically to avoid circular dependency issues
-    const registry = loadRegistry();
-
-    // Find failed items and reset their status
-    // This is a simplified implementation; the full queue processor (Phase 11)
-    // will handle the actual retry logic
+    const retried = retryFailedUploads();
+    if (retried > 0 && passphraseRef.current) {
+      startProcessor(passphraseRef.current);
+    }
     refreshQueueStatus();
-    void registry; // Suppress unused warning
   }, [refreshQueueStatus]);
 
   // -------------------------------------------------------------------------

@@ -85,6 +85,9 @@ export interface SnapshotMeta {
    * `null` until the snapshot has been successfully uploaded and confirmed.
    */
   txId: string | null;
+
+  /** ISO 8601 timestamp of the successful Arweave upload, if uploaded. */
+  uploadedAt?: string;
 }
 
 // ---------------------------------------------------------------------------

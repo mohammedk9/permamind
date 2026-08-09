@@ -1,4 +1,5 @@
 export type ApiKeyMode = "free" | "byok";
+export type AiProvider = "openrouter" | "openai" | "anthropic" | "google" | "deepseek" | "qwen" | "kimi" | "meta" | "grok" | "custom";
 
 const STORAGE_KEY = "permamind:api-settings:v1";
 const ONBOARDING_KEY = "permamind:onboarding:v1";
@@ -6,6 +7,9 @@ const ONBOARDING_KEY = "permamind:onboarding:v1";
 export interface StoredApiSettings {
   mode: ApiKeyMode;
   apiKey?: string;
+  provider?: AiProvider;
+  baseUrl?: string;
+  modelName?: string;
   validatedAt?: string;
 }
 
@@ -24,6 +28,9 @@ export function loadApiSettings(): StoredApiSettings {
     return {
       mode: data.mode,
       apiKey: data.apiKey?.trim() || undefined,
+      provider: data.provider ?? "openrouter",
+      baseUrl: data.baseUrl?.trim(),
+      modelName: data.modelName?.trim(),
       validatedAt: data.validatedAt,
     };
   } catch {
@@ -37,6 +44,9 @@ export function saveApiSettings(settings: StoredApiSettings): void {
   const payload: StoredApiSettings = {
     mode: settings.mode,
     validatedAt: settings.validatedAt,
+    provider: settings.provider ?? "openrouter",
+    baseUrl: settings.baseUrl?.trim(),
+    modelName: settings.modelName?.trim(),
   };
 
   if (settings.mode === "byok" && settings.apiKey?.trim()) {

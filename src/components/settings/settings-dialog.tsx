@@ -158,6 +158,14 @@ export function SettingsDialog({
           <section className="space-y-3">
             <h3 className="text-sm font-medium">Getting started</h3>
             <HelpSheet triggerClassName="w-full justify-start gap-2" />
+            <section className="rounded-lg border border-border bg-muted/30 p-3 text-xs text-muted-foreground">
+              <h4 className="mb-1 font-semibold text-foreground">Privacy</h4>
+              <p>Your conversations stay in your browser/device by default. Only the context needed for an AI request is sent, and your API key is stored locally rather than on our servers.</p>
+            </section>
+            <section className="rounded-lg border border-amber-500/40 bg-amber-500/5 p-3 text-xs text-muted-foreground">
+              <h4 className="mb-1 font-semibold text-foreground">Permanent storage</h4>
+              <p>Permanent backups are optional and encrypted locally. After a backup is uploaded to Arweave, it cannot be deleted or undone. You can stop future uploads, but this does not remove previous Arweave data.</p>
+            </section>
             <Button size="sm" variant="outline" onClick={() => { resetFirstRun(); setOpen(false); window.location.reload(); }}>
               Reset onboarding
             </Button>

@@ -323,6 +323,29 @@ export function recordFailedAttempt(queueId: string): void {
   });
 }
 
+/**
+ * Re-queues uploads that exhausted their automatic retry attempts.
+ * Manual retry starts a fresh retry budget and makes the items immediately
+ * eligible for the running queue processor.
+ */
+export function retryFailedUploads(): number {
+  return withLease("upload-queue", () => {
+    const items = loadQueue();
+    let retried = 0;
+
+    for (const item of items) {
+      if (item.status !== "failed") continue;
+      item.status = "pending";
+      item.attempts = 0;
+      item.nextRetryAt = null;
+      retried++;
+    }
+
+    if (retried > 0) saveQueue(items);
+    return retried;
+  }) ?? 0;
+}
+
 // ---------------------------------------------------------------------------
 // Public API — Queue Maintenance
 // ---------------------------------------------------------------------------

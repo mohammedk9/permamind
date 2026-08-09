@@ -17,6 +17,8 @@ import type { ChatCompletionMessage } from "@/lib/ai/types";
 import type { Message } from "@/types/chat";
 
 export const runtime = "nodejs";
+const MAX_MESSAGES = 100;
+const MAX_CONTENT_LENGTH = 20_000;
 
 function isValidMessage(
   msg: unknown
@@ -26,7 +28,7 @@ function isValidMessage(
   return (
     (m.role === "user" || m.role === "assistant") &&
     typeof m.content === "string" &&
-    m.content.trim().length > 0
+    m.content.trim().length > 0 && m.content.length <= MAX_CONTENT_LENGTH
   );
 }
 
@@ -49,7 +51,7 @@ export async function POST(request: Request) {
 
   const { messages } = body;
 
-  if (!Array.isArray(messages) || messages.length < 2) {
+  if (!Array.isArray(messages) || messages.length < 2 || messages.length > MAX_MESSAGES) {
     return Response.json(
       { error: "At least 2 messages required" },
       { status: 400 }
@@ -88,9 +90,6 @@ export async function POST(request: Request) {
       if (!upstream.ok) {
         lastError = await parseOpenRouterError(upstream);
 
-console.log("MODEL:", tryModel);
-console.log("STATUS:", upstream.status);
-console.log("ERROR:", lastError);
         if (isModelUnavailableError(upstream.status, lastError)) {
           continue;
         }
