@@ -8,9 +8,10 @@ import { isPreviousConversationQuery, previousConversationSearchQuery, retrieveR
 
 import { ChatMain } from "@/components/chat/chat-main";
 import { ChatSidebar } from "@/components/chat/chat-sidebar";
+import { ProjectWorkspace } from "@/components/chat/project-workspace";
+import { WorkspaceStartDialog } from "@/components/chat/workspace-start-dialog";
 import { AppShell, type ProductArea } from "@/components/layout/app-shell";
 import { HelpSheet } from "@/components/help/how-permamind-works";
-import { FirstLaunchOnboarding } from "@/components/settings/first-launch-onboarding";
 import { useAnalytics } from "@/hooks/use-analytics";
 import { useApiSettings } from "@/hooks/use-api-settings";
 import { useChatCompletion } from "@/hooks/use-chat-completion";
@@ -20,14 +21,15 @@ import { useSnapshot } from "@/hooks/use-snapshot";
 import { createId, truncateTitle } from "@/lib/chat/conversation";
 import { startProcessor, stopProcessor } from "@/lib/arweave/queue-processor";
 import type { ChatCompletionMessage } from "@/lib/ai/types";
-import type { Message } from "@/types/chat";
+import type { Message, Project } from "@/types/chat";
 import type { RetrievedMemory } from "@/types/memory";
 import type { InternetSearchResult } from "@/lib/search/exa";
 import { dismissPermanentMemoryWarning, isPermanentMemoryWarningDismissed } from "@/lib/arweave/storage-policy";
-import { hasCompletedFirstRun } from "@/lib/settings/first-run";
 import { MemoryExperience } from "@/components/memory/memory-experience";
 import { SettingsShell } from "@/components/settings/settings-shell";
 import { ChatPolicies } from "@/components/legal/policy-sheets";
+import { SnapshotSettings } from "@/components/arweave/snapshot-settings";
+import { loadStoragePolicy, saveStoragePolicy, type StoragePolicy } from "@/lib/arweave/storage-policy";
 
 const SNAPSHOT_AFTER_RESPONSE_DELAY_MS = 350;
 
@@ -41,8 +43,11 @@ function toApiMessages(messages: Message[]): ChatCompletionMessage[] {
 }
 
 export function ChatApp() {
-  const snapshotPassphrase = "";
-  const snapshotsEnabled = false;
+  // The passphrase intentionally lives only in React memory. It is never
+  // persisted to localStorage, sent to the server, or included in a snapshot.
+  const [snapshotPassphrase, setSnapshotPassphrase] = useState("");
+  const [snapshotsEnabled, setSnapshotsEnabled] = useState(false);
+  const [storagePolicy, setStoragePolicy] = useState<StoragePolicy>("manual_backups_only");
   const {
     conversations,
     activeConversation,
@@ -54,7 +59,18 @@ export function ChatApp() {
     deleteConversation,
     selectConversation,
     getConversation,
+    projects,
+    createProject,
   } = useConversations();
+
+  useEffect(() => {
+    setStoragePolicy(loadStoragePolicy());
+  }, []);
+
+  const handleStoragePolicyChange = useCallback((policy: StoragePolicy) => {
+    setStoragePolicy(policy);
+    saveStoragePolicy(policy);
+  }, []);
 
   const togglePermanentMemory = useCallback((id: string, updater: (c: import("@/types/chat").Conversation) => import("@/types/chat").Conversation) => {
     const current = getConversation(id);
@@ -68,11 +84,11 @@ export function ChatApp() {
   const snapshot = useSnapshot(
     conversations,
     activeId,
-    snapshotsEnabled ? snapshotPassphrase : null
+    snapshotsEnabled && snapshotPassphrase.length >= 8 ? snapshotPassphrase : null
   );
 
   useEffect(() => {
-    if (snapshotsEnabled && snapshotPassphrase) {
+    if (snapshotsEnabled && snapshotPassphrase.length >= 8) {
       startProcessor(snapshotPassphrase);
     } else {
       stopProcessor();
@@ -83,10 +99,9 @@ export function ChatApp() {
 
   const [memoriesUsed, setMemoriesUsed] = useState<RetrievedMemory[]>([]);
   const [area, setArea] = useState<ProductArea>("chat");
-  const [firstRunOpen, setFirstRunOpen] = useState(false);
   const [webSearchEnabled, setWebSearchEnabled] = useState(false);
   const [searchUsage, setSearchUsage] = useState<{ used: number; limit: number } | null>(null);
-  useEffect(() => setFirstRunOpen(!hasCompletedFirstRun()), []);
+  const [activeProjectId, setActiveProjectId] = useState<string | null>(null);
   useEffect(() => {
     const fromPath = () => (window.location.pathname.split("/")[1] as ProductArea) || "chat";
     const initial = fromPath();
@@ -166,10 +181,23 @@ export function ChatApp() {
   }, [isHydrated, apiHydrated, conversations, queueSummary]);
 
   const handleNewChat = useCallback(() => {
-    createAndSelect();
+    const conversation = createAndSelect();
+    if (activeProjectId) updateConversation(conversation.id, (current) => ({ ...current, projectId: activeProjectId }));
+    setActiveProjectId(null);
+    setArea("chat");
     clearError();
     setMemoriesUsed([]);
-  }, [createAndSelect, clearError]);
+  }, [activeProjectId, createAndSelect, clearError, updateConversation]);
+
+  const handleNewProject = useCallback(() => {
+    const name = window.prompt("Project name", "New project")?.trim();
+    if (!name) return;
+    const project: Project = { id: createId(), name, summary: "", goals: [], tasks: [], decisions: [], openQuestions: [], createdAt: new Date(), updatedAt: new Date() };
+    createProject(project);
+    setActiveProjectId(project.id);
+    setArea("project");
+    window.history.pushState({}, "", `/project/${project.id}`);
+  }, [createProject]);
 
   const handleSelect = useCallback(
     (id: string) => {
@@ -193,6 +221,7 @@ export function ChatApp() {
       if (!conversationId) {
         const conversation = createAndSelect(truncateTitle(content));
         conversationId = conversation.id;
+        if (activeProjectId) updateConversation(conversation.id, (current) => ({ ...current, projectId: activeProjectId }));
       }
 
       const conv =
@@ -240,7 +269,8 @@ export function ChatApp() {
       const apiMessages = buildMessagesWithMemory(
         toApiMessages([...priorMessages, userMessage]),
         memories,
-        previousConversationQuery
+        previousConversationQuery,
+        activeProjectId ? (() => { const project = projects.find((item) => item.id === activeProjectId); return project ? `You are working inside the project "${project.name}". Use this project context when answering.\nSummary: ${project.summary || "Not yet available"}\nGoals: ${project.goals.join(", ") || "None recorded"}\nTasks: ${project.tasks.join(", ") || "None recorded"}\nDecisions: ${project.decisions.join(", ") || "None recorded"}\nOpen questions: ${project.openQuestions.join(", ") || "None recorded"}` : ""; })() : ""
       );
 
       let messagesForRequest = apiMessages;
@@ -352,13 +382,17 @@ export function ChatApp() {
 
   return (
     <>
-      <FirstLaunchOnboarding open={firstRunOpen} onComplete={() => setFirstRunOpen(false)} />
-      <AppShell activeArea={area} onNavigate={navigate} utility={<div><HelpSheet triggerClassName="w-full justify-start gap-2" /><ChatPolicies /></div>} sidebar={<ChatSidebar
+      <WorkspaceStartDialog open={isHydrated && conversations.length === 0 && projects.length === 0 && !activeConversation} onChat={handleNewChat} onProject={handleNewProject} />
+      <AppShell activeArea={area} onNavigate={navigate} utility={<div><SnapshotSettings passphrase={snapshotPassphrase} onPassphraseChange={setSnapshotPassphrase} enabled={snapshotsEnabled} onEnabledChange={(enabled) => { if (enabled && snapshotPassphrase.length < 8) { window.alert("Set an encryption passphrase of at least 8 characters before enabling backups."); return; } setSnapshotsEnabled(enabled); }} onSnapshotNow={() => { if (window.confirm("Create an encrypted permanent Arweave backup now? Uploaded backups cannot be deleted.")) void snapshot.triggerSnapshot(true); }} isProcessing={snapshot.isProcessing} storagePolicy={storagePolicy} onStoragePolicyChange={handleStoragePolicyChange} triggerClassName="w-full justify-start gap-2" /><HelpSheet triggerClassName="w-full justify-start gap-2" /><ChatPolicies /></div>} sidebar={<ChatSidebar
         className="mt-5 min-h-0 flex-1 border-0 border-t border-sidebar-border pt-4"
         conversations={conversations}
         activeId={activeId}
         onSelect={handleSelect}
         onNewChat={handleNewChat}
+        onNewProject={handleNewProject}
+        projects={projects}
+        activeProjectId={activeProjectId}
+        onSelectProject={(id) => { setActiveProjectId(id); setArea("project"); window.history.pushState({}, "", `/project/${id}`); }}
         onRename={renameConversation}
         onDelete={deleteConversation}
         onUpdateConversation={(id, updater) => {
@@ -396,6 +430,7 @@ export function ChatApp() {
         />
         </div>
         {area === "memory" && <MemoryExperience conversations={conversations} onOpenConversation={(id) => { selectConversation(id); navigate("chat"); }} />}
+        {area === "project" && activeProjectId && (() => { const project = projects.find((item) => item.id === activeProjectId); return project ? <ProjectWorkspace project={project} conversations={conversations.filter((conversation) => conversation.projectId === project.id)} onOpenConversation={(id) => { selectConversation(id); navigate("chat"); }} /> : null; })()}
         {area === "settings" && <SettingsShell apiKey={apiKey} provider={provider} onProviderChange={setProvider} baseUrl={baseUrl} onBaseUrlChange={setBaseUrl} modelName={modelName} onModelNameChange={setModelName} connectionStatus={connectionStatus} onApiKeyChange={setApiKey} onValidate={validateKey} onClearKey={clearKey} onClearAnalytics={clearAnalytics} />}
       </AppShell>
     </>

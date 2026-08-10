@@ -9,7 +9,8 @@ export type StoragePolicy =
 export const STORAGE_POLICY_KEY = "permamind:storage-policy:v1";
 export const WARNING_PREFERENCE_KEY = "permamind:permanent-memory-warning-dismissed:v1";
 
-export const DEFAULT_STORAGE_POLICY: StoragePolicy = "store_everything";
+/** Permanent storage is opt-in. Local conversations are never uploaded by default. */
+export const DEFAULT_STORAGE_POLICY: StoragePolicy = "manual_backups_only";
 
 export function conversationIncludedByPolicy(
   conversation: Conversation,

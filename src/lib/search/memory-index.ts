@@ -126,7 +126,7 @@ export function searchMemoryIndex(
       if (candidate.matchType === "tag") acc.tags = candidate.original.split(" · ");
       return acc;
     }, {});
-    const memory = { conversationId: entry.conversationId, conversationTitle: entry.conversationTitle, source: entry.matchType === "message" ? "message" : "summary", excerpt: entry.original, score: 0, updatedAt: new Date() } as const;
+    const memory = { conversationId: entry.conversationId, conversationTitle: entry.conversationTitle, source: entry.matchType === "message" ? "message" : "summary", excerpt: entry.original, score: 0, confidence: "low", reason: "keyword match", updatedAt: new Date() } as const;
     const relevance = scoreMemory(query, memory, metadata).total + (entry.matchType === "title" ? 1 : 0);
     results.push({
       conversationId: entry.conversationId,

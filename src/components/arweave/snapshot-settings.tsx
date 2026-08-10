@@ -41,7 +41,7 @@ export function SnapshotSettings({
   onSnapshotNow,
   isProcessing,
   triggerClassName,
-  storagePolicy = "store_everything",
+  storagePolicy = "manual_backups_only",
   onStoragePolicyChange,
 }: SnapshotSettingsProps) {
   const [internalOpen, setInternalOpen] = useState(false);
@@ -87,7 +87,7 @@ export function SnapshotSettings({
               </button>
             </div>
             <p className="text-xs text-muted-foreground">
-              Automatically save conversations to Arweave when idle or switching chats.
+              Automatic uploads are disabled by default. Choose a policy explicitly before enabling them.
             </p>
           </section>
 

@@ -7,7 +7,7 @@ import {
   sortConversations,
 } from "@/lib/chat/conversation";
 import { loadChatData, saveChatData } from "@/lib/storage/chat-storage";
-import type { Conversation } from "@/types/chat";
+import type { Conversation, Project } from "@/types/chat";
 
 const SAVE_DEBOUNCE_MS = 300;
 
@@ -28,11 +28,13 @@ export function useConversations(options: UseConversationsOptions = {}) {
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [isHydrated, setIsHydrated] = useState(false);
+  const [projects, setProjects] = useState<Project[]>([]);
 
   useEffect(() => {
-    const { conversations: loaded, activeId: loadedActiveId } = loadChatData();
+    const { conversations: loaded, activeId: loadedActiveId, projects: loadedProjects } = loadChatData();
     setConversations(loaded);
     setActiveId(loadedActiveId);
+    setProjects(loadedProjects);
     setIsHydrated(true);
   }, []);
 
@@ -40,17 +42,18 @@ export function useConversations(options: UseConversationsOptions = {}) {
     const loaded = loadChatData();
     setConversations(loaded.conversations);
     setActiveId(loaded.activeId);
+    setProjects(loaded.projects);
   }, []);
 
   useEffect(() => {
     if (!isHydrated) return;
 
     const timeout = setTimeout(() => {
-      saveChatData(conversations, activeId);
+      saveChatData(conversations, activeId, projects);
     }, SAVE_DEBOUNCE_MS);
 
     return () => clearTimeout(timeout);
-  }, [conversations, activeId, isHydrated]);
+  }, [conversations, activeId, projects, isHydrated]);
 
   const sortedConversations = sortConversations(conversations);
 
@@ -77,6 +80,11 @@ export function useConversations(options: UseConversationsOptions = {}) {
     addConversation(conversation);
     return conversation;
   }, [addConversation]);
+
+  const createProject = useCallback((project: Project) => {
+    setProjects((prev) => [project, ...prev]);
+    return project;
+  }, []);
 
   const renameConversation = useCallback((id: string, title: string) => {
     const trimmed = title.trim();
@@ -126,5 +134,7 @@ export function useConversations(options: UseConversationsOptions = {}) {
     getConversation,
     setActiveId,
     reload,
+    projects,
+    createProject,
   };
 }

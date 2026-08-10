@@ -129,6 +129,44 @@ export default function LandingPage() {
         </div>
       </section>
 
+      {/* Product proof section */}
+      <section className="border-t border-border/50 py-20">
+        <div className="mx-auto grid max-w-6xl gap-8 px-4 sm:px-6 lg:grid-cols-[1fr_1.15fr] lg:items-center">
+          <div>
+            <p className="text-sm font-semibold uppercase tracking-[0.18em] text-primary">
+              {t.proofLabel}
+            </p>
+            <h2 className="mt-4 text-3xl font-bold tracking-tight sm:text-4xl">
+              {t.trustTitle}
+            </h2>
+            <p className="mt-4 text-lg leading-relaxed text-muted-foreground">
+              {t.trustDescription}
+            </p>
+            <ul className="mt-6 grid gap-3 sm:grid-cols-2">
+              {t.trustItems.map((item) => (
+                <li key={item} className="flex items-center gap-2 text-sm font-medium">
+                  <span className="flex size-5 items-center justify-center rounded-full bg-primary/15 text-primary">
+                    ✓
+                  </span>
+                  {item}
+                </li>
+              ))}
+            </ul>
+          </div>
+          <div className="rounded-3xl border border-primary/20 bg-card p-5 shadow-2xl shadow-primary/5 sm:p-7">
+            <div className="mb-5 flex items-center gap-2 text-xs font-medium text-muted-foreground">
+              <span className="size-2 rounded-full bg-emerald-500" />
+              PermaMind memory recall
+            </div>
+            <p className="text-sm font-medium text-muted-foreground">{t.proofQuestion}</p>
+            <div className="mt-5 rounded-2xl bg-primary/10 p-4 text-sm leading-7">
+              {t.proofAnswer}
+            </div>
+            <p className="mt-4 text-xs text-muted-foreground">{t.proofSource}</p>
+          </div>
+        </div>
+      </section>
+
       {/* Features Section */}
       <section id="features" className="border-t border-border/50 py-24">
         <div className="mx-auto max-w-6xl px-4 sm:px-6">

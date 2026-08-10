@@ -1,4 +1,4 @@
-import type { Conversation, ConversationMetadata, Message } from "@/types/chat";
+import type { Conversation, ConversationMetadata, Message, Project } from "@/types/chat";
 
 const STORAGE_KEY = "permamind:chat:v1";
 
@@ -16,6 +16,9 @@ interface StoredMetadata {
   entities: string[];
   messageFingerprint: string;
   generatedAt: string;
+  facts?: ConversationMetadata["facts"];
+  decisions?: ConversationMetadata["decisions"];
+  project?: ConversationMetadata["project"];
 }
 
 interface StoredConversation {
@@ -27,17 +30,22 @@ interface StoredConversation {
   metadata?: StoredMetadata;
   permanentMemory?: boolean;
   starred?: boolean;
+  projectId?: string;
 }
+
+interface StoredProject extends Omit<Project, "createdAt" | "updatedAt"> { createdAt: string; updatedAt: string; }
 
 interface StoredChatData {
   version: 1;
   conversations: StoredConversation[];
   activeId: string | null;
+  projects?: StoredProject[];
 }
 
 export interface LoadedChatData {
   conversations: Conversation[];
   activeId: string | null;
+  projects: Project[];
 }
 
 function serializeMetadata(
@@ -50,6 +58,9 @@ function serializeMetadata(
     entities: metadata.entities,
     messageFingerprint: metadata.messageFingerprint,
     generatedAt: metadata.generatedAt.toISOString(),
+    facts: metadata.facts,
+    decisions: metadata.decisions,
+    project: metadata.project,
   };
 }
 
@@ -61,6 +72,9 @@ function deserializeMetadata(stored: StoredMetadata): ConversationMetadata {
     entities: stored.entities ?? [],
     messageFingerprint: stored.messageFingerprint,
     generatedAt: new Date(stored.generatedAt),
+    facts: stored.facts ?? [],
+    decisions: stored.decisions ?? [],
+    project: stored.project,
   };
 }
 
@@ -87,6 +101,7 @@ function serializeConversation(conversation: Conversation): StoredConversation {
       : undefined,
     permanentMemory: conversation.permanentMemory,
     starred: conversation.starred,
+    projectId: conversation.projectId,
   };
 }
 
@@ -112,21 +127,22 @@ function deserializeConversation(stored: StoredConversation): Conversation {
       : undefined,
     permanentMemory: stored.permanentMemory,
     starred: stored.starred,
+    projectId: stored.projectId,
   };
 }
 
 export function loadChatData(): LoadedChatData {
   if (typeof window === "undefined") {
-    return { conversations: [], activeId: null };
+    return { conversations: [], activeId: null, projects: [] };
   }
 
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return { conversations: [], activeId: null };
+    if (!raw) return { conversations: [], activeId: null, projects: [] };
 
     const data = JSON.parse(raw) as StoredChatData;
     if (data.version !== 1 || !Array.isArray(data.conversations)) {
-      return { conversations: [], activeId: null };
+      return { conversations: [], activeId: null, projects: [] };
     }
 
     const conversations = data.conversations.map(deserializeConversation);
@@ -135,15 +151,17 @@ export function loadChatData(): LoadedChatData {
         ? data.activeId
         : conversations[0]?.id ?? null;
 
-    return { conversations, activeId };
+    const projects = (data.projects ?? []).map((project) => ({ ...project, createdAt: new Date(project.createdAt), updatedAt: new Date(project.updatedAt) }));
+    return { conversations, activeId, projects };
   } catch {
-    return { conversations: [], activeId: null };
+    return { conversations: [], activeId: null, projects: [] };
   }
 }
 
 export function saveChatData(
   conversations: Conversation[],
-  activeId: string | null
+  activeId: string | null,
+  projects: Project[] = []
 ): void {
   if (typeof window === "undefined") return;
 
@@ -151,6 +169,7 @@ export function saveChatData(
     version: 1,
     conversations: conversations.map(serializeConversation),
     activeId,
+    projects: projects.map((project) => ({ ...project, createdAt: project.createdAt.toISOString(), updatedAt: project.updatedAt.toISOString() })),
   };
 
   try {

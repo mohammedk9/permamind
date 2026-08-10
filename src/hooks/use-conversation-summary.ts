@@ -79,6 +79,9 @@ export function useConversationSummary(
           entities: parsed.entities,
           messageFingerprint: fingerprint,
           generatedAt: new Date(),
+          facts: parsed.facts,
+          decisions: parsed.decisions,
+          project: parsed.project,
         },
       }));
 

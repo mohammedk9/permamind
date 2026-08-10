@@ -1,5 +1,5 @@
 import type { ChatCompletionMessage } from "@/lib/ai/types";
-import type { ConversationMetadata, Message } from "@/types/chat";
+import type { ConversationMetadata, Message, MemoryDecision, MemoryFact, MemoryProject } from "@/types/chat";
 import {
   SUMMARY_MAX_CHARS,
   SUMMARY_MAX_MESSAGES,
@@ -10,6 +10,9 @@ export interface ParsedSummary {
   topics: string[];
   tags: string[];
   entities: string[];
+  facts: MemoryFact[];
+  decisions: MemoryDecision[];
+  project?: MemoryProject;
 }
 
 export function getMessageFingerprint(messages: Message[]): string {
@@ -38,9 +41,9 @@ export function buildSummaryPrompt(conversationText: string): ChatCompletionMess
   return [
     {
       role: "system",
-      content: `Extract memory metadata from a chat. Respond with ONLY valid JSON, no markdown:
-{"summary":"1-2 concise sentences","topics":["main themes, max 4"],"tags":["short keywords, max 6"],"entities":["people, places, products, max 8"]}
-Keep items short. Use empty arrays if none.`,
+      content: `Extract structured memory from a chat. Respond with ONLY valid JSON, no markdown:
+{"summary":"1-2 concise sentences","topics":["main themes, max 4"],"tags":["short keywords, max 6"],"entities":["people, places, products, max 8],"facts":[{"value":"stable fact","category":"project|preference|technology|person|goal|constraint|other"}],"decisions":[{"decision":"decision made","reason":"why","alternatives":["alternative"],"status":"active|superseded|uncertain"}],"project":{"name":"project name","goal":"goal","tasks":["task"]}}
+Extract only information explicitly supported by the conversation. Use empty arrays and omit project when unknown. Keep items short.`,
     },
     {
       role: "user",
@@ -60,6 +63,9 @@ export function parseSummaryResponse(raw: string): ParsedSummary | null {
       topics?: unknown;
       tags?: unknown;
       entities?: unknown;
+      facts?: unknown;
+      decisions?: unknown;
+      project?: unknown;
     };
 
     const summary =
@@ -71,10 +77,44 @@ export function parseSummaryResponse(raw: string): ParsedSummary | null {
       topics: normalizeStringArray(data.topics, 4, 60),
       tags: normalizeStringArray(data.tags, 6, 30),
       entities: normalizeStringArray(data.entities, 8, 40),
+      facts: normalizeFacts(data.facts),
+      decisions: normalizeDecisions(data.decisions),
+      project: normalizeProject(data.project),
     };
   } catch {
     return null;
   }
+}
+
+function normalizeFacts(value: unknown): MemoryFact[] {
+  if (!Array.isArray(value)) return [];
+  const categories = new Set<MemoryFact["category"]>(["project", "preference", "technology", "person", "goal", "constraint", "other"]);
+  return value.map((item) => {
+    if (!item || typeof item !== "object") return null;
+    const value = typeof (item as { value?: unknown }).value === "string" ? (item as { value: string }).value.trim() : "";
+    const category = (item as { category?: unknown }).category;
+    return value && typeof category === "string" && categories.has(category as MemoryFact["category"])
+      ? { value: value.slice(0, 160), category: category as MemoryFact["category"] } : null;
+  }).filter((item): item is MemoryFact => Boolean(item)).slice(0, 12);
+}
+
+function normalizeDecisions(value: unknown): MemoryDecision[] {
+  if (!Array.isArray(value)) return [];
+  const decisions: Array<MemoryDecision | null> = value.map((item): MemoryDecision | null => {
+    if (!item || typeof item !== "object") return null;
+    const data = item as { decision?: unknown; reason?: unknown; alternatives?: unknown; status?: unknown };
+    if (typeof data.decision !== "string" || !data.decision.trim()) return null;
+    const status = data.status === "superseded" || data.status === "uncertain" ? data.status : "active";
+    return { decision: data.decision.trim().slice(0, 200), reason: typeof data.reason === "string" ? data.reason.trim().slice(0, 240) : undefined, alternatives: normalizeStringArray(data.alternatives, 4, 100), status };
+  });
+  return decisions.filter((item): item is MemoryDecision => Boolean(item)).slice(0, 8);
+}
+
+function normalizeProject(value: unknown): MemoryProject | undefined {
+  if (!value || typeof value !== "object") return undefined;
+  const data = value as { name?: unknown; goal?: unknown; tasks?: unknown };
+  if (typeof data.name !== "string" || !data.name.trim()) return undefined;
+  return { name: data.name.trim().slice(0, 120), goal: typeof data.goal === "string" ? data.goal.trim().slice(0, 240) : undefined, tasks: normalizeStringArray(data.tasks, 8, 120) };
 }
 
 function normalizeStringArray(

@@ -8,7 +8,7 @@ import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
 import { useLocale } from "@/hooks/use-locale";
 
-export type ProductArea = "chat" | "memory" | "backup" | "settings";
+export type ProductArea = "chat" | "memory" | "backup" | "settings" | "project";
 
 const navigation = [
   { id: "chat" as const, label: "Chat", icon: MessageSquare },

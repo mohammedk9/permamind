@@ -160,7 +160,7 @@ export function SettingsDialog({
             <HelpSheet triggerClassName="w-full justify-start gap-2" />
             <section className="rounded-lg border border-border bg-muted/30 p-3 text-xs text-muted-foreground">
               <h4 className="mb-1 font-semibold text-foreground">Privacy</h4>
-              <p>Your conversations stay in your browser/device by default. Only the context needed for an AI request is sent, and your API key is stored locally rather than on our servers.</p>
+              <p>Your memory is encrypted, portable, and user-controlled. Conversations stay in your browser/device by default; you can export and restore them, and use a different AI provider. Only the context needed for an AI request is sent, and your API key and encryption passphrase stay local rather than on our servers.</p>
             </section>
             <section className="rounded-lg border border-amber-500/40 bg-amber-500/5 p-3 text-xs text-muted-foreground">
               <h4 className="mb-1 font-semibold text-foreground">Permanent storage</h4>

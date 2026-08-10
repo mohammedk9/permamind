@@ -8,6 +8,24 @@ export interface Message {
   isStreaming?: boolean;
 }
 
+export interface MemoryFact {
+  value: string;
+  category: "project" | "preference" | "technology" | "person" | "goal" | "constraint" | "other";
+}
+
+export interface MemoryDecision {
+  decision: string;
+  reason?: string;
+  alternatives?: string[];
+  status: "active" | "superseded" | "uncertain";
+}
+
+export interface MemoryProject {
+  name: string;
+  goal?: string;
+  tasks?: string[];
+}
+
 export interface ConversationMetadata {
   summary: string;
   topics: string[];
@@ -15,6 +33,9 @@ export interface ConversationMetadata {
   entities: string[];
   messageFingerprint: string;
   generatedAt: Date;
+  facts?: MemoryFact[];
+  decisions?: MemoryDecision[];
+  project?: MemoryProject;
 }
 
 export interface Conversation {
@@ -27,4 +48,18 @@ export interface Conversation {
   /** User-controlled permanent storage flags. Optional for backwards compatibility. */
   permanentMemory?: boolean;
   starred?: boolean;
+  projectId?: string;
+}
+
+export interface Project {
+  id: string;
+  name: string;
+  description?: string;
+  summary: string;
+  goals: string[];
+  tasks: string[];
+  decisions: string[];
+  openQuestions: string[];
+  createdAt: Date;
+  updatedAt: Date;
 }

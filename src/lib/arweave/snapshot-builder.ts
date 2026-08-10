@@ -432,7 +432,7 @@ function updateFingerprintCache(
 export async function buildSnapshot(
   conversations: Conversation[],
   registry: SnapshotRegistry,
-  policy: StoragePolicy = typeof window === "undefined" ? DEFAULT_STORAGE_POLICY : loadStoragePolicy()
+  policy: StoragePolicy = "store_everything"
 ): Promise<SnapshotBuildResult | null> {
   const eligibleConversations = filterConversationsByPolicy(conversations, policy);
   // Step 1: Diff current state against fingerprint cache

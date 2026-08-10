@@ -2,7 +2,7 @@ import type { Conversation } from "@/types/chat";
 import type { RetrievedMemory } from "@/types/memory";
 import { graphConversationNeighbors, updateMemoryGraph } from "./graph";
 
-const MAX_MEMORIES = 4;
+const MAX_MEMORIES = 3;
 export const MEMORY_TOKEN_BUDGET = 600;
 const MIN_QUERY_LENGTH = 3;
 const MIN_SCORE = 0.8;
@@ -169,6 +169,7 @@ interface Candidate {
   updatedAt: Date;
   score: number;
   messageId?: string;
+  reason: RetrievedMemory["reason"];
 }
 
 export function retrieveRelevantMemories(
@@ -213,6 +214,7 @@ export function retrieveRelevantMemories(
           updatedAt: conversation.updatedAt,
           score,
           messageId: undefined,
+          reason: "summary match",
         });
       }
     }
@@ -238,6 +240,7 @@ export function retrieveRelevantMemories(
           updatedAt: message.createdAt,
           score,
           messageId: message.id,
+          reason: "keyword match",
         });
       }
     }
@@ -255,6 +258,7 @@ export function retrieveRelevantMemories(
           updatedAt: conversation.updatedAt,
           score,
           messageId: last.id,
+          reason: "keyword match",
         });
       }
     }
@@ -278,6 +282,8 @@ export function retrieveRelevantMemories(
       source: c.source,
       excerpt: c.excerpt,
       score: c.score,
+      confidence: c.score >= 2.5 ? "high" : c.score >= 1.4 ? "medium" : "low",
+      reason: c.reason,
       updatedAt: c.updatedAt,
       ...(c.messageId ? { messageId: c.messageId } : {}),
     });
@@ -304,6 +310,8 @@ export function retrieveRelevantMemories(
         source: "summary",
         excerpt: c.metadata!.summary,
         score: recencyBoost(c.updatedAt),
+        confidence: "low",
+        reason: "recent context",
         updatedAt: c.updatedAt,
       });
     }

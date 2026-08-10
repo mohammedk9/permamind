@@ -42,7 +42,7 @@ export async function fetchConversationSummary(
       (() => {
         const promptTokens = estimateTokensFromMessages(messages);
         const completionTokens = estimateTokensFromText(
-          [data.summary, ...data.topics, ...data.tags, ...data.entities].join(" ")
+          [data.summary, ...data.topics, ...data.tags, ...data.entities, ...data.facts.map((fact) => fact.value), ...data.decisions.map((decision) => decision.decision)].join(" ")
         );
         return {
           promptTokens,
@@ -57,6 +57,9 @@ export async function fetchConversationSummary(
       topics: data.topics,
       tags: data.tags,
       entities: data.entities,
+      facts: data.facts ?? [],
+      decisions: data.decisions ?? [],
+      project: data.project,
       usage,
     };
   } catch {

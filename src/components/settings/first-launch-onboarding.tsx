@@ -7,7 +7,7 @@ import { completeFirstRun } from "@/lib/settings/first-run";
 const screens = [
   ["Welcome to PermaMind", "Chat naturally.\nPermaMind keeps your conversations organized and helps you continue where you left off."],
   ["Your AI remembers", "Unlike traditional AI chats,\nPermaMind can search previous conversations,\ncontinue old projects,\nand reconnect past context."],
-  ["Permanent Memory (Optional)", "Important conversations are encrypted locally before upload.\n\nAfter a backup is uploaded to Arweave, it is permanent and cannot be deleted or undone. Permanent storage is optional — review carefully before confirming an upload."],
+  ["Encrypted, portable memory", "Your conversations stay local by default and can be exported or restored.\n\nOptional backups are encrypted locally before upload. After a backup is uploaded to Arweave, it is permanent and cannot be deleted or undone."],
   ["Connect your AI", "Connect an AI provider API key in Settings when you are ready."],
 ] as const;
 

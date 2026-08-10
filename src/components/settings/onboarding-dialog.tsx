@@ -58,9 +58,9 @@ export function OnboardingDialog({
             <div className="flex gap-3 rounded-lg border border-border p-3">
               <UploadCloud className="mt-0.5 size-5 shrink-0 text-primary" />
               <div>
-                <p className="text-sm font-medium">Permanent Arweave storage</p>
+                <p className="text-sm font-medium">Encrypted, portable memory</p>
                 <p className="text-xs text-muted-foreground">
-                  Permanent storage is optional. Once uploaded to Arweave, it cannot be deleted or undone, so review before confirming.
+                   Export and restore your memory, use any AI provider, and optionally create an encrypted Arweave backup. Uploaded backups cannot be deleted or undone, so review before confirming.
                 </p>
               </div>
             </div>

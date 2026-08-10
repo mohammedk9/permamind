@@ -1,6 +1,6 @@
 "use client";
 
-import { MessageSquarePlus } from "lucide-react";
+import { FolderKanban, MessageSquarePlus } from "lucide-react";
 
 import { ConversationItem } from "@/components/chat/conversation-item";
 import { SearchResultItem } from "@/components/chat/search-result-item";
@@ -11,7 +11,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { useMemorySearch } from "@/hooks/use-memory-search";
 import { cn } from "@/lib/utils";
-import type { Conversation } from "@/types/chat";
+import type { Conversation, Project } from "@/types/chat";
 import { useLocale } from "@/hooks/use-locale";
 
 interface ChatSidebarProps {
@@ -19,6 +19,10 @@ interface ChatSidebarProps {
   activeId: string | null;
   onSelect: (id: string) => void;
   onNewChat: () => void;
+  onNewProject?: () => void;
+  projects?: Project[];
+  activeProjectId?: string | null;
+  onSelectProject?: (id: string) => void;
   onRename: (id: string, title: string) => void;
   onDelete: (id: string) => void;
   onUpdateConversation?: (id: string, updater: (conversation: Conversation) => Conversation) => void;
@@ -31,6 +35,10 @@ export function ChatSidebar({
   activeId,
   onSelect,
   onNewChat,
+  onNewProject = () => undefined,
+  projects = [],
+  activeProjectId,
+  onSelectProject,
   onRename,
   onDelete,
   onUpdateConversation,
@@ -55,14 +63,14 @@ export function ChatSidebar({
       )}
     >
       <div className="space-y-3 px-0">
-        <Button
+        <div className="grid grid-cols-2 gap-2"><Button
           className="w-full justify-start gap-2"
           variant="default"
           onClick={onNewChat}
         >
           <MessageSquarePlus className="size-4" />
           {ar ? "محادثة جديدة" : "New chat"}
-        </Button>
+        </Button><Button className="justify-start gap-2" variant="outline" onClick={onNewProject}><FolderKanban className="size-4" />{ar ? "مشروع جديد" : "New project"}</Button></div>
         <SearchField
             className="[&_input]:bg-sidebar-accent/50 [&_input]:border-sidebar-border"
             placeholder={ar ? "ابحث في المحادثات..." : "Search conversations..."}
@@ -75,6 +83,8 @@ export function ChatSidebar({
       </div>
 
       <Separator className="my-3" />
+
+      {projects.length > 0 && <div className="mb-3"><p className="px-2 pb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">{ar ? "المشاريع" : "Projects"}</p><nav className="space-y-0.5">{projects.map((project) => <button key={project.id} onClick={() => onSelectProject?.(project.id)} className={cn("flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm", activeProjectId === project.id ? "bg-sidebar-accent font-medium" : "hover:bg-sidebar-accent/60")}><FolderKanban className="size-4 text-primary" /><span className="truncate">{project.name}</span></button>)}</nav></div>}
 
       <ScrollArea className="flex-1 px-2">
         {isActive ? (

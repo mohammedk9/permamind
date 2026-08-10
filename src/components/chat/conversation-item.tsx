@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { formatConversationTime } from "@/lib/format/date";
 import { cn } from "@/lib/utils";
 import type { Conversation } from "@/types/chat";
+import { loadRegistry } from "@/lib/arweave/snapshot-registry";
 
 interface ConversationItemProps {
   conversation: Conversation;
@@ -34,6 +35,7 @@ export function ConversationItem({
   const [editTitle, setEditTitle] = useState(conversation.title);
   const inputRef = useRef<HTMLInputElement>(null);
   const meta = conversation.metadata;
+  const hasUploadedBackup = typeof window !== "undefined" && loadRegistry().snapshots.some((snapshot) => snapshot.txId && snapshot.conversationIds.includes(conversation.id));
 
   useEffect(() => {
     if (!isEditing) setEditTitle(conversation.title);
@@ -62,7 +64,7 @@ export function ConversationItem({
     e.stopPropagation();
     if (
       window.confirm(
-        `Delete "${conversation.title}"? This cannot be undone.`
+        `Delete \"${conversation.title}\" locally? This removes it from this device. ${hasUploadedBackup ? "A previously uploaded encrypted backup may remain permanently on Arweave and cannot be deleted." : "No uploaded Arweave backup was found for this conversation."}`
       )
     ) {
       onDelete();
@@ -121,7 +123,7 @@ export function ConversationItem({
         </span>
         <span className="mt-1 flex gap-1 text-[10px]">
           {conversation.starred && <span className="flex items-center gap-0.5 text-amber-600"><Star className="size-3 fill-current" /> Important</span>}
-          {conversation.permanentMemory && <span className="flex items-center gap-0.5 text-primary"><ShieldCheck className="size-3" /> Permanent</span>}
+          {hasUploadedBackup ? <span className="flex items-center gap-0.5 text-primary"><ShieldCheck className="size-3" /> Backed up</span> : conversation.permanentMemory ? <span className="flex items-center gap-0.5 text-muted-foreground"><ShieldCheck className="size-3" /> Backup selected</span> : <span className="text-muted-foreground">Local only</span>}
         </span>
         {isSummarizing ? (
           <span className="mt-1 flex items-center gap-1 text-xs text-muted-foreground">

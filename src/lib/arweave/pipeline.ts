@@ -96,7 +96,10 @@ export async function runSnapshotPipeline(
     // buildSnapshot performs diffing, versioning, and dedup checking.
     // It also updates the fingerprint cache (a side effect, but acceptable
     // for a cache).
-    const buildResult = await buildSnapshot(conversations, registry, policy);
+    // Callers in the application resolve the user's policy before entering the
+    // pipeline. Keeping the library default explicit also makes the pipeline
+    // deterministic for integrations and tests.
+    const buildResult = await buildSnapshot(conversations, registry, policy ?? "store_everything");
 
     if (!buildResult) {
       // No changes detected since last snapshot

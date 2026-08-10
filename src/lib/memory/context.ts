@@ -2,13 +2,15 @@ import type { ChatCompletionMessage } from "@/lib/ai/types";
 import type { RetrievedMemory } from "@/types/memory";
 import { formatConversationTime } from "@/lib/format/date";
 
-const MAX_CONTEXT_CHARS = 2400;
+const MAX_CONTEXT_CHARS = 1600;
+const MAX_MEMORY_EXCERPT_CHARS = 420;
 
 function formatMemoryBlock(memory: RetrievedMemory, index: number): string {
   const when = formatConversationTime(memory.updatedAt);
   const source =
     memory.source === "summary" ? "summary" : "message excerpt";
-  return `${index + 1}. "${memory.conversationTitle}" (${when}, ${source})\n${memory.excerpt}`;
+  const excerpt = memory.excerpt.replace(/\s+/g, " ").trim().slice(0, MAX_MEMORY_EXCERPT_CHARS);
+  return `${index + 1}. Source: "${memory.conversationTitle}" (${when}, ${source}, ${memory.confidence ?? "medium"} confidence)\n${excerpt}`;
 }
 
 export function buildMemorySystemPrompt(
@@ -42,9 +44,11 @@ ${blocks.join("\n\n")}`;
 export function buildMessagesWithMemory(
   messages: ChatCompletionMessage[],
   memories: RetrievedMemory[],
-  previousConversationQuery = false
+  previousConversationQuery = false,
+  projectContext = ""
 ): ChatCompletionMessage[] {
-  const systemPrompt = buildMemorySystemPrompt(memories, previousConversationQuery);
+  const memoryPrompt = buildMemorySystemPrompt(memories, previousConversationQuery);
+  const systemPrompt = [projectContext, memoryPrompt].filter(Boolean).join("\n\n");
   if (!systemPrompt) return messages;
 
   const withoutSystem = messages.filter((m) => m.role !== "system");

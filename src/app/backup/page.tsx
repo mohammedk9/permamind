@@ -52,7 +52,7 @@ export default function BackupPage() {
   const conversations = useConversations();
   const [passphrase, setPassphrase] = useState("");
   const [showPassphrase, setShowPassphrase] = useState(false);
-  const [policy, setPolicy] = useState<StoragePolicy>("store_everything");
+  const [policy, setPolicy] = useState<StoragePolicy>("manual_backups_only");
   const [usage, setUsage] = useState<StorageUsage | null>(null);
   const [queue, setQueue] = useState<QueueStatusSummary>(emptyQueue);
   // Browser-only registry data must not be read during the initial render.
@@ -281,9 +281,9 @@ export default function BackupPage() {
   return <AppShell activeArea="backup" onNavigate={(area) => { window.location.href = `/${area}`; }}>
     <main className="min-h-0 flex-1 overflow-y-auto p-4 pt-14 pb-[max(1rem,env(safe-area-inset-bottom))] sm:p-8 sm:pt-8">
       <div className="mx-auto max-w-6xl space-y-6">
-        <PageHeader eyebrow={ar ? "التخزين الدائم" : "Permanent storage"} title={ar ? "مركز النسخ الاحتياطي" : "Backup Center"} description={ar ? "احتفظ بنسخة مشفرة ودائمة من محادثاتك المحلية مع التحكم الكامل في عبارة المرور والاستعادة." : "Keep an encrypted, permanent copy of your local conversations while staying in control of the passphrase and restore process."} />
+        <PageHeader eyebrow={ar ? "نسخ احتياطي اختياري" : "Optional encrypted backup"} title={ar ? "مركز النسخ الاحتياطي" : "Backup Center"} description={ar ? "تبقى محادثاتك محلياً افتراضياً. اختر يدوياً ما تريد تشفيره ورفعه إلى Arweave." : "Your conversations stay local by default. Manually choose what to encrypt and upload to Arweave."} />
         <SurfaceCard title={ar ? "كيف تحمي بياناتك؟" : "How your recovery works"} description={ar ? "شرح بسيط قبل البدء" : "A simple explanation before you start"}>
-          <div className="space-y-2 text-sm"><p>{ar ? "نشفّر محادثاتك داخل متصفحك قبل رفعها. Arweave يحفظ النسخة المشفرة، ولا يستطيع قراءة محتواها." : "Your conversations are encrypted in this browser before upload. Arweave stores the encrypted copy and cannot read it."}</p><p>{ar ? "بعد حذف بيانات المتصفح يمكنك الاستعادة إذا كانت لديك نسخة مرفوعة، ومعرّفها، وعبارة المرور نفسها." : "After clearing browser data, recovery is possible when you have a completed upload, its ID, and the same passphrase."}</p><p className="font-medium text-status-attention">{ar ? "لا تحفظ عبارة المرور في المتصفح أو في بطاقة الاستعادة. فقدانها يعني فقدان القدرة على فك النسخة." : "Do not rely on the browser or recovery card to store your passphrase. Losing it means the encrypted backup cannot be decrypted."}</p></div>
+          <div className="space-y-2 text-sm"><p>{ar ? "تبقى محادثاتك محلياً ولا يتم رفعها تلقائياً. عند اختيار نسخة احتياطية، نشفّرها داخل متصفحك قبل رفعها. Arweave يحفظ النسخة المشفرة ولا يستطيع قراءة محتواها." : "Your conversations remain local and are not uploaded automatically. When you choose a backup, it is encrypted in this browser before upload. Arweave stores the encrypted copy and cannot read it."}</p><p>{ar ? "الحذف المحلي لا يحذف النسخة المرفوعة: إذا حذفت محادثة من هذا الجهاز فقد تبقى نسختها المشفرة بشكل دائم على Arweave." : "Delete locally does not delete an uploaded backup: if you delete a conversation from this device, its encrypted copy may remain permanently on Arweave."}</p><p className="font-medium text-status-attention">{ar ? "لا تحفظ عبارة المرور في المتصفح أو في بطاقة الاستعادة. فقدانها يعني فقدان القدرة على فك النسخة." : "Do not rely on the browser or recovery card to store your passphrase. Losing it means the encrypted backup cannot be decrypted."}</p></div>
         </SurfaceCard>
 
         <div className="grid gap-4 lg:grid-cols-[1.35fr_1fr]">
@@ -363,7 +363,7 @@ export default function BackupPage() {
         </div>
       </div>
     </main>
-    <ConfirmDialog open={confirm === "backup"} onOpenChange={(open) => !open && setConfirm(null)} title="Create a permanent backup?" consequence="This will encrypt your current local conversations and queue them for permanent storage. Permanent uploads cannot be deleted from this screen." confirmLabel="Create backup" onConfirm={manualBackup} />
+    <ConfirmDialog open={confirm === "backup"} onOpenChange={(open) => !open && setConfirm(null)} title="Create a permanent backup?" consequence="Only the conversations selected by your storage policy will be encrypted locally and queued for Arweave. This is optional. After upload, encrypted data is permanent and cannot be deleted." confirmLabel="Create backup" onConfirm={manualBackup} />
     <ConfirmDialog open={confirm === "restore"} onOpenChange={(open) => !open && setConfirm(null)} title="Restore the latest backup?" consequence="Restore will replace your current local conversations with the selected encrypted snapshot. This action cannot be undone by this UI." confirmLabel="Restore backup" severity="destructive" submitting={restoreWorking} onConfirm={restore} />
   </AppShell>;
 }
