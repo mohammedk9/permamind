@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowUp, FileText, Globe2, ImagePlus, Loader2, Paperclip, X } from "lucide-react";
+import { ArrowUp, FileText, Globe2, ImagePlus, Loader2, Mic, Paperclip, Square, X } from "lucide-react";
 import { useCallback, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -21,6 +21,68 @@ export function ChatInput({ onSend, disabled, isLoading, webSearchEnabled = fals
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const [files, setFiles] = useState<File[]>([]);
+  const [isRecording, setIsRecording] = useState(false);
+  const [isTranscribing, setIsTranscribing] = useState(false);
+  const [voiceError, setVoiceError] = useState<string | null>(null);
+  const recorderRef = useRef<MediaRecorder | null>(null);
+  const chunksRef = useRef<Blob[]>([]);
+  const streamRef = useRef<MediaStream | null>(null);
+  const recordingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const transcribe = useCallback(async (blob: Blob) => {
+    setIsTranscribing(true);
+    setVoiceError(null);
+    try {
+      const form = new FormData();
+      form.append("audio", new File([blob], "recording.webm", { type: blob.type || "audio/webm" }));
+      const response = await fetch("/api/transcribe", { method: "POST", body: form });
+      const data = (await response.json().catch(() => ({}))) as { text?: string; error?: string };
+      if (!response.ok) throw new Error(data.error ?? `Transcription failed (${response.status})`);
+      const current = textareaRef.current;
+      if (current && data.text) {
+        current.value = `${current.value.trim()}${current.value.trim() ? " " : ""}${data.text}`;
+        current.style.height = "auto";
+        current.style.height = `${Math.min(current.scrollHeight, 160)}px`;
+      }
+    } catch (error) {
+      setVoiceError(error instanceof Error ? error.message : (ar ? "تعذر تحويل الصوت إلى نص" : "Could not transcribe audio"));
+    } finally {
+      setIsTranscribing(false);
+    }
+  }, [ar]);
+
+  const stopRecording = useCallback(() => {
+    if (recordingTimerRef.current) clearTimeout(recordingTimerRef.current);
+    recordingTimerRef.current = null;
+    recorderRef.current?.stop();
+    streamRef.current?.getTracks().forEach((track) => track.stop());
+    streamRef.current = null;
+    setIsRecording(false);
+  }, []);
+
+  const toggleRecording = useCallback(async () => {
+    if (isRecording) {
+      stopRecording();
+      return;
+    }
+    if (isTranscribing || disabled || isLoading || !navigator.mediaDevices?.getUserMedia) return;
+    setVoiceError(null);
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mimeType = ["audio/webm;codecs=opus", "audio/webm", "audio/mp4"].find((type) => MediaRecorder.isTypeSupported(type)) ?? "";
+      const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
+      chunksRef.current = [];
+      recorder.ondataavailable = (event) => { if (event.data.size > 0) chunksRef.current.push(event.data); };
+      recorder.onstop = () => { const blob = new Blob(chunksRef.current, { type: recorder.mimeType || "audio/webm" }); if (blob.size > 0) void transcribe(blob); };
+      recorderRef.current = recorder;
+      streamRef.current = stream;
+      recorder.start();
+      setIsRecording(true);
+      recordingTimerRef.current = setTimeout(stopRecording, 5 * 60 * 1000);
+    } catch {
+      setVoiceError(ar ? "تعذر الوصول إلى الميكروفون" : "Microphone access was denied or unavailable");
+    }
+  }, [ar, disabled, isLoading, isRecording, isTranscribing, stopRecording, transcribe]);
 
   const addFiles = (selected: FileList | null) => {
     if (!selected) return;
@@ -50,9 +112,11 @@ export function ChatInput({ onSend, disabled, isLoading, webSearchEnabled = fals
     <div className="sticky bottom-0 z-10 border-t border-border bg-background/95 p-2 pb-[max(0.75rem,env(safe-area-inset-bottom))] backdrop-blur sm:p-4">
       <div className="surface-elevated mx-auto max-w-3xl rounded-2xl border border-input bg-card p-2 sm:p-3">
         {files.length > 0 && <div className="mb-2 flex flex-wrap gap-2 px-1">{files.map((file, index) => <div key={`${file.name}-${index}`} className="flex items-center gap-2 rounded-lg border bg-muted/60 px-2 py-1.5 text-xs"><span className="flex size-6 items-center justify-center rounded bg-background">{file.type.startsWith("image/") ? <ImagePlus className="size-3.5" /> : <FileText className="size-3.5" />}</span><span className="max-w-40 truncate">{file.name}</span><button type="button" onClick={() => setFiles((current) => current.filter((_, itemIndex) => itemIndex !== index))} aria-label={`Remove ${file.name}`}><X className="size-3.5 text-muted-foreground" /></button></div>)}</div>}
+        {voiceError && <p className="mb-2 px-1 text-xs text-destructive" role="alert">{voiceError}</p>}
         <div className="flex items-end gap-2">
         <input ref={fileRef} type="file" multiple accept="image/*,.pdf,.txt,.md,.doc,.docx,.csv" className="sr-only" onChange={(event) => { addFiles(event.target.files); event.currentTarget.value = ""; }} />
          <Button type="button" variant="ghost" size="icon" className="mb-0.5 rounded-xl" onClick={() => fileRef.current?.click()} disabled={disabled || isLoading} aria-label={ar ? "إرفاق صور أو ملفات" : "Attach images or files"}><Paperclip className="size-4" /></Button>
+         <Button type="button" variant={isRecording ? "secondary" : "ghost"} size="icon" className={`mb-0.5 rounded-xl ${isRecording ? "text-destructive ring-1 ring-destructive/30" : ""}`} onClick={() => void toggleRecording()} disabled={disabled || isLoading || isTranscribing} aria-label={isRecording ? (ar ? "إيقاف التسجيل" : "Stop recording") : (isTranscribing ? (ar ? "جارٍ تحويل الصوت إلى نص" : "Transcribing audio") : (ar ? "تسجيل رسالة صوتية" : "Record voice message"))} title={ar ? "تحويل الكلام إلى نص" : "Convert speech to text"}>{isTranscribing ? <Loader2 className="size-4 animate-spin" /> : isRecording ? <Square className="size-3.5 fill-current" /> : <Mic className="size-4" />}</Button>
         <Button
           type="button"
           variant={webSearchEnabled ? "secondary" : "ghost"}

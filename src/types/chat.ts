@@ -49,6 +49,8 @@ export interface Conversation {
   permanentMemory?: boolean;
   starred?: boolean;
   projectId?: string;
+  /** Explicit user choice to share this conversation summary with Supabase. */
+  syncToCloud?: boolean;
 }
 
 export interface Project {

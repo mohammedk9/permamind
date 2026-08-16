@@ -5,7 +5,7 @@ export const translations = {
     // Header
     signIn: "Sign In",
     signUp: "Sign Up",
-    languageToggle: "AR",
+    languageToggle: "gdg hgj;gti ugd ,hpjlhgdi hsjo]hl hglh`[ hgl]t,ui hgd hkh l,tvih AR",
 
     // Hero
     heroBadge: "Personal AI memory for your work",
@@ -60,6 +60,18 @@ export const translations = {
         icon: "globe",
       },
     ],
+
+    // MCP
+    mcpTitle: "Your approved memory, wherever you work",
+    mcpDescription:
+      "Connect PermaMind to Cursor, Claude, OpenAI Codex, or another MCP client through a read-only interface. You choose which summaries can be shared; full conversations, encrypted backups, and private keys stay out of reach.",
+    mcpPoints: [
+      "Read-only access to approved summaries",
+      "Works with Cursor, Claude, and OpenAI Codex",
+      "You control what is shared",
+      "Privacy warning before every export or connection",
+    ],
+    mcpCta: "Learn about MCP in Settings",
 
     // How it works
     howItWorksTitle: "How It Works",
@@ -167,6 +179,18 @@ export const translations = {
         icon: "globe",
       },
     ],
+
+    // MCP
+    mcpTitle: "ذاكرتك المسموح بها أينما تعمل",
+    mcpDescription:
+      "اربط PermaMind مع Cursor أو Claude أو OpenAI Codex أو أي عميل MCP عبر واجهة للقراءة فقط. أنت تحدد الملخصات التي يمكن مشاركتها؛ ولا يتم كشف المحادثات الكاملة أو النسخ المشفرة أو المفاتيح الخاصة.",
+    mcpPoints: [
+      "وصول للقراءة فقط إلى الملخصات المسموح بها",
+      "يعمل مع Cursor وClaude وOpenAI Codex",
+      "أنت تتحكم فيما تتم مشاركته",
+      "تحذير خصوصية قبل أي تصدير أو اتصال",
+    ],
+    mcpCta: "تعرّف على MCP في الإعدادات",
 
     // How it works
     howItWorksTitle: "كيف يعمل",

@@ -32,10 +32,13 @@ copy .env.example .env.local
 
 If `.env.example` is not present, create `.env.local` manually. Never commit it.
 
-**Free mode (default):** Add a server key to `.env.local` so all users can use free OpenRouter models:
+**Free mode (default):** Add server keys to `.env.local`. The server automatically falls back through OpenRouter, Groq, and Google AI Studio; these providers and models are not exposed to users:
 
 ```
 OPENROUTER_API_KEY=sk-or-v1-...
+GROQ_API_KEY=gsk_...
+GOOGLE_AI_API_KEY=...
+# GOOGLE_API_KEY is also accepted as an alternative name.
 NEXT_PUBLIC_APP_URL=http://localhost:3000
 ```
 

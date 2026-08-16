@@ -26,6 +26,8 @@ interface ChatSidebarProps {
   onRename: (id: string, title: string) => void;
   onDelete: (id: string) => void;
   onUpdateConversation?: (id: string, updater: (conversation: Conversation) => Conversation) => void;
+  onToggleCloudSync?: (id: string) => void;
+  onSyncSummary?: (id: string, confirmed?: boolean) => Promise<"uploaded" | "unchanged">;
   isSummarizing?: (id: string) => boolean;
   className?: string;
 }
@@ -42,6 +44,8 @@ export function ChatSidebar({
   onRename,
   onDelete,
   onUpdateConversation,
+  onToggleCloudSync,
+  onSyncSummary,
   isSummarizing,
   className,
 }: ChatSidebarProps) {
@@ -117,6 +121,8 @@ export function ChatSidebar({
                   onDelete={() => onDelete(conversation.id)}
                   onToggleStar={() => onUpdateConversation?.(conversation.id, (c) => ({ ...c, starred: !c.starred }))}
                   onTogglePermanentMemory={() => onUpdateConversation?.(conversation.id, (c) => ({ ...c, permanentMemory: !c.permanentMemory }))}
+                  onToggleCloudSync={() => onToggleCloudSync?.(conversation.id)}
+                  onSyncSummary={(confirmed) => onSyncSummary?.(conversation.id, confirmed) ?? Promise.reject(new Error("Sync is unavailable"))}
                 />
               ))
             )}

@@ -59,9 +59,20 @@ export function ChatApp() {
     deleteConversation,
     selectConversation,
     getConversation,
+    setConversationCloudSync,
+    syncConversationSummary,
     projects,
     createProject,
   } = useConversations();
+
+  const handleSyncSummary = useCallback(async (id: string, confirmed = false): Promise<"uploaded" | "unchanged"> => {
+    try {
+      const result = await syncConversationSummary(id, confirmed);
+      return result;
+    } catch (error) {
+      throw error;
+    }
+  }, [syncConversationSummary]);
 
   useEffect(() => {
     setStoragePolicy(loadStoragePolicy());
@@ -395,6 +406,8 @@ export function ChatApp() {
         onSelectProject={(id) => { setActiveProjectId(id); setArea("project"); window.history.pushState({}, "", `/project/${id}`); }}
         onRename={renameConversation}
         onDelete={deleteConversation}
+        onToggleCloudSync={(id) => setConversationCloudSync(id, !getConversation(id)?.syncToCloud)}
+        onSyncSummary={(id, confirmed) => handleSyncSummary(id, confirmed)}
         onUpdateConversation={(id, updater) => {
           const conversation = getConversation(id);
           if (updater(conversation ?? { id, title: "", messages: [], createdAt: new Date(), updatedAt: new Date() }).permanentMemory !== conversation?.permanentMemory) togglePermanentMemory(id, updater);
@@ -411,6 +424,8 @@ export function ChatApp() {
           onNewChat={handleNewChat}
           onRename={renameConversation}
           onDelete={deleteConversation}
+          onToggleCloudSync={(id) => setConversationCloudSync(id, !getConversation(id)?.syncToCloud)}
+          onSyncSummary={(id, confirmed) => handleSyncSummary(id, confirmed)}
           isSummarizing={isSummarizing}
           onSend={handleSend}
           model={model}
@@ -431,7 +446,7 @@ export function ChatApp() {
         </div>
         {area === "memory" && <MemoryExperience conversations={conversations} onOpenConversation={(id) => { selectConversation(id); navigate("chat"); }} />}
         {area === "project" && activeProjectId && (() => { const project = projects.find((item) => item.id === activeProjectId); return project ? <ProjectWorkspace project={project} conversations={conversations.filter((conversation) => conversation.projectId === project.id)} onOpenConversation={(id) => { selectConversation(id); navigate("chat"); }} /> : null; })()}
-        {area === "settings" && <SettingsShell apiKey={apiKey} provider={provider} onProviderChange={setProvider} baseUrl={baseUrl} onBaseUrlChange={setBaseUrl} modelName={modelName} onModelNameChange={setModelName} connectionStatus={connectionStatus} onApiKeyChange={setApiKey} onValidate={validateKey} onClearKey={clearKey} onClearAnalytics={clearAnalytics} />}
+        {area === "settings" && <SettingsShell conversations={conversations} apiKey={apiKey} provider={provider} onProviderChange={setProvider} baseUrl={baseUrl} onBaseUrlChange={setBaseUrl} modelName={modelName} onModelNameChange={setModelName} connectionStatus={connectionStatus} onApiKeyChange={setApiKey} onValidate={validateKey} onClearKey={clearKey} onClearAnalytics={clearAnalytics} />}
       </AppShell>
     </>
   );

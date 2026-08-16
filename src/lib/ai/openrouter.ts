@@ -10,6 +10,67 @@ const DIRECT_URLS: Partial<Record<AiProvider, string>> = {
   kimi: "https://api.moonshot.ai/v1/chat/completions",
   grok: "https://api.x.ai/v1/chat/completions",
 };
+const GROQ_URL = "https://api.groq.com/openai/v1/chat/completions";
+const GOOGLE_AI_URL = "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions";
+
+export type FreeProvider = "openrouter" | "groq" | "google-ai";
+
+export interface FreeRoute {
+  id: string;
+  provider: FreeProvider;
+  model: string;
+}
+
+export function getFreeRoute(id: string): FreeRoute {
+  if (id.startsWith("groq/")) return { id, provider: "groq", model: id.slice("groq/".length) };
+  if (id.startsWith("google-ai/")) return { id, provider: "google-ai", model: id.slice("google-ai/".length) };
+  return { id, provider: "openrouter", model: id };
+}
+
+function serverKey(provider: FreeProvider): string | undefined {
+  if (provider === "groq") return process.env.GROQ_API_KEY?.trim();
+  if (provider === "google-ai") return (process.env.GOOGLE_AI_API_KEY ?? process.env.GOOGLE_API_KEY)?.trim();
+  return process.env.OPENROUTER_API_KEY?.trim();
+}
+
+function freeUrl(provider: FreeProvider): string {
+  if (provider === "groq") return GROQ_URL;
+  if (provider === "google-ai") return GOOGLE_AI_URL;
+  return OPENROUTER_URL;
+}
+
+export async function createFreeProviderStream(
+  route: FreeRoute,
+  messages: ChatCompletionMessage[],
+) {
+  const apiKey = serverKey(route.provider);
+  if (!apiKey) return new Response(`${route.provider} server key is not configured`, { status: 503 });
+  return fetch(freeUrl(route.provider), {
+    method: "POST",
+    headers: route.provider === "openrouter" ? openRouterHeaders(apiKey) : {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ model: route.model, messages, stream: true }),
+  });
+}
+
+export async function createFreeProviderCompletion(
+  route: FreeRoute,
+  messages: ChatCompletionMessage[],
+  options?: { maxTokens?: number; temperature?: number },
+) {
+  const apiKey = serverKey(route.provider);
+  if (!apiKey) return new Response(`${route.provider} server key is not configured`, { status: 503 });
+  return fetch(freeUrl(route.provider), {
+    method: "POST",
+    headers: route.provider === "openrouter" ? openRouterHeaders(apiKey) : {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ model: route.model, messages, stream: false, max_tokens: options?.maxTokens ?? 400, temperature: options?.temperature ?? 0.2 }),
+  });
+}
 
 function openRouterHeaders(apiKey: string): HeadersInit {
   const appUrl = process.env.NEXT_PUBLIC_APP_URL?.trim();

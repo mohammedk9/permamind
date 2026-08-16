@@ -201,6 +201,36 @@ export default function LandingPage() {
         </div>
       </section>
 
+      {/* MCP integration section */}
+      <section className="border-t border-border/50 py-24">
+        <div className="mx-auto grid max-w-6xl gap-10 px-4 sm:px-6 lg:grid-cols-[1.05fr_0.95fr] lg:items-center">
+          <div>
+            <p className="text-sm font-semibold uppercase tracking-[0.18em] text-primary">MCP · Cursor · Claude · Codex</p>
+            <h2 className="mt-4 text-3xl font-bold tracking-tight sm:text-4xl">{t.mcpTitle}</h2>
+            <p className="mt-4 text-lg leading-relaxed text-muted-foreground">{t.mcpDescription}</p>
+            <ul className="mt-6 grid gap-3 sm:grid-cols-2">
+              {t.mcpPoints.map((point) => (
+                <li key={point} className="flex items-start gap-2 text-sm font-medium">
+                  <span className="mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full bg-primary/15 text-primary">✓</span>
+                  {point}
+                </li>
+              ))}
+            </ul>
+            <Link href="/auth/sign-up" className="mt-8 inline-flex items-center gap-2 rounded-xl bg-primary px-6 py-3 font-semibold text-primary-foreground transition-opacity hover:opacity-90">
+              {t.mcpCta}<ArrowRight className={`size-4 ${isRTL ? "rotate-180" : ""}`} />
+            </Link>
+          </div>
+          <div className="rounded-3xl border border-primary/20 bg-card p-6 shadow-xl shadow-primary/5">
+            <div className="flex items-center gap-3">
+              <div className="flex size-11 items-center justify-center rounded-xl bg-primary/10 text-sm font-bold text-primary">MCP</div>
+              <div><p className="font-semibold">Read-only memory bridge</p><p className="text-sm text-muted-foreground">PermaMind → Cursor / Claude / Codex</p></div>
+            </div>
+            <div className="mt-6 rounded-xl border bg-muted/30 p-4 font-mono text-xs text-muted-foreground">https://your-domain.com/api/mcp</div>
+            <p className="mt-4 text-sm leading-relaxed text-muted-foreground">{isRTL ? "يتم الاتصال بعد تسجيل الدخول وبموافقتك على الملخصات التي تريد مشاركتها." : "Connect after signing in and explicitly approve the summaries you want to share."}</p>
+          </div>
+        </div>
+      </section>
+
       {/* How It Works Section */}
       <section className="border-t border-border/50 py-24">
         <div className="mx-auto max-w-6xl px-4 sm:px-6">

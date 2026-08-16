@@ -47,13 +47,18 @@ export function resolveRequestAuth(request: Request): ResolvedRequestAuth {
     return { apiKey: userKey, mode: "byok", isUserKey: true, provider, baseUrl, modelName };
   }
 
-  const serverKey = process.env.OPENROUTER_API_KEY?.trim();
-  if (serverKey) {
-    return { apiKey: serverKey, mode: "free", isUserKey: false, provider: "openrouter" };
+  const hasFreeProvider = Boolean(
+    process.env.OPENROUTER_API_KEY?.trim() ||
+    process.env.GROQ_API_KEY?.trim() ||
+    process.env.GOOGLE_AI_API_KEY?.trim() ||
+    process.env.GOOGLE_API_KEY?.trim()
+  );
+  if (hasFreeProvider) {
+    return { apiKey: "server-managed", mode: "free", isUserKey: false, provider: "openrouter" };
   }
 
   throw new Error(
-    "Free mode needs a server OpenRouter key or switch to BYOK in Settings with your own key."
+    "Free mode needs a configured server AI key or switch to BYOK in Settings with your own key."
   );
 }
 

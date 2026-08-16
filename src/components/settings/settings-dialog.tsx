@@ -1,6 +1,8 @@
 "use client";
 
 import {
+  Cloud,
+  HardDrive,
   CheckCircle2,
   KeyRound,
   Settings,
@@ -25,6 +27,13 @@ import type { ApiKeyMode } from "@/lib/settings/api-key-storage";
 import { cn } from "@/lib/utils";
 import { HelpSheet } from "@/components/help/how-permamind-works";
 import { resetFirstRun } from "@/lib/settings/first-run";
+import {
+  DEFAULT_STORAGE_PREFERENCES,
+  loadStoragePreferences,
+  saveStoragePreferences,
+  type StoragePreferences,
+} from "@/lib/storage/storage-preferences";
+import { setSyncPassphrase } from "@/lib/storage/sync-encryption";
 
 interface SettingsDialogProps {
   mode: ApiKeyMode;
@@ -71,6 +80,64 @@ function StatusBadge({ status }: { status: ConnectionStatus }) {
   }
   return (
     <span className="text-xs text-muted-foreground">Not validated</span>
+  );
+}
+
+function StoragePreferencesPanel() {
+  const [preferences, setPreferences] = useState<StoragePreferences>(loadStoragePreferences);
+  const [syncPassphrase, setSyncPassphraseState] = useState("");
+
+  const update = (change: Partial<StoragePreferences>) => {
+    const next = { ...preferences, ...change };
+    setPreferences(next);
+    saveStoragePreferences(next);
+  };
+  return (
+    <div className="space-y-3 text-xs">
+      <p className="text-muted-foreground">Choose where selected data may be used. Changing this setting never uploads anything automatically.</p>
+      <label className={cn("block cursor-pointer rounded-lg border p-3 transition-colors", preferences.syncMode === "local" ? "border-primary bg-primary/5" : "border-border hover:bg-muted/50")}>
+        <span className="flex items-start gap-2">
+          <input
+          type="radio"
+          name="storage-mode"
+          checked={preferences.syncMode === "local"}
+          onChange={() => update({ syncMode: "local" })}
+          />
+          <span><span className="flex items-center gap-1 font-medium"><HardDrive className="size-3.5" />Local storage <span className="text-muted-foreground">(default)</span></span><span className="mt-1 block text-muted-foreground">Your data stays on this device. Later, you can choose important conversations to send their summary to Supabase or save an encrypted backup on Arweave.</span></span>
+        </span>
+      </label>
+      <label className={cn("block cursor-pointer rounded-lg border p-3 transition-colors", preferences.syncMode === "supabase" ? "border-primary bg-primary/5" : "border-border hover:bg-muted/50")}>
+        <span className="flex items-start gap-2"><input
+          type="radio"
+          name="storage-mode"
+          checked={preferences.syncMode === "supabase"}
+          onChange={() => update({ syncMode: "supabase" })}
+        /> <span><span className="flex items-center gap-1 font-medium"><Cloud className="size-3.5" />Cloud storage</span><span className="mt-1 block text-muted-foreground">Use the data you choose from another device. Nothing is uploaded automatically.</span></span></span>
+      </label>
+      {preferences.syncMode === "supabase" && (
+        <div className="ml-5 space-y-1 border-l pl-3">
+          <Input type="password" value={syncPassphrase} onChange={(event) => { setSyncPassphraseState(event.target.value); setSyncPassphrase(event.target.value); }} placeholder="Sync passphrase (kept in memory only)" autoComplete="off" />
+          <p className="text-muted-foreground">This passphrase is never saved or sent to Supabase. You need it again on another device.</p>
+          <p className="rounded-md bg-primary/5 p-2 text-muted-foreground">Supabase receives only the selected encrypted summary after a separate warning and your confirmation. The full conversation is not sent by default. You can delete Supabase data later.</p>
+          <label className="flex items-center gap-2">
+            <input type="checkbox" checked={preferences.syncConversations} onChange={(event) => update({ syncConversations: event.target.checked })} />
+            Conversations
+          </label>
+          <label className="flex items-center gap-2">
+            <input type="checkbox" checked={preferences.syncMemories} onChange={(event) => update({ syncMemories: event.target.checked })} />
+            Memories
+          </label>
+          <label className="flex items-center gap-2">
+            <input type="checkbox" checked={preferences.syncProjects} onChange={(event) => update({ syncProjects: event.target.checked })} />
+            Projects
+          </label>
+        </div>
+      )}
+      <p className="rounded-md border border-amber-500/30 bg-amber-500/5 p-2 text-muted-foreground">Arweave is separate from Supabase and is available in both modes. It remains controlled by the existing Backup storage policy. Arweave data is permanent and cannot be deleted.</p>
+      <Button size="sm" variant="ghost" onClick={() => { setPreferences(DEFAULT_STORAGE_PREFERENCES); saveStoragePreferences(DEFAULT_STORAGE_PREFERENCES); }}>
+        Reset storage choices
+      </Button>
+    </div>
   );
 }
 
@@ -158,6 +225,13 @@ export function SettingsDialog({
           <section className="space-y-3">
             <h3 className="text-sm font-medium">Getting started</h3>
             <HelpSheet triggerClassName="w-full justify-start gap-2" />
+            <section className="space-y-3 rounded-lg border border-border p-3">
+              <h4 className="text-sm font-medium">Data storage and privacy</h4>
+              <p className="text-xs text-muted-foreground">
+                Local-only storage is the default. Choose exactly what may leave this device. Supabase sync is optional; Arweave backups are encrypted and permanent.
+              </p>
+              <StoragePreferencesPanel />
+            </section>
             <section className="rounded-lg border border-border bg-muted/30 p-3 text-xs text-muted-foreground">
               <h4 className="mb-1 font-semibold text-foreground">Privacy</h4>
               <p>Your memory is encrypted, portable, and user-controlled. Conversations stay in your browser/device by default; you can export and restore them, and use a different AI provider. Only the context needed for an AI request is sent, and your API key and encryption passphrase stay local rather than on our servers.</p>

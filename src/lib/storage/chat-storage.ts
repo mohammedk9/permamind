@@ -31,6 +31,7 @@ interface StoredConversation {
   permanentMemory?: boolean;
   starred?: boolean;
   projectId?: string;
+  syncToCloud?: boolean;
 }
 
 interface StoredProject extends Omit<Project, "createdAt" | "updatedAt"> { createdAt: string; updatedAt: string; }
@@ -102,6 +103,7 @@ function serializeConversation(conversation: Conversation): StoredConversation {
     permanentMemory: conversation.permanentMemory,
     starred: conversation.starred,
     projectId: conversation.projectId,
+    syncToCloud: conversation.syncToCloud,
   };
 }
 
@@ -128,6 +130,7 @@ function deserializeConversation(stored: StoredConversation): Conversation {
     permanentMemory: stored.permanentMemory,
     starred: stored.starred,
     projectId: stored.projectId,
+    syncToCloud: stored.syncToCloud,
   };
 }
 

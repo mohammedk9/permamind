@@ -16,11 +16,12 @@ import { getStorageUsage, type StorageUsage } from "@/lib/arweave/storage-quota"
 import { getAllSnapshots, getLastSnapshot } from "@/lib/arweave/snapshot-registry";
 import { loadStoragePolicy, saveStoragePolicy, type StoragePolicy } from "@/lib/arweave/storage-policy";
 import { getQueueStatus } from "@/lib/arweave/upload-queue";
-import { restoreLatestSnapshot, restoreSnapshotByTxId, type RestoreResult } from "@/lib/arweave/restore";
+import { restoreLatestSnapshot, restoreSnapshotByTxId, previewSnapshotByTxId, applyRestorePreview, type RestorePreview, type RestoreResult } from "@/lib/arweave/restore";
 import type { QueueStatusSummary } from "@/lib/arweave/snapshot-types";
 import { startProcessor, stopProcessor } from "@/lib/arweave/queue-processor";
 import Arweave from "arweave";
 import { useLocale } from "@/hooks/use-locale";
+import { previewCloudSync, applyCloudSyncChoice, type SyncPreview } from "@/lib/storage/sync-restore";
 
 const emptyQueue: QueueStatusSummary = { total: 0, pending: 0, uploading: 0, done: 0, failed: 0, lastUploadedAt: null };
 type ArweaveWalletApi = NonNullable<Window["arweaveWallet"]> & {
@@ -64,6 +65,8 @@ export default function BackupPage() {
   const [restoreResult, setRestoreResult] = useState<RestoreResult | null>(null);
   const [restoreWorking, setRestoreWorking] = useState(false);
   const [manualTxId, setManualTxId] = useState("");
+  const [arweavePreview, setArweavePreview] = useState<RestorePreview | null>(null);
+  const [arweavePreviewError, setArweavePreviewError] = useState<string | null>(null);
   const [browserReady, setBrowserReady] = useState(false);
   const [copiedTxId, setCopiedTxId] = useState(false);
   const [walletAddress, setWalletAddress] = useState<string | null>(null);
@@ -73,11 +76,27 @@ export default function BackupPage() {
   const [quote, setQuote] = useState<{ ar: number; source: string } | null>(null);
   const [purchaseMessage, setPurchaseMessage] = useState<string | null>(null);
   const [purchaseWorking, setPurchaseWorking] = useState(false);
+  const [syncPreview, setSyncPreview] = useState<SyncPreview | null>(null);
+  const [syncWorking, setSyncWorking] = useState(false);
+  const [syncMessage, setSyncMessage] = useState<string | null>(null);
   const [paymentNetwork, setPaymentNetwork] = useState<"ethereum" | "base" | "solana">("ethereum");
   const [paymentToken, setPaymentToken] = useState<"USDC" | "USDT">("USDC");
   const [paymentTxHash, setPaymentTxHash] = useState("");
   const [tokenAmount, setTokenAmount] = useState("");
   const snapshot = useSnapshot(conversations.conversations, conversations.activeId, passphrase || null);
+  const previewSync = async () => {
+    setSyncWorking(true); setSyncMessage(null);
+    try { setSyncPreview(await previewCloudSync()); setSyncMessage(ar ? "تم تحميل المعاينة فقط. لم تتغير البيانات المحلية." : "Preview loaded only. Local data was not changed."); }
+    catch (error) { setSyncMessage(error instanceof Error ? error.message : "Cloud restore failed safely."); }
+    finally { setSyncWorking(false); }
+  };
+  const applySync = (choice: "cloud" | "merge" | "local") => {
+    if (!syncPreview) return;
+    if (choice !== "local" && !window.confirm(ar ? "هل توافق صراحةً على تطبيق هذا الخيار؟" : "Do you explicitly approve applying this option?")) return;
+    applyCloudSyncChoice(syncPreview, choice);
+    if (choice !== "local") conversations.reload();
+    setSyncMessage(choice === "local" ? (ar ? "تم الاحتفاظ بالبيانات المحلية." : "Local data was kept.") : (ar ? "تم تطبيق الاستعادة." : "Restore applied."));
+  };
 
   // The backup page is also a queue-worker host. Without this processor,
   // manual backups are encrypted and persisted locally but never uploaded.
@@ -166,6 +185,21 @@ export default function BackupPage() {
     const result = await restoreSnapshotByTxId({ txId: manualTxId.trim(), passphrase, confirm: true });
     setRestoreResult(result); setRestoreWorking(false);
     if (result.status === "restored") conversations.reload();
+  };
+  const previewManual = async () => {
+    setRestoreWorking(true); setRestoreResult(null); setArweavePreviewError(null);
+    try {
+      setArweavePreview(await previewSnapshotByTxId({ txId: manualTxId.trim(), passphrase }));
+    } catch (error) {
+      setArweavePreview(null);
+      setArweavePreviewError(error instanceof Error ? error.message : "Restore preview failed");
+    } finally { setRestoreWorking(false); }
+  };
+  const applyManualPreview = (mode: "replace" | "merge") => {
+    if (!arweavePreview || !window.confirm(ar ? "هل توافق صراحةً على تطبيق هذه المعاينة؟" : "Do you explicitly approve applying this preview?")) return;
+    applyRestorePreview(arweavePreview, mode);
+    conversations.reload();
+    setRestoreResult({ status: "restored", conversationCount: arweavePreview.conversations.length, snapshotVersion: arweavePreview.snapshotVersion, message: mode === "merge" ? "Snapshot merged; local data was retained" : "Snapshot restored", error: null });
   };
   const percentage = usage?.percentageUsed ?? 0;
   const quotaStatus: Status = percentage >= 100 ? "error" : percentage >= 80 ? "attention" : "success";
@@ -285,6 +319,16 @@ export default function BackupPage() {
         <SurfaceCard title={ar ? "كيف تحمي بياناتك؟" : "How your recovery works"} description={ar ? "شرح بسيط قبل البدء" : "A simple explanation before you start"}>
           <div className="space-y-2 text-sm"><p>{ar ? "تبقى محادثاتك محلياً ولا يتم رفعها تلقائياً. عند اختيار نسخة احتياطية، نشفّرها داخل متصفحك قبل رفعها. Arweave يحفظ النسخة المشفرة ولا يستطيع قراءة محتواها." : "Your conversations remain local and are not uploaded automatically. When you choose a backup, it is encrypted in this browser before upload. Arweave stores the encrypted copy and cannot read it."}</p><p>{ar ? "الحذف المحلي لا يحذف النسخة المرفوعة: إذا حذفت محادثة من هذا الجهاز فقد تبقى نسختها المشفرة بشكل دائم على Arweave." : "Delete locally does not delete an uploaded backup: if you delete a conversation from this device, its encrypted copy may remain permanently on Arweave."}</p><p className="font-medium text-status-attention">{ar ? "لا تحفظ عبارة المرور في المتصفح أو في بطاقة الاستعادة. فقدانها يعني فقدان القدرة على فك النسخة." : "Do not rely on the browser or recovery card to store your passphrase. Losing it means the encrypted backup cannot be decrypted."}</p></div>
         </SurfaceCard>
+        <SurfaceCard title={ar ? "استعادة Supabase من جهاز آخر" : "Restore Supabase data from another device"} description={ar ? "يتم تنزيل ciphertext وفك تشفيره محليًا. لا يتم تعديل بياناتك دون موافقة صريحة." : "Only ciphertext is downloaded and decrypted locally. Nothing changes without explicit approval."}>
+          <div className="flex flex-wrap gap-2">
+            <Button variant="outline" disabled={syncWorking || !passphrase} onClick={() => void previewSync()}><Eye className="size-4" />{syncWorking ? (ar ? "جارٍ التحميل…" : "Loading…") : (ar ? "معاينة النسخة السحابية" : "Preview cloud copy")}</Button>
+            <Button variant="outline" disabled={!syncPreview} onClick={() => applySync("cloud")}>{ar ? "استخدام النسخة السحابية" : "Use cloud copy"}</Button>
+            <Button variant="outline" disabled={!syncPreview} onClick={() => applySync("merge")}>{ar ? "دمج مع المحلية" : "Merge with local"}</Button>
+            <Button variant="outline" disabled={!syncPreview} onClick={() => applySync("local")}>{ar ? "الاحتفاظ بالمحلية" : "Keep local"}</Button>
+          </div>
+          {syncPreview && <div className="mt-4 rounded-md border p-3 text-sm"><p className="font-medium">{ar ? "المعاينة" : "Preview"}</p><p className="mt-1">{syncPreview.conversations ? `${syncPreview.conversations.added} added · ${syncPreview.conversations.replaced} newer in cloud · ${syncPreview.conversations.keptLocal} kept local` : "No cloud conversations found."}</p><p className="mt-1 text-caption">{ar ? "تستخدم المقارنة updatedAt وcontentHash. المعاينة لا تكتب إلى localStorage." : "Comparison uses updatedAt and contentHash. Preview does not write to localStorage."}</p></div>}
+          {syncMessage && <p className="mt-3 text-sm" role="status">{syncMessage}</p>}
+        </SurfaceCard>
 
         <div className="grid gap-4 lg:grid-cols-[1.35fr_1fr]">
           <SurfaceCard title={ar ? "نظرة عامة على النسخ الاحتياطي" : "Backup overview"} description={ar ? "تبقى المحادثات المحلية متاحة حتى عند انتظار النسخ أو عدم توفره." : "Local conversations remain available even when a backup is queued or unavailable."} actions={<StatusPill status={state.status} label={state.label} />}>
@@ -358,7 +402,7 @@ export default function BackupPage() {
            <SurfaceCard title="Latest restore" description="Restoring replaces the current local conversation data with the latest available encrypted snapshot.">
             {latestAvailable ? <div className="space-y-3 text-sm"><div className="flex items-center gap-2"><CheckCircle2 className="size-4 text-status-success" /><span>Version {latestAvailable.version} is available and stored on Arweave</span></div><p className="text-muted-foreground">Created {formatDate(latestAvailable.createdAt)} · Uploaded {formatDate(latestAvailable.uploadedAt ?? latestAvailable.createdAt)} · {latestAvailable.conversationIds.length} conversations · {latestAvailable.messageCount} messages</p><div className="rounded-md border border-border bg-muted/30 p-3"><p className="text-caption">Arweave transaction</p><p className="mt-1 break-all font-mono text-xs">{latestAvailable.txId}</p><div className="mt-2 flex flex-wrap gap-2"><Button type="button" variant="outline" size="sm" onClick={copyTxId}>{copiedTxId ? "Copied" : "Copy transaction ID"}</Button><Button type="button" variant="outline" size="sm" onClick={downloadRecoveryCard}>Download recovery card</Button><a className="inline-flex items-center rounded-md border px-3 py-2 text-xs hover:bg-muted" href={`https://viewblock.io/arweave/tx/${latestAvailable.txId}`} target="_blank" rel="noreferrer">Open in ViewBlock</a><a className="inline-flex items-center rounded-md border px-3 py-2 text-xs hover:bg-muted" href={`https://arweave.net/${latestAvailable.txId}`} target="_blank" rel="noreferrer">Open gateway</a></div></div><p className="text-status-attention">Restore is destructive to current local data and cannot be undone by this UI.</p></div> : <div className="flex items-center gap-3 text-sm text-muted-foreground"><Archive className="size-5" />Create and upload a backup before restoring.</div>}
             {restoreResult && <p className={restoreResult.status === "restored" ? "mt-4 text-sm text-status-success" : "mt-4 text-sm text-status-error"} role="status">{restoreResult.message}{restoreResult.error ? `: ${restoreResult.error}` : ""}</p>}
-             <div className="mt-5 border-t pt-4"><p className="text-label">Recover from another browser</p><p className="mt-1 text-caption">Paste the 43-character transaction ID from your recovery card. This requires the same passphrase.</p><div className="mt-2 flex gap-2"><Input value={manualTxId} onChange={(e) => setManualTxId(e.target.value)} placeholder="Arweave transaction ID" aria-label="Arweave transaction ID" /><Button variant="outline" disabled={restoreWorking || !passphrase || !/^[A-Za-z0-9_-]{43}$/.test(manualTxId.trim())} onClick={() => void restoreManual()}>Restore by ID</Button></div></div>
+             <div className="mt-5 border-t pt-4"><p className="text-label">Recover from another browser</p><p className="mt-1 text-caption">أدخل معرف Arweave وكلمة المرور لاستعادة النسخة المشفرة. إذا فقدت كلمة المرور، فلن تتمكن من فتح النسخة ولا يمكن لـ PermaMind أو Arweave استعادتها.</p><div className="mt-2 flex gap-2"><Input value={manualTxId} onChange={(e) => { setManualTxId(e.target.value); setArweavePreview(null); setArweavePreviewError(null); }} placeholder="Arweave transaction ID" aria-label="Arweave transaction ID" /><Button variant="outline" disabled={restoreWorking || !passphrase || !/^[A-Za-z0-9_-]{43}$/.test(manualTxId.trim())} onClick={() => void previewManual()}>Preview encrypted snapshot</Button></div>{arweavePreviewError && <p className="mt-2 text-sm text-status-error" role="alert">{arweavePreviewError}</p>}{arweavePreview && <div className="mt-3 rounded-md border p-3 text-sm"><p>Snapshot v{arweavePreview.snapshotVersion} · {arweavePreview.conversations.length} conversations · {arweavePreview.messageCount} messages</p><p className="mt-1 text-caption">Download, verification, decryption and decompression completed locally. Preview did not change local data.</p><div className="mt-2 flex gap-2"><Button onClick={() => applyManualPreview("replace")}>Restore snapshot</Button><Button variant="outline" onClick={() => applyManualPreview("merge")}>Merge with local</Button></div></div>}</div>
            </SurfaceCard>
         </div>
       </div>

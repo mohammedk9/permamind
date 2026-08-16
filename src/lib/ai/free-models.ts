@@ -3,6 +3,9 @@ export const FREE_MODEL_FALLBACK_CHAIN = [
   "google/gemma-4-26b-a4b-it:free",
   "nvidia/nemotron-3-super-120b-a12b:free",
   "poolside/laguna-xs-2.1:free",
+  "groq/llama-3.1-8b-instant",
+  "groq/openai/gpt-oss-120b",
+  "google-ai/gemini-2.5-flash",
 ] as const;
 
 export const PAID_FALLBACK_MODEL = "deepseek/deepseek-v4-flash";

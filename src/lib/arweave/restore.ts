@@ -1,6 +1,6 @@
 /** Restore encrypted Arweave snapshots into the existing chat storage schema. */
 import type { Conversation } from "@/types/chat";
-import { saveChatData } from "@/lib/storage/chat-storage";
+import { loadChatData, saveChatData } from "@/lib/storage/chat-storage";
 import { bytesToJson, decompress } from "./compression";
 import { canonicalJSON, computeContentHash } from "./dedup";
 import { decrypt, deriveKey } from "./encryption";
@@ -38,6 +38,13 @@ export interface RestoreResult {
   snapshotVersion: number | null;
   message: string;
   error: string | null;
+}
+
+export interface RestorePreview {
+  txId: string;
+  snapshotVersion: number;
+  conversations: Conversation[];
+  messageCount: number;
 }
 
 class CorruptSnapshotError extends Error {
@@ -91,7 +98,10 @@ function validatePayload(payload: unknown, meta: SnapshotMeta): asserts payload 
   validateDates(p);
 }
 
-async function download(meta: SnapshotMeta, options: RestoreOptions): Promise<SnapshotPayload> {
+async function download(
+  meta: SnapshotMeta,
+  options: Pick<RestoreOptions, "passphrase" | "gateway" | "fetcher">,
+): Promise<SnapshotPayload> {
   if (!meta.txId) throw new CorruptSnapshotError(`snapshot v${meta.version} has no transaction ID`);
   const fetcher = options.fetcher ?? fetch;
   const response = await fetcher(`${options.gateway ?? GATEWAY}/${meta.txId}/data`);
@@ -162,6 +172,46 @@ export async function restoreSnapshotByTxId(options: ManualRestoreOptions): Prom
   } catch (error) {
     return { status: "failed", conversationCount: 0, snapshotVersion: null, message: "Restore failed", error: error instanceof Error ? error.message : String(error) };
   }
+}
+
+/** Downloads, validates, decrypts and decompresses a manual snapshot without writing local data. */
+export async function previewSnapshotByTxId(options: Omit<ManualRestoreOptions, "confirm">): Promise<RestorePreview> {
+  if (!options.passphrase) throw new Error("A passphrase is required");
+  if (!/^[A-Za-z0-9_-]{43}$/.test(options.txId)) throw new CorruptSnapshotError("invalid Arweave transaction ID");
+  const fetcher = options.fetcher ?? fetch;
+  const response = await fetcher(`${options.gateway ?? GATEWAY}/tx/${options.txId}`);
+  if (!response.ok) throw new Error(`Unable to find snapshot (HTTP ${response.status})`);
+  const transaction = await response.json() as { tags?: Array<{ name?: string; value?: string }> };
+  const tags = Object.fromEntries((transaction.tags ?? []).filter((tag) => tag.name && tag.value).map((tag) => [tag.name!, tag.value!]));
+  if (tags["App-Name"] !== "PermaMind") throw new CorruptSnapshotError("transaction does not belong to PermaMind");
+  const meta = manualMeta(options.txId, tags);
+  if (meta.type !== "full") throw new CorruptSnapshotError("manual recovery requires a full snapshot");
+  const payload = await download(meta, options);
+  const conversations = payload.conversations.map(toConversation);
+  const messageCount = conversations.reduce((total, conversation) => total + conversation.messages.length, 0);
+  if (conversations.length > MAX_RESTORE_CONVERSATIONS || messageCount > MAX_RESTORE_MESSAGES) {
+    throw new CorruptSnapshotError("restored snapshot exceeds conversation or message limits");
+  }
+  return { txId: options.txId, snapshotVersion: meta.version, conversations, messageCount };
+}
+
+/** Applies an already reviewed preview. This function is never called by preview itself. */
+export function applyRestorePreview(preview: RestorePreview, mode: "replace" | "merge"): void {
+  if (mode === "replace") {
+    saveChatData(preview.conversations, preview.conversations[0]?.id ?? null);
+    return;
+  }
+  const local = loadChatData();
+  const byId = new Map(local.conversations.map((conversation) => [conversation.id, conversation]));
+  for (const remote of preview.conversations) {
+    const current = byId.get(remote.id);
+    if (!current || remote.updatedAt.getTime() > current.updatedAt.getTime()) byId.set(remote.id, remote);
+  }
+  const conversations = [...byId.values()];
+  const activeId = local.activeId && conversations.some((item) => item.id === local.activeId)
+    ? local.activeId
+    : conversations[0]?.id ?? null;
+  saveChatData(conversations, activeId, local.projects);
 }
 
 function toConversation(c: SnapshotConversation): Conversation {

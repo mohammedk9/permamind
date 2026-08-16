@@ -1,6 +1,8 @@
 import {
   createProviderStream,
   createCustomStream,
+  createFreeProviderStream,
+  getFreeRoute,
   parseOpenRouterError,
 } from "@/lib/ai/openrouter";
 import { isValidModelId } from "@/lib/ai/models";
@@ -14,6 +16,11 @@ import type { ChatCompletionMessage, ChatRequestBody } from "@/lib/ai/types";
 export const runtime = "nodejs";
 const MAX_MESSAGES = 100;
 const MAX_CONTENT_LENGTH = 20_000;
+const FALLBACK_DELAY_MS = 450;
+
+function shouldDelayBeforeFallback(status: number): boolean {
+  return status === 429 || status >= 500;
+}
 
 function isValidMessage(
   msg: unknown
@@ -71,7 +78,9 @@ export async function POST(request: Request) {
 
   try {
     for (const tryModel of modelChain) {
-      const upstream = auth.provider === "custom"
+      const upstream = auth.mode === "free"
+        ? await createFreeProviderStream(getFreeRoute(tryModel), messages)
+        : auth.provider === "custom"
         ? await createCustomStream(auth.baseUrl ?? "", auth.modelName ?? tryModel, messages, auth.apiKey)
         : await createProviderStream(
           auth.provider,
@@ -96,6 +105,9 @@ export async function POST(request: Request) {
 
       if (auth.mode === "byok" || (!isModelUnavailableError(upstream.status, lastError) && tryModel === modelChain.at(-1))) {
         return Response.json({ error: lastError }, { status: upstream.status });
+      }
+      if (shouldDelayBeforeFallback(upstream.status)) {
+        await new Promise((resolve) => setTimeout(resolve, FALLBACK_DELAY_MS));
       }
     }
 

@@ -4,7 +4,9 @@ import {
   parseSummaryResponse,
 } from "@/lib/ai/summarize";
 import {
+  createFreeProviderCompletion,
   createOpenRouterCompletion,
+  getFreeRoute,
   parseOpenRouterError,
 } from "@/lib/ai/openrouter";
 import { resolveRequestAuth } from "@/lib/ai/request-auth";
@@ -19,6 +21,7 @@ import type { Message } from "@/types/chat";
 export const runtime = "nodejs";
 const MAX_MESSAGES = 100;
 const MAX_CONTENT_LENGTH = 20_000;
+const FALLBACK_DELAY_MS = 450;
 
 function isValidMessage(
   msg: unknown
@@ -81,16 +84,17 @@ export async function POST(request: Request) {
 
   try {
     for (const tryModel of modelChain) {
-      const upstream = await createOpenRouterCompletion(
-        tryModel,
-        prompt,
-        auth.apiKey
-      );
+      const upstream = auth.mode === "free"
+        ? await createFreeProviderCompletion(getFreeRoute(tryModel), prompt)
+        : await createOpenRouterCompletion(tryModel, prompt, auth.apiKey);
 
       if (!upstream.ok) {
         lastError = await parseOpenRouterError(upstream);
 
         if (isModelUnavailableError(upstream.status, lastError)) {
+          if (upstream.status === 429 || upstream.status >= 500) {
+            await new Promise((resolve) => setTimeout(resolve, FALLBACK_DELAY_MS));
+          }
           continue;
         }
         return Response.json({ error: lastError }, { status: upstream.status });

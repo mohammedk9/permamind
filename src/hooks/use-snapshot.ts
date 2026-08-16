@@ -123,6 +123,9 @@ export function useSnapshot(
       return null;
     }
 
+    const policy = loadStoragePolicy();
+    if (!manual && policy === "manual_backups_only") return null;
+
     // Don't trigger if already processing
     if (isProcessingRef.current) {
       return null;
@@ -137,7 +140,6 @@ export function useSnapshot(
       // trigger never snapshots the transient streaming assistant message.
       const persistedConversations = loadChatData().conversations;
 
-      const policy = loadStoragePolicy();
       const result = await runSnapshotPipeline(
         persistedConversations,
         currentPassphrase,
