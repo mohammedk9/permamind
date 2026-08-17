@@ -5,7 +5,7 @@ export const translations = {
     // Header
     signIn: "Sign In",
     signUp: "Sign Up",
-    languageToggle: "gdg hgj;gti ugd ,hpjlhgdi hsjo]hl hglh`[ hgl]t,ui hgd hkh l,tvih AR",
+    languageToggle: "AR",
 
     // Hero
     heroBadge: "Personal AI memory for your work",
