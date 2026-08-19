@@ -34,41 +34,6 @@ If `.env.example` is not present, create `.env.local` manually. Never commit it.
 
 **Free mode (default):** Add server keys to `.env.local`. The server automatically falls back through OpenRouter, Groq, and Google AI Studio; these providers and models are not exposed to users:
 
-```
-OPENROUTER_API_KEY=sk-or-v1-...
-GROQ_API_KEY=gsk_...
-GOOGLE_AI_API_KEY=...
-# GOOGLE_API_KEY is also accepted as an alternative name.
-NEXT_PUBLIC_APP_URL=http://localhost:3000
-```
-
-**BYOK (optional):** Users can add their own OpenRouter key in **Settings** — stored only in the browser, sent per request through `/api/chat` (never saved on the server).
-
-Then run:
-
-```bash
-npm run dev
-```
-
-Open [http://localhost:3000](http://localhost:3000).
-
-### Optional environment variables
-
-```env
-NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
-NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
-EXA_API_KEY=your-exa-key
-NEXT_PUBLIC_ARWEAVE_NETWORK=mainnet
-ARWEAVE_APP_WALLET_JWK='{"kty":"RSA",...}'
-DATABASE_URL=your-database-url
-SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
-ADMIN_USER_IDS=comma-separated-user-ids
-NEXT_PUBLIC_STORAGE_PAYMENT_ADDRESS=your-address
-SOLANA_PAYMENT_ADDRESS=your-address
-ETH_PAYMENT_ADDRESS=0x...
-```
-
-`SUPABASE_SERVICE_ROLE_KEY`, `DATABASE_URL`, and `ARWEAVE_APP_WALLET_JWK` are server secrets. Do not expose them through `NEXT_PUBLIC_*` variables.
 
 ## Useful commands
 
