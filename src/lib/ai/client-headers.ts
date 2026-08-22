@@ -20,7 +20,7 @@ export function buildApiHeaders(
     headers[HEADER_OPENROUTER_KEY] = apiKey.trim();
     headers["x-ai-provider"] = provider;
     if (provider === "custom" && baseUrl?.trim()) headers["x-ai-base-url"] = baseUrl.trim();
-    if (provider === "custom" && modelName?.trim()) headers["x-ai-model"] = modelName.trim();
+    if (modelName?.trim()) headers["x-ai-model"] = modelName.trim();
   }
 
   return headers;

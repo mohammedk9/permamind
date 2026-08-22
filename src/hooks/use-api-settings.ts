@@ -41,9 +41,12 @@ export function useApiSettings() {
     setBaseUrlState(stored.baseUrl ?? "");
     setModelNameState(stored.modelName ?? "");
     setValidatedAt(stored.validatedAt);
+    // The API key lives in sessionStorage and may be gone at the start of a
+    // new browser session even though BYOK settings persist. Only report
+    // "connected" when a usable key is actually present.
     setConnectionStatus(
       stored.mode === "byok"
-        ? stored.validatedAt
+        ? stored.apiKey && stored.validatedAt
           ? "connected"
           : stored.apiKey
             ? "unknown"

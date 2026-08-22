@@ -4,6 +4,7 @@ import {
   createFreeProviderStream,
   getFreeRoute,
   parseOpenRouterError,
+  sanitizeUpstreamError,
 } from "@/lib/ai/openrouter";
 import { isValidModelId } from "@/lib/ai/models";
 import { resolveRequestAuth } from "@/lib/ai/request-auth";
@@ -12,11 +13,14 @@ import {
   resolveModelChain,
 } from "@/lib/ai/route-models";
 import type { ChatCompletionMessage, ChatRequestBody } from "@/lib/ai/types";
+import { checkRateLimit, rateLimitIdentifier, RATE_LIMIT_DAY_MS } from "@/lib/ai/rate-limit";
 
 export const runtime = "nodejs";
 const MAX_MESSAGES = 100;
 const MAX_CONTENT_LENGTH = 20_000;
 const FALLBACK_DELAY_MS = 450;
+const FREE_DAILY_REQUEST_LIMIT = 10;
+const BYOK_CHAT_REQUESTS_PER_MINUTE = 30;
 
 function shouldDelayBeforeFallback(status: number): boolean {
   return status === 429 || status >= 500;
@@ -53,7 +57,39 @@ export async function POST(request: Request) {
     return Response.json({ error: message }, { status: 401 });
   }
 
-  if (!model || !isValidModelId(model)) {
+  const ip = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? null;
+  const identifier = rateLimitIdentifier(ip, `${auth.mode}:${auth.apiKey}`);
+  let limiter;
+  if (auth.mode === "free") {
+    limiter = checkRateLimit(identifier, FREE_DAILY_REQUEST_LIMIT, RATE_LIMIT_DAY_MS);
+    if (!limiter.allowed) {
+      return Response.json(
+        { error: "You have used your 10 free messages for today. Add your own API key in Settings for unlimited chat, or come back tomorrow." },
+        { status: 429, headers: { "Retry-After": String(limiter.retryAfterSeconds) } }
+      );
+    }
+    // Burst guard on top of the daily allowance so the day's budget cannot be
+    // spent in a few seconds of scripted hammering.
+    const burst = checkRateLimit(`${identifier}:burst`, 5);
+    if (!burst.allowed) {
+      return Response.json(
+        { error: "Too many requests. Please slow down." },
+        { status: 429, headers: { "Retry-After": String(burst.retryAfterSeconds) } }
+      );
+    }
+  } else {
+    limiter = checkRateLimit(`${identifier}:min`, BYOK_CHAT_REQUESTS_PER_MINUTE);
+    if (!limiter.allowed) {
+      return Response.json(
+        { error: "Too many requests. Please slow down." },
+        { status: 429, headers: { "Retry-After": String(limiter.retryAfterSeconds) } }
+      );
+    }
+  }
+
+  const customByokModel = auth.mode === "byok" && auth.provider !== "custom" ? auth.modelName?.trim() : undefined;
+
+  if (!customByokModel && (!model || !isValidModelId(model))) {
     return Response.json(
       {
         error:
@@ -73,7 +109,7 @@ export async function POST(request: Request) {
     return Response.json({ error: "Invalid message format" }, { status: 400 });
   }
 
-  const modelChain = resolveModelChain(model, auth.mode);
+  const modelChain = customByokModel ? [customByokModel] : resolveModelChain(model, auth.mode);
   let lastError = "All models unavailable";
 
   try {
@@ -104,17 +140,17 @@ export async function POST(request: Request) {
       lastError = await parseOpenRouterError(upstream);
 
       if (auth.mode === "byok" || (!isModelUnavailableError(upstream.status, lastError) && tryModel === modelChain.at(-1))) {
-        return Response.json({ error: lastError }, { status: upstream.status });
+        return Response.json({ error: sanitizeUpstreamError(lastError) }, { status: upstream.status });
       }
       if (shouldDelayBeforeFallback(upstream.status)) {
         await new Promise((resolve) => setTimeout(resolve, FALLBACK_DELAY_MS));
       }
     }
 
-    return Response.json({ error: lastError }, { status: 502 });
+    return Response.json({ error: sanitizeUpstreamError(lastError) }, { status: 502 });
   } catch (err) {
     const message =
       err instanceof Error ? err.message : "Failed to reach OpenRouter";
-    return Response.json({ error: message }, { status: 500 });
+    return Response.json({ error: sanitizeUpstreamError(message) }, { status: 500 });
   }
 }

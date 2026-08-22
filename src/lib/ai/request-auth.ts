@@ -29,9 +29,10 @@ export function resolveRequestAuth(request: Request): ResolvedRequestAuth {
   const modelName = request.headers.get("x-ai-model")?.trim();
 
   if (userKey && userKey.length > 512) throw new Error("API key is too long");
+  if (modelName && modelName.length > 200) throw new Error("A valid model name is required");
   if (provider === "custom") {
     if (!baseUrl || !isSafeCustomUrl(baseUrl)) throw new Error("Custom AI URL must be a public HTTPS URL");
-    if (!modelName || modelName.length > 200) throw new Error("A valid custom model is required");
+    if (!modelName) throw new Error("A valid custom model is required");
   }
 
   if (mode === "byok") {

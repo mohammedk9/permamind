@@ -55,6 +55,11 @@ export async function createFreeProviderStream(
   });
 }
 
+// Summaries can be longer in Arabic and other non-Latin scripts, so allow
+// roughly twice the old default before truncation.
+export const SUMMARY_MAX_TOKENS = 800;
+export const SUMMARY_TEMPERATURE = 0.2;
+
 export async function createFreeProviderCompletion(
   route: FreeRoute,
   messages: ChatCompletionMessage[],
@@ -68,7 +73,7 @@ export async function createFreeProviderCompletion(
       Authorization: `Bearer ${apiKey}`,
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({ model: route.model, messages, stream: false, max_tokens: options?.maxTokens ?? 400, temperature: options?.temperature ?? 0.2 }),
+    body: JSON.stringify({ model: route.model, messages, stream: false, max_tokens: options?.maxTokens ?? SUMMARY_MAX_TOKENS, temperature: options?.temperature ?? SUMMARY_TEMPERATURE }),
   });
 }
 
@@ -133,10 +138,61 @@ export async function createOpenRouterCompletion(
       model,
       messages,
       stream: false,
-      max_tokens: options?.maxTokens ?? 400,
-      temperature: options?.temperature ?? 0.2,
+      max_tokens: options?.maxTokens ?? SUMMARY_MAX_TOKENS,
+      temperature: options?.temperature ?? SUMMARY_TEMPERATURE,
     }),
   });
+}
+
+/**
+ * Performs a real credential check against each provider's lightweight models
+ * endpoint so users learn immediately whether their key works, instead of
+ * deferring to the first chat request.
+ */
+export async function validateProviderKey(
+  provider: AiProvider,
+  apiKey: string
+): Promise<{ valid: boolean; error?: string; deferred?: boolean }> {
+  try {
+    if (provider === "anthropic") {
+      const res = await fetch("https://api.anthropic.com/v1/models", {
+        headers: { "x-api-key": apiKey, "anthropic-version": "2023-06-01" },
+        cache: "no-store",
+      });
+      return res.ok ? { valid: true } : { valid: false };
+    }
+    if (provider === "google") {
+      const res = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models?key=${encodeURIComponent(apiKey)}&pageSize=1`,
+        { cache: "no-store" }
+      );
+      return res.ok ? { valid: true } : { valid: false };
+    }
+    const base = DIRECT_URLS[provider];
+    if (!base) {
+      // No direct API integration for this provider yet (e.g. meta).
+      return { valid: true, deferred: true };
+    }
+    const res = await fetch(`${base}/models`, {
+      headers: { Authorization: `Bearer ${apiKey}` },
+      cache: "no-store",
+    });
+    return res.ok ? { valid: true } : { valid: false };
+  } catch {
+    return { valid: false, error: "Could not reach the AI provider" };
+  }
+}
+
+/**
+ * Upstream error bodies may echo internal details or even submitted
+ * credentials. Redact secret-looking tokens and cap length before the
+ * message reaches the client.
+ */
+export function sanitizeUpstreamError(message: string): string {
+  return message
+    .replace(/sk-[A-Za-z0-9_-]{8,}/g, "[redacted]")
+    .replace(/(?:api[_-]?key|authorization|bearer)\s*[:=]\s*\S+/gi, "$1 [redacted]")
+    .slice(0, 200);
 }
 
 export async function validateOpenRouterKey(

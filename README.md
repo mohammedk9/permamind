@@ -87,6 +87,7 @@ docs/
 - Never commit `.env.local`, API keys, service-role keys, database passwords, or wallet JWKs.
 - Rotate any secret exposed in a terminal, chat, screenshot, or repository history immediately.
 - Snapshot payloads are encrypted in the client before upload; the passphrase is not sent to Arweave.
+- BYOK API keys are stored in `sessionStorage` (`permamind:api-key:v1`) only — never in persistent storage — so they are cleared automatically when the browser session ends. Users re-enter the key after restarting the browser; provider/model settings remain in `localStorage` because they are not secrets.
 - Restore validates metadata, hashes, dates, payload limits, and explicit user confirmation before replacing local data.
 - Use HTTPS in production and set `NEXT_PUBLIC_APP_URL` to the real HTTPS origin.
 - Configure rate limits and monitoring before sharing a server-side AI key with multiple users.

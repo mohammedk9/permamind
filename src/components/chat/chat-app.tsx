@@ -12,6 +12,8 @@ import { ProjectWorkspace } from "@/components/chat/project-workspace";
 import { WorkspaceStartDialog } from "@/components/chat/workspace-start-dialog";
 import { AppShell, type ProductArea } from "@/components/layout/app-shell";
 import { HelpSheet } from "@/components/help/how-permamind-works";
+import { FirstLaunchOnboarding } from "@/components/settings/first-launch-onboarding";
+import { hasCompletedFirstRun } from "@/lib/settings/first-run";
 import { useAnalytics } from "@/hooks/use-analytics";
 import { useApiSettings } from "@/hooks/use-api-settings";
 import { useChatCompletion } from "@/hooks/use-chat-completion";
@@ -46,6 +48,7 @@ export function ChatApp() {
   // The passphrase intentionally lives only in React memory. It is never
   // persisted to localStorage, sent to the server, or included in a snapshot.
   const [snapshotPassphrase, setSnapshotPassphrase] = useState("");
+  const [showOnboarding, setShowOnboarding] = useState(false);
   const [snapshotsEnabled, setSnapshotsEnabled] = useState(false);
   const [storagePolicy, setStoragePolicy] = useState<StoragePolicy>("manual_backups_only");
   const {
@@ -76,6 +79,7 @@ export function ChatApp() {
 
   useEffect(() => {
     setStoragePolicy(loadStoragePolicy());
+    if (!hasCompletedFirstRun()) setShowOnboarding(true);
   }, []);
 
   const handleStoragePolicyChange = useCallback((policy: StoragePolicy) => {
@@ -394,6 +398,7 @@ export function ChatApp() {
   return (
     <>
       <WorkspaceStartDialog open={isHydrated && conversations.length === 0 && projects.length === 0 && !activeConversation} onChat={handleNewChat} onProject={handleNewProject} />
+      <FirstLaunchOnboarding open={showOnboarding} onComplete={() => setShowOnboarding(false)} />
       <AppShell activeArea={area} onNavigate={navigate} utility={<div><SnapshotSettings passphrase={snapshotPassphrase} onPassphraseChange={setSnapshotPassphrase} enabled={snapshotsEnabled} onEnabledChange={(enabled) => { if (enabled && snapshotPassphrase.length < 8) { window.alert("Set an encryption passphrase of at least 8 characters before enabling backups."); return; } setSnapshotsEnabled(enabled); }} onSnapshotNow={() => { if (window.confirm("Create an encrypted permanent Arweave backup now? Uploaded backups cannot be deleted.")) void snapshot.triggerSnapshot(true); }} isProcessing={snapshot.isProcessing} storagePolicy={storagePolicy} onStoragePolicyChange={handleStoragePolicyChange} triggerClassName="w-full justify-start gap-2" /><HelpSheet triggerClassName="w-full justify-start gap-2" /><ChatPolicies /></div>} sidebar={<ChatSidebar
         className="mt-5 min-h-0 flex-1 border-0 border-t border-sidebar-border pt-4"
         conversations={conversations}

@@ -17,11 +17,15 @@ import {
 import { getSummaryModel } from "@/lib/ai/summary-model";
 import type { ChatCompletionMessage } from "@/lib/ai/types";
 import type { Message } from "@/types/chat";
+import { sanitizeUpstreamError } from "@/lib/ai/openrouter";
+import { checkRateLimit, rateLimitIdentifier, RATE_LIMIT_DAY_MS } from "@/lib/ai/rate-limit";
 
 export const runtime = "nodejs";
 const MAX_MESSAGES = 100;
 const MAX_CONTENT_LENGTH = 20_000;
 const FALLBACK_DELAY_MS = 450;
+const FREE_DAILY_SUMMARY_LIMIT = 10;
+const BYOK_SUMMARY_REQUESTS_PER_MINUTE = 20;
 
 function isValidMessage(
   msg: unknown
@@ -53,6 +57,27 @@ export async function POST(request: Request) {
   }
 
   const { messages } = body;
+
+  const ip = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? null;
+  const identifier = rateLimitIdentifier(ip, `${auth.mode}:${auth.apiKey}`);
+  let limiter;
+  if (auth.mode === "free") {
+    limiter = checkRateLimit(identifier, FREE_DAILY_SUMMARY_LIMIT, RATE_LIMIT_DAY_MS);
+    if (!limiter.allowed) {
+      return Response.json(
+        { error: "You have used your free summary allowance for today. Add your own API key in Settings, or come back tomorrow." },
+        { status: 429, headers: { "Retry-After": String(limiter.retryAfterSeconds) } }
+      );
+    }
+  } else {
+    limiter = checkRateLimit(`${identifier}:min`, BYOK_SUMMARY_REQUESTS_PER_MINUTE);
+    if (!limiter.allowed) {
+      return Response.json(
+        { error: "Too many summary requests. Please slow down." },
+        { status: 429, headers: { "Retry-After": String(limiter.retryAfterSeconds) } }
+      );
+    }
+  }
 
   if (!Array.isArray(messages) || messages.length < 2 || messages.length > MAX_MESSAGES) {
     return Response.json(
@@ -97,7 +122,7 @@ export async function POST(request: Request) {
           }
           continue;
         }
-        return Response.json({ error: lastError }, { status: upstream.status });
+        return Response.json({ error: sanitizeUpstreamError(lastError) }, { status: upstream.status });
       }
 
       const data = (await upstream.json()) as {
@@ -126,10 +151,10 @@ export async function POST(request: Request) {
       });
     }
 
-    return Response.json({ error: lastError }, { status: 502 });
+    return Response.json({ error: sanitizeUpstreamError(lastError) }, { status: 502 });
   } catch (err) {
     const message =
       err instanceof Error ? err.message : "Failed to generate summary";
-    return Response.json({ error: message }, { status: 500 });
+    return Response.json({ error: sanitizeUpstreamError(message) }, { status: 500 });
   }
 }

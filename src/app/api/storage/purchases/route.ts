@@ -7,6 +7,10 @@ import { verifyPayment } from "@/lib/payments/verify";
 const ARWEAVE_ADDRESS = /^[A-Za-z0-9_-]{43}$/;
 const TX_ID = /^[A-Za-z0-9_-]{43}$/;
 const PAYMENT_ADDRESS = process.env.NEXT_PUBLIC_STORAGE_PAYMENT_ADDRESS;
+// Avoid re-querying the Arweave node on every request; confirmed byte totals
+// change rarely, so a short per-user cache keeps this endpoint fast.
+const CONFIRMED_BYTES_CACHE_TTL_MS = 5 * 60_000;
+const confirmedBytesCache = new Map<string, { value: number; expiresAt: number }>();
 
 export async function POST(request: Request) {
   const { supabase, user } = await requireUser();
@@ -54,6 +58,8 @@ export async function POST(request: Request) {
 export async function GET() {
   const { supabase, user } = await requireUser();
   if (!supabase || !user) return NextResponse.json({ error: "Sign in required" }, { status: 401 });
+  const cached = confirmedBytesCache.get(user.id);
+  if (cached && cached.expiresAt > Date.now()) return NextResponse.json({ confirmedBytes: cached.value });
   const { data, error } = await supabase.from("storage_purchases").select("bytes,status,tx_id").eq("user_id", user.id);
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   let confirmedBytes = 0;
@@ -68,5 +74,6 @@ export async function GET() {
       confirmedBytes += Number(purchase.bytes);
     }
   }
+  confirmedBytesCache.set(user.id, { value: confirmedBytes, expiresAt: Date.now() + CONFIRMED_BYTES_CACHE_TTL_MS });
   return NextResponse.json({ confirmedBytes });
 }
