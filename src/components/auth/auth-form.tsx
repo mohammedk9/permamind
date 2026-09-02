@@ -5,6 +5,7 @@ import { FormEvent, useState } from "react";
 import { Eye, EyeOff } from "lucide-react";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import { useLocale } from "@/hooks/use-locale";
+import { LogoMark } from "@/components/ui/logo";
 
 type Mode = "sign-in" | "sign-up" | "forgot" | "reset";
 
@@ -44,7 +45,7 @@ if (mode === "sign-in" || mode === "reset") window.location.assign("/chat");
   const eyeButtonClass = "absolute left-2 top-1/2 mt-0.5 -translate-y-1/2 rounded p-1 text-muted-foreground hover:text-foreground";
   return <main dir={isRTL ? "rtl" : "ltr"} className="flex min-h-dvh items-center justify-center bg-background p-6"><div className="w-full max-w-md rounded-2xl border bg-card p-8 shadow-sm">
     <button type="button" onClick={toggleLocale} className="mb-4 text-sm text-muted-foreground underline">{ar ? "English" : "العربية"}</button>
-    <div className="mb-8 text-center"><div className="mx-auto mb-4 flex size-12 items-center justify-center rounded-xl bg-primary text-xl font-bold text-primary-foreground">P</div><h1 className="text-2xl font-semibold">{title}</h1><p className="mt-2 text-sm text-muted-foreground">{ar ? "PermaMind يتذكر ما يهمك." : "PermaMind remembers what matters."}</p></div>
+    <div className="mb-8 text-center"><div className="mx-auto mb-4"><LogoMark size="lg" /></div><h1 className="text-2xl font-semibold">{title}</h1><p className="mt-2 text-sm text-muted-foreground">{ar ? "PermaMind يتذكر ما يهمك." : "PermaMind remembers what matters."}</p></div>
     <form onSubmit={submit} className="space-y-4">
       {mode !== "reset" && <label className="block text-sm font-medium">{ar ? "البريد الإلكتروني" : "Email"}<input required type="email" value={email} onChange={e => setEmail(e.target.value)} className="mt-1 w-full rounded-lg border bg-background px-3 py-2.5 outline-none focus:ring-2 focus:ring-ring" /></label>}
       {mode !== "forgot" && <>

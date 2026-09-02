@@ -14,6 +14,8 @@ import {
   Lock,
 } from "lucide-react";
 import { LanguageToggle } from "@/components/landing/language-toggle";
+import { Logo } from "@/components/ui/logo";
+import { SplashScreen } from "@/components/landing/splash-screen";
 import { Locale, translations } from "@/lib/i18n/translations";
 
 const featureIcons = {
@@ -44,18 +46,17 @@ export default function LandingPage() {
 
   return (
     <div
+      id="top"
       dir={isRTL ? "rtl" : "ltr"}
       className="min-h-dvh overflow-y-auto bg-background text-foreground"
     >
+      <SplashScreen />
       {/* Header */}
       <header className="sticky top-0 z-50 border-b border-border/50 bg-background/80 backdrop-blur-xl">
         <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-4 sm:px-6">
-          <div className="flex items-center gap-3">
-            <div className="flex size-9 items-center justify-center rounded-xl bg-primary text-sm font-bold text-primary-foreground">
-              P
-            </div>
-            <span className="text-lg font-semibold">PermaMind</span>
-          </div>
+          <Link href="/" className="flex items-center gap-2.5" aria-label="PermaMind home">
+            <Logo size="md" withWordmark />
+          </Link>
           <div className="flex items-center gap-3">
             <LanguageToggle
               locale={locale}
@@ -304,45 +305,69 @@ export default function LandingPage() {
       </section>
 
       {/* Footer */}
-      <footer className="border-t border-border/50 py-12">
-        <div className="mx-auto max-w-6xl px-4 sm:px-6">
-          <div className="flex flex-col gap-8">
-            <div className="flex flex-col items-center justify-between gap-4 sm:flex-row">
-            <div className="flex items-center gap-3">
-              <div className="flex size-8 items-center justify-center rounded-lg bg-primary text-xs font-bold text-primary-foreground">
-                P
+      <footer className="border-t border-border/60 bg-card/20">
+        <div className="mx-auto max-w-6xl px-4 py-16 sm:px-6">
+          <div className="grid gap-12 lg:grid-cols-[1.2fr_0.8fr] lg:gap-20">
+            <div>
+              <Link
+                href="/"
+                className="inline-flex rounded-lg"
+                aria-label="PermaMind home"
+              >
+                <Logo size="sm" withWordmark />
+              </Link>
+              <p className="mt-5 max-w-md text-sm leading-6 text-muted-foreground">
+                {t.footerDescription}
+              </p>
+              <a
+                href="https://x.com/A_up100"
+                target="_blank"
+                rel="noreferrer"
+                className="mt-6 inline-flex text-sm font-medium text-foreground underline-offset-4 transition-colors hover:text-primary hover:underline"
+              >
+                {t.footerContact}
+              </a>
+            </div>
+
+            <nav aria-label="Footer navigation">
+              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+                {isRTL ? "روابط" : "Explore"}
+              </p>
+              <div className="mt-5 grid grid-cols-2 gap-x-8 gap-y-4 text-sm">
+                <a href="#privacy" className="text-muted-foreground transition-colors hover:text-foreground">
+                  {t.footerPrivacy}
+                </a>
+                <a href="#terms" className="text-muted-foreground transition-colors hover:text-foreground">
+                  {t.footerTerms}
+                </a>
+                <a href="#help" className="text-muted-foreground transition-colors hover:text-foreground">
+                  {t.footerHelp}
+                </a>
+                <a href="#top" className="text-muted-foreground transition-colors hover:text-foreground">
+                  {isRTL ? "العودة للأعلى" : "Back to top"}
+                </a>
               </div>
-              <span className="font-semibold">PermaMind</span>
-            </div>
-            <p className="text-sm text-muted-foreground">
-              {t.footerDescription}
-            </p>
-            <p className="text-sm text-muted-foreground">
-              © {new Date().getFullYear()} PermaMind. {t.footerRights}
-            </p>
-            </div>
+            </nav>
+          </div>
 
-            <div className="flex flex-wrap items-center justify-center gap-x-6 gap-y-3 border-t border-border/50 pt-6 text-sm text-muted-foreground sm:justify-end">
-              <a href="#privacy" className="transition-colors hover:text-foreground">{t.footerPrivacy}</a>
-              <a href="#terms" className="transition-colors hover:text-foreground">{t.footerTerms}</a>
-              <a href="#help" className="transition-colors hover:text-foreground">{t.footerHelp}</a>
-              <a href="https://x.com/A_up100" target="_blank" rel="noreferrer" className="transition-colors hover:text-foreground">{t.footerContact}</a>
-            </div>
+          <div className="mt-14 grid gap-4 border-t border-border/60 pt-10 md:grid-cols-3">
+            <section id="privacy" className="scroll-mt-24 rounded-2xl border border-border/70 bg-background/40 p-5">
+              <h2 className="text-sm font-semibold text-foreground">{t.privacyTitle}</h2>
+              <p className="mt-3 text-sm leading-6 text-muted-foreground">{t.privacyDescription}</p>
+            </section>
+            <section id="terms" className="scroll-mt-24 rounded-2xl border border-border/70 bg-background/40 p-5">
+              <h2 className="text-sm font-semibold text-foreground">{t.termsTitle}</h2>
+              <p className="mt-3 text-sm leading-6 text-muted-foreground">{t.termsDescription}</p>
+            </section>
+            <section id="help" className="scroll-mt-24 rounded-2xl border border-border/70 bg-background/40 p-5">
+              <h2 className="text-sm font-semibold text-foreground">{t.helpTitle}</h2>
+              <p className="mt-3 text-sm leading-6 text-muted-foreground">{t.helpDescription}</p>
+            </section>
+          </div>
 
-            <div className="grid gap-4 border-t border-border/50 pt-6 text-sm text-muted-foreground sm:grid-cols-3">
-              <section id="privacy" className="scroll-mt-24">
-                <h2 className="font-semibold text-foreground">{t.privacyTitle}</h2>
-                <p className="mt-2 leading-relaxed">{t.privacyDescription}</p>
-              </section>
-              <section id="terms" className="scroll-mt-24">
-                <h2 className="font-semibold text-foreground">{t.termsTitle}</h2>
-                <p className="mt-2 leading-relaxed">{t.termsDescription}</p>
-              </section>
-              <section id="help" className="scroll-mt-24">
-                <h2 className="font-semibold text-foreground">{t.helpTitle}</h2>
-                <p className="mt-2 leading-relaxed">{t.helpDescription}</p>
-              </section>
-            </div>
+          <div className="mt-10 flex flex-col gap-3 border-t border-border/60 pt-6 text-sm text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
+            <p>© {new Date().getFullYear()} PermaMind. {t.footerRights}</p>
+            <p>{t.footerDescription}</p>
           </div>
         </div>
       </footer>
