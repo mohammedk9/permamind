@@ -7,6 +7,24 @@ export const MEMORY_TOKEN_BUDGET = 600;
 const MIN_QUERY_LENGTH = 3;
 const MIN_SCORE = 0.8;
 
+const ARABIC_DIACRITICS = /[\u0610-\u061A\u064B-\u065F\u0670\u06D6-\u06ED]/g;
+const ARABIC_ZERO_WIDTH = /[\u200B-\u200F]/g;
+
+function normalizeArabic(text: string): string {
+  return text
+    .normalize("NFKC")
+    .toLowerCase()
+    .replace(ARABIC_DIACRITICS, "")
+    .replace(ARABIC_ZERO_WIDTH, "")
+    .replace(/[أإآ]/g, "ا")
+    .replace(/ى/g, "ي")
+    .replace(/ة/g, "ه")
+    .replace(/ؤ/g, "و")
+    .replace(/ئ/g, "ي")
+    .replace(/ء/g, "")
+    .replace(/ـ/g, "");
+}
+
 const PREVIOUS_CONVERSATION_PATTERNS = [
   /\bdid we (?:ever )?talk(?:ed)? about\b/i,
   /\bwhat did you say (?:before|previously|last time)\b/i,
@@ -15,17 +33,206 @@ const PREVIOUS_CONVERSATION_PATTERNS = [
   /\bremember when\b/i,
 ];
 
+const ARABIC_PREVIOUS_CONVERSATION_PATTERNS = [
+  /(?:^|\s)(?:ماذا|ما|شنو|اشنو|اش|ايه|أي)\s+(?:قلت|قلتي|قلتم|قلنا|ذكرت|ذكرتي|ذكرتم|ذكرنا|قلته|ذكرته)(?:\s+(?:لي|لنا|سابقا|قبل|بالقبل|في\s+السابق|من\s+قبل))?/iu,
+  /(?:^|\s)(?:تذكر|تذكري|تذكرو|تذكروا|تذكرين|تذكرني|اذكر|استمر|واصل|أكمل|اكمل)(?:ني)?/iu,
+  /(?:^|\s)(?:هل\s+)?(?:تحدثنا|تكلمنا|ناقشنا|تناولنا)(?:\s+عن)?/iu,
+  /(?:^|\s)(?:ما|ماذا|شنو|اشنو|اش|ايه|أي)\s+(?:اسم|تفاصيل|ملخص|موضوع|مشروع|قرار|خطة|معلومات)?\s*(?:الذي|التي|اللي)?\s*(?:قلت|قلنا|ذكرت|ذكرنا|قلته|ذكرته)(?:\s+(?:به|عليه|سابقا|قبل|بالقبل|في\s+السابق|من\s+قبل))?/iu,
+  /(?:^|\s)(?:المحادثة\s+السابقة|محادثة\s+سابقة|آخر\s+مرة|المرة\s+السابقة|سابقا|قبل|بالقبل|في\s+السابق|من\s+قبل)/iu,
+];
+
+function isArabicPreviousConversationQuery(query: string): boolean {
+  const normalized = normalizeArabic(query);
+  return ARABIC_PREVIOUS_CONVERSATION_PATTERNS.some((pattern) => pattern.test(normalized));
+}
+
 export function isPreviousConversationQuery(query: string): boolean {
-  return PREVIOUS_CONVERSATION_PATTERNS.some((pattern) => pattern.test(query));
+  return PREVIOUS_CONVERSATION_PATTERNS.some((pattern) => pattern.test(query)) ||
+    isArabicPreviousConversationQuery(query);
+}
+
+const ARABIC_INTERROGATIVE_WORDS = [
+  "ماذا",
+  "ما",
+  "شنو",
+  "اشنو",
+  "اش",
+  "ايه",
+  "أي",
+  "هل",
+];
+
+const ARABIC_PREVIOUS_VERBS = [
+  "تذكرني",
+  "تذكروا",
+  "تذكرو",
+  "تذكري",
+  "تذكرين",
+  "تذكر",
+  "اذكر",
+  "استمر",
+  "واصل",
+  "أكمل",
+  "اكمل",
+  "قلته",
+  "قلتها",
+  "قلتي",
+  "قلتم",
+  "قلنا",
+  "قلت",
+  "ذكرته",
+  "ذكرتها",
+  "ذكرتي",
+  "ذكرتم",
+  "ذكرنا",
+  "ذكرت",
+  "تحدثنا",
+  "تكلمنا",
+  "ناقشنا",
+  "تناولنا",
+];
+
+const ARABIC_RELATIVE_WORDS = [
+  "الذين",
+  "اللواتي",
+  "اللذان",
+  "الذي",
+  "التي",
+  "اللي",
+];
+
+const ARABIC_PREVIOUS_MARKERS = [
+  "المحادثة السابقة",
+  "محادثة سابقة",
+  "المرة السابقة",
+  "آخر مرة",
+  "اخر مرة",
+  "في السابق",
+  "من قبل",
+  "بالقبل",
+  "سابقا",
+  "قبل",
+];
+
+const ARABIC_FILLER_WORDS = [
+  "هناك",
+  "هنا",
+  "هذا",
+  "هذه",
+  "ذلك",
+  "تلك",
+  "كانت",
+  "كان",
+  "نحن",
+  "انا",
+  "أنا",
+  "انت",
+  "أنت",
+  "هو",
+  "هي",
+  "هم",
+  "هما",
+  "شيء",
+  "شي",
+];
+
+const ARABIC_STOP_WORDS = new Set([
+  ...ARABIC_INTERROGATIVE_WORDS,
+  ...ARABIC_PREVIOUS_VERBS,
+  ...ARABIC_RELATIVE_WORDS,
+  ...ARABIC_PREVIOUS_MARKERS,
+  ...ARABIC_FILLER_WORDS,
+  "من",
+  "في",
+  "على",
+  "عن",
+  "مع",
+  "الى",
+  "إلى",
+  "ب",
+  "ل",
+  "لا",
+  "ليس",
+  "لقد",
+  "لم",
+  "لن",
+  "كل",
+  "بعض",
+  "ايضا",
+  "أيضا",
+  "عند",
+  "اذا",
+  "إذا",
+  "كيف",
+  "لماذا",
+  "متى",
+  "بين",
+  "ثم",
+  "لكن",
+  "ولكن",
+  "او",
+  "أو",
+  "ان",
+  "إن",
+  "اما",
+  "أما",
+  "حتى",
+  "لكي",
+  "بعد",
+  "دون",
+  "خلال",
+  "حول",
+  "داخل",
+  "خارج",
+  "اول",
+  "أول",
+  "اخر",
+  "آخر",
+]);
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function removeArabicWords(text: string, words: string[]): string {
+  const alternatives = words
+    .map(escapeRegExp)
+    .sort((a, b) => b.length - a.length)
+    .join("|");
+  if (!alternatives) return text;
+
+  return text.replace(
+    new RegExp(`(^|\\s)(?:${alternatives})(?=\\s|$)`, "giu"),
+    "$1"
+  );
+}
+
+function stripArabicPreviousConversationWords(query: string): string {
+  let result = normalizeArabic(query)
+    .replace(/[^\p{L}\p{N}\s]/gu, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  result = removeArabicWords(result, ARABIC_PREVIOUS_MARKERS);
+  result = removeArabicWords(result, ARABIC_RELATIVE_WORDS);
+  result = removeArabicWords(result, ARABIC_PREVIOUS_VERBS);
+  result = removeArabicWords(result, ARABIC_INTERROGATIVE_WORDS);
+  result = removeArabicWords(result, ARABIC_FILLER_WORDS);
+
+  return result.replace(/\s+/g, " ").trim();
 }
 
 export function previousConversationSearchQuery(query: string): string {
+  if (isArabicPreviousConversationQuery(query)) {
+    return stripArabicPreviousConversationWords(query);
+  }
+
   return query
-    .replace(/did we (?:ever )?talk(?:ed)? about/i, "")
-    .replace(/what did you say (?:before|previously|last time)/i, "")
-    .replace(/what was my previous/i, "")
-    .replace(/continue from last time/i, "")
-    .replace(/remember when/i, "")
+    .replace(/did we (?:ever )?talk(?:ed)? about/gi, "")
+    .replace(/what did you say (?:before|previously|last time)/gi, "")
+    .replace(/what was my previous/gi, "")
+    .replace(/continue from last time/gi, "")
+    .replace(/remember when/gi, "")
     .trim();
 }
 
@@ -71,11 +278,11 @@ const STOP_WORDS = new Set([
 ]);
 
 function tokenize(text: string): string[] {
-  return text
-    .toLowerCase()
-    .replace(/[^\w\s]/g, " ")
-    .split(/\s+/)
-    .filter((w) => w.length > 2 && !STOP_WORDS.has(w));
+  const normalized = normalizeArabic(text);
+  return normalized
+    .replace(/[^\p{L}\p{N}\s]/gu, " ")
+    .split(/\s+/u)
+    .filter((word) => word.length > 2 && !STOP_WORDS.has(word) && !ARABIC_STOP_WORDS.has(word));
 }
 
 function wordOverlapScore(
@@ -84,13 +291,14 @@ function wordOverlapScore(
   fullQuery: string
 ): number {
   if (queryTokens.length === 0) return 0;
-  const lower = text.toLowerCase();
+  const normalizedText = normalizeArabic(text);
+  const normalizedFullQuery = normalizeArabic(fullQuery);
   let score = 0;
   for (const token of queryTokens) {
-    if (lower.includes(token)) score += 1;
+    if (normalizedText.includes(token)) score += 1;
   }
   let normalized = score / queryTokens.length;
-  if (fullQuery.length >= 4 && lower.includes(fullQuery.toLowerCase())) {
+  if (normalizedFullQuery.length >= 4 && normalizedText.includes(normalizedFullQuery)) {
     normalized += 1.2;
   }
   return normalized;

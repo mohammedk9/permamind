@@ -38,4 +38,42 @@ describe("reliable cross-conversation recall", () => {
     expect(messages[0].content).toContain("no previous conversation was found");
     expect(messages[0].content).toContain("Do not answer from general knowledge");
   });
+
+  it("detects Arabic previous-conversation phrasing and keeps the subject", () => {
+    expect(isPreviousConversationQuery("ما اسم المشروع الذي ذكرته سابقا؟")).toBe(true);
+    expect(previousConversationSearchQuery("ما اسم المشروع الذي ذكرته سابقا؟")).toBe("اسم المشروع");
+    expect(isPreviousConversationQuery("ماذا قلت سابقا؟")).toBe(true);
+    expect(previousConversationSearchQuery("ماذا قلت سابقا؟")).toBe("");
+  });
+
+  it("retrieves Arabic messages across conversations with normalized spelling", () => {
+    const arabicConversations: Conversation[] = [{
+      id: "ar-old",
+      title: "ملاحظات المشروع",
+      createdAt: date,
+      updatedAt: date,
+      messages: [
+        { id: "ar-u1", role: "user", content: "اسم المشروع أطلس وسأستخدم النشر الأزرق والأخضر", createdAt: date },
+        { id: "ar-a1", role: "assistant", content: "سجلت أن أطلس سيستخدم النشر الأزرق والأخضر", createdAt: date },
+      ],
+    }];
+
+    const memories = retrieveRelevantMemories("أَطْلُس", arabicConversations, null, false);
+    expect(memories.some((memory) => memory.messageId === "ar-u1" && memory.excerpt.includes("أطلس"))).toBe(true);
+  });
+
+  it("retrieves a prior Arabic conversation for a generic what-did-you-say query", () => {
+    const arabicConversations: Conversation[] = [{
+      id: "ar-old",
+      title: "محادثة سابقة",
+      createdAt: date,
+      updatedAt: date,
+      messages: [
+        { id: "ar-u1", role: "user", content: "المشروع الذي اخترته هو أطلس", createdAt: date },
+      ],
+    }];
+
+    const memories = retrieveRelevantMemories("", arabicConversations, null, true);
+    expect(memories.some((memory) => memory.excerpt.includes("أطلس"))).toBe(true);
+  });
 });
