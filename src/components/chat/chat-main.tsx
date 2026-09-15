@@ -145,7 +145,7 @@ export function ChatMain({
               onToggleCloudSync={onToggleCloudSync}
               onSyncSummary={onSyncSummary}
               isSummarizing={isSummarizing}
-              className="h-full w-full border-0"
+              className="min-h-0 w-full flex-1 border-0"
             />
           </SheetContent>
         </Sheet>

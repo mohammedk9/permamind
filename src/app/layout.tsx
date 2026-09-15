@@ -1,7 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 
-import { QueueStatus } from "@/components/arweave/queue-status";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { APP_DESCRIPTION, APP_NAME } from "@/lib/constants";
 import { LocaleProvider } from "@/components/i18n/locale-provider";
@@ -86,7 +85,6 @@ export default function RootLayout({
       >
         <TooltipProvider>
           <LocaleProvider>{children}</LocaleProvider>
-          <QueueStatus className="fixed bottom-4 right-4 z-50" />
         </TooltipProvider>
       </body>
     </html>

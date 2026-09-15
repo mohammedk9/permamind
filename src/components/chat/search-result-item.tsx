@@ -17,7 +17,7 @@ export function SearchResultItem({ result, onSelect }: SearchResultItemProps) {
       type="button"
       onClick={onSelect}
       className={cn(
-        "w-full rounded-lg px-3 py-2 text-left transition-colors",
+        "w-full rounded-lg px-3 py-2 text-start transition-colors",
         "hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
       )}
     >

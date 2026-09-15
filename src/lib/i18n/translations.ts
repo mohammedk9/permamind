@@ -8,56 +8,52 @@ export const translations = {
     languageToggle: "AR",
 
     // Hero
-    heroBadge: "Personal AI memory for your work",
-    heroTitle: "AI that remembers",
-    heroTitleHighlight: "your work",
-    heroTitleEnd: "across every conversation.",
+    heroBadge: "Permanent, encrypted AI memory",
+    heroTitle: "AI memory that no company can",
+    heroTitleHighlight: "delete, ban, or hold hostage.",
+    heroTitleEnd: "",
     heroDescription:
-      "PermaMind remembers your projects, decisions, and ideas across conversations — with optional encrypted, permanent backups on Arweave when you want your memory to outlast a device or platform.",
-    heroCta: "Start building your memory",
+      "PermaMind backs up your AI conversations to Arweave — permanent, encrypted, and owned by you. Lose your account, switch AI providers, get banned — your memory survives.",
+    heroCta: "Claim your free storage gift",
     heroSecondary: "See how it works",
-    proofLabel: "A searchable memory for your AI work",
+    heroTrust: "Your encryption passphrase never leaves your device. Even we can't read your backups.",
+    proofLabel: "Memory you own",
+    proofStatus: "PermaMind memory recall",
     proofQuestion: "What did we decide about the backup architecture last month?",
     proofAnswer: "You chose client-side encryption with an optional Arweave backup for portability and recovery.",
     proofSource: "Based on 3 conversations · View sources",
-    trustTitle: "Your projects stay connected to the context behind them.",
+    trustTitle: "Your data stays yours when a platform disappears.",
     trustDescription:
-      "PermaMind turns your conversations into searchable project memory. You decide what to keep, export your memory whenever you need it, and can create an optional encrypted long-term backup on Arweave.",
+      "PermaMind keeps your conversations local by default. Choose what to encrypt and preserve permanently on Arweave. You control the passphrase, and your memory can outlive any platform.",
     trustItems: [
-      "Local-first conversations",
+      "Local-first by default",
       "Bring your own AI key",
-      "Encrypted backups are optional",
-      "Portable memory you can restore",
+      "Encrypted before upload",
+      "Permanent backup you control",
     ],
 
+    // Free storage gift
+    freeTierTitle: "Every new account receives a free permanent Arweave storage gift — no credit card required.",
+    freeTierDescription:
+      "Use it to preserve the conversations that matter. You can expand it later with other payment options, including ETH and SOL.",
+    freeTierNote: "The gift is added to your account after signup.",
+
     // Features
-    featuresTitle: "Your work deserves more than chat history",
+    featuresTitle: "Your memory should outlive every platform",
     featuresDescription:
-      "Turn scattered conversations into useful context for your projects, while keeping control of where your memory lives.",
+      "Keep the conversations that matter. Search them, export them, and choose what becomes permanent — without giving up control.",
     features: [
       {
-        title: "Personal Memory",
+        title: "Permanent, Uncensorable Memory",
         description:
-          "Your conversations are summarized into useful context you can search, export, and carry between AI providers.",
-        icon: "brain",
-      },
-      {
-        title: "Smart Retrieval",
-        description:
-          "PermaMind automatically retrieves relevant memories to provide contextual, personalized responses.",
-        icon: "search",
-      },
-      {
-          title: "Arweave Backups",
-        description:
-          "Create optional encrypted backups on Arweave — designed to remain available long-term and recoverable with your passphrase.",
+          "Create optional encrypted backups on Arweave. Once uploaded, your data is designed to remain permanent and recoverable only with your passphrase — not controlled by any platform.",
         icon: "shield",
       },
       {
-        title: "Internet Search",
+        title: "Personal Memory + Smart Retrieval",
         description:
-          "When memory isn't enough, PermaMind searches the web to give you the most complete answer.",
-        icon: "globe",
+          "Turn conversations into searchable memory you control. PermaMind brings back the context that matters, and you can export or carry it between AI providers.",
+        icon: "brain",
       },
     ],
 
@@ -72,41 +68,47 @@ export const translations = {
       "Privacy warning before every export or connection",
     ],
     mcpCta: "Learn about MCP in Settings",
+    mcpCardTitle: "Read-only memory bridge",
+    mcpCardSubtitle: "PermaMind → Cursor / Claude / Codex",
+    mcpCardConnect: "Connect after signing in and explicitly approve the summaries you want to share.",
 
     // How it works
-    howItWorksTitle: "How It Works",
+    howItWorksTitle: "How your memory survives",
     howItWorksDescription:
-      "A simple pipeline that makes your AI truly remember you.",
+      "A simple path from conversation to permanent, encrypted ownership.",
     steps: [
       {
         title: "Chat Naturally",
-        description: "Talk to PermaMind like you would with any AI assistant.",
+        description: "Talk to PermaMind with the AI provider you choose.",
       },
       {
-        title: "Memory Extraction",
-        description:
-          "PermaMind automatically extracts and stores important information from your conversations.",
+        title: "Choose What to Preserve",
+        description: "Keep the conversations that matter. Arweave backups remain optional.",
       },
       {
-        title: "Contextual Recall",
-        description:
-          "Next time you chat, relevant memories are retrieved to personalize the response.",
+        title: "Encrypt on Your Device",
+        description: "Your data is encrypted locally before it leaves your browser.",
       },
       {
-        title: "Encrypted Arweave Backup",
-        description:
-          "When you choose it, your data is encrypted locally before being uploaded to Arweave. Uploaded backups are permanent and cannot be deleted.",
+        title: "Store Permanently on Arweave",
+        description: "Once uploaded, your encrypted backup is designed to remain permanent and recoverable with your passphrase.",
       },
     ],
 
+    // Internet Search
+    searchTitle: "Internet Search",
+    searchDescription:
+      "When your memory isn't enough, PermaMind can search the live web through Exa to give you a more complete answer.",
+    searchBadge: "Coming soon · Beta",
+
     // CTA
-    ctaTitle: "Give your next conversation a head start",
+    ctaTitle: "Your memory should outlive the platform.",
     ctaDescription:
-      "Create your personal AI memory, bring your own provider, and return to your work with the context already there.",
-    ctaButton: "Create Free Account",
+      "Create your account, claim your free permanent storage gift, and keep your conversations under your control.",
+    ctaButton: "Claim your free storage gift",
 
     // Footer
-    footerDescription: "AI memory platform — chat, save, and restore context.",
+    footerDescription: "Permanent AI memory you own — chat, preserve, and restore your context.",
     footerRights: "All rights reserved.",
     footerPrivacy: "Privacy Policy",
     footerTerms: "Terms of Use",
@@ -115,7 +117,7 @@ export const translations = {
     helpTitle: "Help",
     helpDescription: "Need help or want to share feedback? Contact us on X and we will be happy to help.",
     privacyTitle: "Privacy Policy",
-    privacyDescription: "PermaMind stores conversations and settings locally in your browser by default. Memory is portable and user-controlled: you can export and restore it, and use a different AI provider. Your AI provider receives only the messages and context needed to generate a response. Optional backups are encrypted locally before upload; the server and AI provider never receive your encryption passphrase. Arweave uploads are permanent and cannot be deleted.",
+    privacyDescription: "PermaMind stores conversations and settings locally in your browser by default. You control what is encrypted and uploaded to Arweave. Your encryption passphrase never reaches the server or AI provider. Arweave backups are permanent and cannot be deleted, so review your storage policy before uploading.",
     termsTitle: "Terms of Use",
     termsDescription: "Use PermaMind lawfully and responsibly. AI responses may be inaccurate, so review important information and do not treat the service as professional legal, medical, financial, or religious advice. You are responsible for the content you enter and for keeping your keys secure.",
   },
@@ -124,64 +126,60 @@ export const translations = {
     // Header
     signIn: "تسجيل الدخول",
     signUp: "إنشاء حساب",
-    languageToggle: "English",
+    languageToggle: "EN",
 
     // Hero
-    heroBadge: "ذاكرة شخصية لعملك مع الذكاء الاصطناعي",
-    heroTitle: "ذكاء اصطناعي يتذكر",
-    heroTitleHighlight: "عملك",
-    heroTitleEnd: "في كل محادثة.",
+    heroBadge: "ذاكرة ذكاء اصطناعي دائمة ومشفرة",
+    heroTitle: "ذاكرة ذكاء اصطناعي لا تستطيع أي شركة",
+    heroTitleHighlight: "حذفها أو حظرها.",
+    heroTitleEnd: " تبقى معك دائمًا، وتملكها إلى الأبد.",
     heroDescription:
-      "يتذكر PermaMind مشاريعك وقراراتك وأفكارك عبر المحادثات، مع نسخ احتياطية مشفرة ودائمة اختيارية على Arweave عندما تريد أن تتجاوز ذاكرتك جهازاً أو منصة واحدة.",
-    heroCta: "ابدأ ببناء ذاكرتك",
+      "يحفظ PermaMind محادثاتك مع الذكاء الاصطناعي احتياطيًا على Arweave — دائمة ومشفرة ومملوكة لك. افقد حسابك، أو بدّل مزوّد الذكاء الاصطناعي، أو تعرّض للحظر — تبقى ذاكرتك معك.",
+    heroCta: "احصل على هدية تخزين مجانية",
     heroSecondary: "شاهد كيف يعمل",
-    proofLabel: "ذاكرة قابلة للبحث لعملك مع الذكاء الاصطناعي",
-    proofQuestion: "ما القرار الذي اتخذناه بشأن بنية النسخ الاحتياطي الشهر الماضي؟",
-    proofAnswer: "اخترت التشفير من طرف العميل مع نسخة احتياطية اختيارية على Arweave لضمان قابلية النقل والاستعادة.",
-    proofSource: "استناداً إلى 3 محادثات · عرض المصادر",
-    trustTitle: "تبقى مشاريعك مرتبطة بسياقها وقراراتها.",
+    heroTrust: "عبارة تشفيرك لا تغادر جهازك أبدًا. حتى نحن لا نستطيع قراءة نسخك الاحتياطية.",
+    proofLabel: "ذاكرة تمتلكها أنت",
+    proofStatus: "استدعاء ذاكرة PermaMind",
+    proofQuestion: "ما الذي قررناه بشأن بنية النسخ الاحتياطي الشهر الماضي؟",
+    proofAnswer: "اخترت التشفير على جهازك مع نسخة احتياطية اختيارية على Arweave لتتمكن من نقل ذاكرتك واستعادتها.",
+    proofSource: "استنادًا إلى 3 محادثات · عرض المصادر",
+    trustTitle: "تبقى بياناتك ملكًا لك حتى إذا اختفت المنصة نفسها.",
     trustDescription:
-      "يحوّل PermaMind محادثاتك إلى ذاكرة قابلة للبحث داخل مشاريعك. أنت تحدد ما تريد الاحتفاظ به، وتستطيع تصدير ذاكرتك عند الحاجة، مع خيار إنشاء نسخة احتياطية مشفرة طويلة الأمد على Arweave.",
+      "يحافظ PermaMind على محادثاتك محليًا بشكل افتراضي. اختر ما تريد تشفيره وحفظه دائمًا على Arweave. أنت تتحكم في عبارة المرور، ويمكن لذاكرتك أن تعيش أطول من أي منصة.",
     trustItems: [
-      "محادثات محلية أولاً",
-      "استخدم مفتاح AI الخاص بك",
-      "النسخ المشفرة اختيارية",
-      "ذاكرة قابلة للنقل والاستعادة",
+      "محلي أولًا بشكل افتراضي",
+      "استخدم مفتاح الذكاء الاصطناعي الخاص بك",
+      "تشفير قبل الرفع",
+      "نسخة احتياطية دائمة تحت سيطرتك",
     ],
 
+    // Free storage gift
+    freeTierTitle: "كل حساب جديد يحصل على هدية تخزين دائم مجانية على Arweave — بدون بطاقة ائتمان.",
+    freeTierDescription:
+      "استخدمها لحفظ المحادثات المهمة. ويمكنك زيادة المساحة لاحقًا بخيارات دفع أخرى، منها ETH وSOL.",
+    freeTierNote: "تُضاف الهدية إلى حسابك بعد إكمال التسجيل.",
+
     // Features
-    featuresTitle: "عملك يستحق أكثر من سجل محادثات",
+    featuresTitle: "ينبغي لذاكرتك أن تعيش أطول من أي منصة",
     featuresDescription:
-      "حوّل محادثاتك المتفرقة إلى سياق مفيد لمشاريعك، مع بقاء التحكم في مكان ذاكرتك بيدك.",
+      "احتفظ بالمحادثات المهمة. ابحث فيها، وصدّرها، واختر ما يصبح دائمًا — من دون أن تتنازل عن السيطرة.",
     features: [
       {
-        title: "ذاكرة شخصية",
+        title: "ذاكرة دائمة لا يمكن حذفها",
         description:
-          "تُلخّص محادثاتك إلى سياق مفيد يمكنك البحث فيه وتصديره ونقله بين مزودي الذكاء الاصطناعي.",
-        icon: "brain",
-      },
-      {
-        title: "استرجاع ذكي",
-        description:
-          "يسترجع PermaMind تلقائياً الذكريات ذات الصلة لتقديم إجابات مخصصة وسياقية.",
-        icon: "search",
-      },
-      {
-        title: "نسخ احتياطية عبر Arweave",
-        description:
-          "أنشئ نسخاً احتياطية مشفرة اختيارية على Arweave، مصممة للبقاء متاحة على المدى الطويل وقابلة للاستعادة بعبارة المرور الخاصة بك.",
+          "أنشئ نسخًا احتياطية مشفرة اختيارية على Arweave. بعد الرفع، صُممت بياناتك لتبقى دائمة ولا يمكن استعادتها إلا بعبارة المرور الخاصة بك — وليس بيد أي منصة التحكم بها.",
         icon: "shield",
       },
       {
-        title: "بحث في الإنترنت",
+        title: "ذاكرة شخصية + استرجاع ذكي",
         description:
-          "عندما لا تكفي الذاكرة، يبحث PermaMind في الويب ليعطيك الإجابة الأكثر اكتمالاً.",
-        icon: "globe",
+          "حوّل محادثاتك إلى ذاكرة قابلة للبحث وتمتلكها. يعيد PermaMind السياق المهم عند الحاجة، ويمكنك تصدير ذاكرتك أو نقلها بين مزودي الذكاء الاصطناعي.",
+        icon: "brain",
       },
     ],
 
     // MCP
-    mcpTitle: "ذاكرتك المسموح بها أينما تعمل",
+    mcpTitle: "ذاكرتك أينما تعمل",
     mcpDescription:
       "اربط PermaMind مع Cursor أو Claude أو OpenAI Codex أو أي عميل MCP عبر واجهة للقراءة فقط. أنت تحدد الملخصات التي يمكن مشاركتها؛ ولا يتم كشف المحادثات الكاملة أو النسخ المشفرة أو المفاتيح الخاصة.",
     mcpPoints: [
@@ -208,7 +206,7 @@ export const translations = {
       {
         title: "استرجاع سياقي",
         description:
-          "في المرة القادمة التي تتحدث فيها، يتم استرجاع الذكريات ذات الصلة لتخصيص الإجابة.",
+          "في المرة القادمة التي تتحدث فيها، يتم استرجاع الذكريات ذات الصلة لتخصيص الإجابة مع فهم كامل لما قلته في المحادثات السابقة.",
       },
       {
         title: "نسخة Arweave مشفرة",

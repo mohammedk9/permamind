@@ -34,6 +34,7 @@ import { SnapshotSettings } from "@/components/arweave/snapshot-settings";
 import { loadStoragePolicy, saveStoragePolicy, type StoragePolicy } from "@/lib/arweave/storage-policy";
 
 const SNAPSHOT_AFTER_RESPONSE_DELAY_MS = 350;
+const SIDEBAR_UTILITY_TRIGGER_CLASS = "w-full justify-start gap-2 rounded-lg border border-sidebar-border/70 bg-sidebar-accent/40 px-3 py-2 text-xs font-medium text-sidebar-foreground shadow-sm transition-colors hover:bg-sidebar-accent/70 hover:text-sidebar-accent-foreground focus-visible:ring-2 focus-visible:ring-sidebar-ring/50";
 
 function toApiMessages(messages: Message[]): ChatCompletionMessage[] {
   return messages
@@ -399,7 +400,7 @@ export function ChatApp() {
     <>
       <WorkspaceStartDialog open={isHydrated && conversations.length === 0 && projects.length === 0 && !activeConversation} onChat={handleNewChat} onProject={handleNewProject} />
       <FirstLaunchOnboarding open={showOnboarding} onComplete={() => setShowOnboarding(false)} />
-      <AppShell activeArea={area} onNavigate={navigate} utility={<div><SnapshotSettings passphrase={snapshotPassphrase} onPassphraseChange={setSnapshotPassphrase} enabled={snapshotsEnabled} onEnabledChange={(enabled) => { if (enabled && snapshotPassphrase.length < 8) { window.alert("Set an encryption passphrase of at least 8 characters before enabling backups."); return; } setSnapshotsEnabled(enabled); }} onSnapshotNow={() => { if (window.confirm("Create an encrypted permanent Arweave backup now? Uploaded backups cannot be deleted.")) void snapshot.triggerSnapshot(true); }} isProcessing={snapshot.isProcessing} storagePolicy={storagePolicy} onStoragePolicyChange={handleStoragePolicyChange} triggerClassName="w-full justify-start gap-2" /><HelpSheet triggerClassName="w-full justify-start gap-2" /><ChatPolicies /></div>} sidebar={<ChatSidebar
+      <AppShell activeArea={area} onNavigate={navigate} utility={<div className="space-y-1.5"><SnapshotSettings passphrase={snapshotPassphrase} onPassphraseChange={setSnapshotPassphrase} enabled={snapshotsEnabled} onEnabledChange={(enabled) => { if (enabled && snapshotPassphrase.length < 8) { window.alert("Set an encryption passphrase of at least 8 characters before enabling backups."); return; } setSnapshotsEnabled(enabled); }} onSnapshotNow={() => { if (window.confirm("Create an encrypted permanent Arweave backup now? Uploaded backups cannot be deleted.")) void snapshot.triggerSnapshot(true); }} isProcessing={snapshot.isProcessing} storagePolicy={storagePolicy} onStoragePolicyChange={handleStoragePolicyChange} triggerClassName={SIDEBAR_UTILITY_TRIGGER_CLASS} /><HelpSheet triggerClassName={SIDEBAR_UTILITY_TRIGGER_CLASS} /><ChatPolicies triggerClassName={SIDEBAR_UTILITY_TRIGGER_CLASS} /></div>} sidebar={<ChatSidebar
         className="mt-5 min-h-0 flex-1 border-0 border-t border-sidebar-border pt-4"
         conversations={conversations}
         activeId={activeId}

@@ -133,16 +133,16 @@ export function ConversationItem({
   return (
     <div
       className={cn(
-        "group relative rounded-lg transition-colors",
+        "group relative rounded-lg border border-transparent transition-colors",
         isActive
-          ? "bg-sidebar-accent text-sidebar-accent-foreground"
-          : "hover:bg-sidebar-accent/60"
+          ? "border-sidebar-border/70 bg-sidebar-accent text-sidebar-accent-foreground shadow-sm"
+          : "hover:border-sidebar-border/50 hover:bg-sidebar-accent/60"
       )}
     >
       <button
         type="button"
         onClick={onSelect}
-        className="w-full px-3 py-2 pr-16 text-left"
+        className="w-full px-3 py-2.5 pr-28 text-start"
       >
         <span className="line-clamp-1 text-sm font-medium">
           {conversation.title}
@@ -182,7 +182,7 @@ export function ConversationItem({
         <button type="button" className="text-muted-foreground underline-offset-2 hover:underline" onClick={(e) => { e.stopPropagation(); onToggleCloudSync?.(); }} aria-label={conversation.syncToCloud ? "Keep conversation local only" : "Select conversation for summary sync"}>
           {conversation.syncToCloud ? text.local : text.select}
         </button>
-        {canSyncSummary && <button type="button" className="ml-auto inline-flex items-center gap-1 text-primary underline-offset-2 hover:underline" onClick={(e) => { e.stopPropagation(); setSyncState("idle"); setSyncError(""); setSyncDialogOpen(true); }} aria-label={text.sync}><Upload className="size-3" /> {text.sync}</button>}
+        {canSyncSummary && <button type="button" className="ms-auto inline-flex items-center gap-1 text-primary underline-offset-2 hover:underline" onClick={(e) => { e.stopPropagation(); setSyncState("idle"); setSyncError(""); setSyncDialogOpen(true); }} aria-label={text.sync}><Upload className="size-3" /> {text.sync}</button>}
       </div>
       {syncDialogOpen && <div role="dialog" aria-modal="true" aria-labelledby={`sync-title-${conversation.id}`} className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={() => { if (syncState !== "sending") setSyncDialogOpen(false); }}>
         <div className="w-full max-w-md rounded-xl border bg-background p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
@@ -192,7 +192,7 @@ export function ConversationItem({
           {(syncState === "success" || syncState === "unchanged" || syncState === "error") && <><p className={cn("mt-3 text-sm", syncState === "error" ? "text-destructive" : "text-status-success")}>{syncState === "success" ? text.success : syncState === "unchanged" ? text.unchanged : syncError || text.error}</p><div className="mt-5 flex justify-end"><Button type="button" onClick={() => setSyncDialogOpen(false)}>{text.close}</Button></div></>}
         </div>
       </div>}
-      <div className="absolute top-1.5 right-1 flex gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
+      <div className="absolute top-1.5 right-1 flex gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
         <Button variant="ghost" size="icon-xs" onClick={(e) => { e.stopPropagation(); onToggleStar?.(); }} aria-label="Toggle important"><Star className={cn("size-3", conversation.starred && "fill-current text-amber-500")} /></Button>
         <Button variant="ghost" size="icon-xs" onClick={(e) => { e.stopPropagation(); onTogglePermanentMemory?.(); }} aria-label="Toggle permanent memory"><ShieldCheck className={cn("size-3", conversation.permanentMemory && "text-primary")} /></Button>
         <Button

@@ -22,7 +22,7 @@ function Navigation({ activeArea, onNavigate, compact = false }: { activeArea: P
   const { locale } = useLocale();
   const labels = locale === "ar" ? { chat: "المحادثة", memory: "الذاكرة", backup: "النسخ الاحتياطي", settings: "الإعدادات" } : { chat: "Chat", memory: "Memory", backup: "Backup", settings: "Settings" };
   return <nav aria-label="Primary navigation" className="space-y-1">
-    {navigation.map(({ id, icon: Icon }) => <Button key={id} variant={activeArea === id ? "secondary" : "ghost"} className={cn("w-full justify-start gap-3", compact && "justify-center px-2")} onClick={() => onNavigate(id)} aria-current={activeArea === id ? "page" : undefined}>
+    {navigation.map(({ id, icon: Icon }) => <Button key={id} variant={activeArea === id ? "secondary" : "ghost"} className={cn("w-full justify-start gap-3 rounded-lg px-3 py-2 text-sm font-medium shadow-sm transition-colors", compact && "justify-center px-2", activeArea === id && "bg-sidebar-accent text-sidebar-accent-foreground")} onClick={() => onNavigate(id)} aria-current={activeArea === id ? "page" : undefined}>
       <Icon className="size-4" /><span className={cn(compact && "sr-only")}>{labels[id]}</span>
     </Button>)}
   </nav>;
@@ -58,11 +58,15 @@ export function AppShell({ activeArea, onNavigate, children, utility, sidebar }:
       <div className="mb-6 flex items-center gap-2 px-2 font-semibold"><Logo size="xs" withWordmark /></div>
       <Navigation activeArea={activeArea} onNavigate={onNavigate} />
       {sidebar}
-      <div className="mt-auto space-y-2"><Button type="button" variant="ghost" className="w-full justify-start text-xs text-muted-foreground" onClick={toggleLocale}>{locale === "ar" ? "English" : "العربية"}</Button>{utility}{logoutButton}</div>
+      <div className="mt-auto shrink-0 space-y-1.5 border-t border-sidebar-border pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
+        <Button type="button" variant="ghost" className="w-full justify-start gap-3 rounded-lg px-3 py-2 text-xs font-medium text-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-2 focus-visible:ring-sidebar-ring/50" onClick={toggleLocale}>{locale === "ar" ? "English" : "العربية"}</Button>
+        {utility}
+        <div>{logoutButton}</div>
+      </div>
     </aside>
     <Sheet>
       <SheetTrigger render={<Button variant="ghost" size="icon" className="fixed left-2 top-2 z-30 md:hidden" aria-label="Open navigation"><Menu className="size-5" /></Button>} />
-      <SheetContent side="left" className="w-[min(18rem,calc(100vw-2rem))] p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]"><div className="mb-5"><Logo size="xs" withWordmark /></div><Navigation activeArea={activeArea} onNavigate={onNavigate} /><div className="mt-6 space-y-2"><Button type="button" variant="ghost" className="w-full justify-start text-xs text-muted-foreground" onClick={toggleLocale}>{locale === "ar" ? "English" : "العربية"}</Button>{utility}{logoutButton}</div></SheetContent>
+      <SheetContent side="left" className="flex w-[min(18rem,calc(100vw-2rem))] flex-col p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]"><div className="mb-5 shrink-0"><Logo size="xs" withWordmark /></div><div className="shrink-0"><Navigation activeArea={activeArea} onNavigate={onNavigate} /></div><div className="mt-auto shrink-0 space-y-1.5 border-t border-border pt-3"><Button type="button" variant="ghost" className="w-full justify-start gap-3 rounded-lg px-3 py-2 text-xs font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:ring-2 focus-visible:ring-ring/50" onClick={toggleLocale}>{locale === "ar" ? "English" : "العربية"}</Button>{utility}<div>{logoutButton}</div></div></SheetContent>
     </Sheet>
     <main id="main-content" className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">{children}</main>
   </div>;
