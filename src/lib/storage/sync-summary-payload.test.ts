@@ -41,4 +41,16 @@ describe("cloud summary payload", () => {
   it("sends encrypted summary content only", async () => {
     await expect(uploadConversationSummary(conversation)).resolves.toBe("uploaded");
   });
+
+  it("deletes only the selected cloud summary", async () => {
+    const { deleteConversationSummary } = await import("./sync-client");
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      expect(String(input)).toBe("/api/sync/summaries?conversationId=conversation-1");
+      expect(init?.method).toBe("DELETE");
+      expect(init?.body).toBeUndefined();
+      return new Response(JSON.stringify({ deleted: true }), { status: 200 });
+    }));
+
+    await expect(deleteConversationSummary(conversation.id)).resolves.toBeUndefined();
+  });
 });

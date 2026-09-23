@@ -58,6 +58,16 @@ export async function uploadConversationSummary(conversation: Conversation): Pro
   return "uploaded";
 }
 
+export async function deleteConversationSummary(conversationId: string): Promise<void> {
+  const response = await fetch(`/api/sync/summaries?conversationId=${encodeURIComponent(conversationId)}`, {
+    method: "DELETE",
+  });
+  if (!response.ok) {
+    const error = await response.json().catch(() => null) as { error?: string } | null;
+    throw new Error(error?.error ?? "Could not delete conversation summary");
+  }
+}
+
 export interface RemoteSyncBlob {
   data_scope: SyncScope;
   ciphertext: string;

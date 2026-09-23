@@ -66,6 +66,12 @@ describe("encryption", () => {
       expect(key1.algorithm.name).toBe(key2.algorithm.name);
       expect(key1).not.toBe(key2);
     });
+
+    it("rejects an empty or short passphrase before key derivation", async () => {
+      const salt = generateSalt();
+      await expect(deriveKey("", salt)).rejects.toThrow(/at least 8/);
+      await expect(deriveKey("short", salt)).rejects.toThrow(/at least 8/);
+    });
   });
 
   describe("encrypt / decrypt", () => {

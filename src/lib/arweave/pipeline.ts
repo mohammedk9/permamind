@@ -34,7 +34,7 @@ import type { PipelineResult, QueueItem } from "./snapshot-types";
 import { loadRegistry, addSnapshot, removeSnapshot } from "./snapshot-registry";
 import { buildSnapshot } from "./snapshot-builder";
 import { compress, jsonToBytes } from "./compression";
-import { generateSalt, deriveKey, encrypt } from "./encryption";
+import { generateSalt, deriveKey, encrypt, assertPassphrase } from "./encryption";
 import { enqueue, remove as removeQueueItem } from "./upload-queue";
 import { addDedupEntry } from "./dedup";
 import { MAX_UPLOAD_ATTEMPTS } from "./constants";
@@ -85,6 +85,7 @@ export async function runSnapshotPipeline(
   void walletKey;
 
   try {
+    assertPassphrase(passphrase);
     // -------------------------------------------------------------------------
     // Step 1: Load registry
     // -------------------------------------------------------------------------
@@ -175,6 +176,37 @@ export async function runSnapshotPipeline(
     // -------------------------------------------------------------------------
     // Step 8: Update registry
     // -------------------------------------------------------------------------
+    // The encrypted envelope must reach the durable server queue before the
+    // snapshot is treated as queued. The browser copy is only a local mirror.
+    const durableResponse = await fetch("/api/snapshots/queue", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        id: queueItem.queueId,
+        contentHash: queueItem.snapshotHash,
+        snapshotVersion: queueItem.snapshotVersion,
+        ciphertext: queueItem.encryptedPayload,
+        metadata: buildResult.meta,
+      }),
+    });
+    if (!durableResponse.ok) {
+      let errorMessage = "Sign in is required before a permanent backup can be queued";
+      try {
+        const failure = (await durableResponse.json()) as { error?: string };
+        if (failure.error) errorMessage = failure.error;
+      } catch {
+        // A non-JSON rejection still means the ciphertext was not durably stored.
+      }
+      removeQueueItem(queueItem.queueId);
+      return {
+        status: "failed",
+        snapshotVersion: buildResult.meta.version,
+        txId: null,
+        message: "Encrypted snapshot was not stored in the durable queue",
+        error: errorMessage,
+      };
+    }
+
     // Add the snapshot metadata to the registry with actual sizes.
     // Calculate encrypted size from the base64-encoded fields:
     // base64 encoding adds ~33% overhead, so original bytes ≈ base64 length * 0.75

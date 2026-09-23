@@ -1,5 +1,5 @@
 import { validateOpenRouterKey, validateProviderKey } from "@/lib/ai/openrouter";
-import { HEADER_OPENROUTER_KEY, isSafeCustomUrl } from "@/lib/ai/request-auth";
+import { HEADER_OPENROUTER_KEY, assertPublicHttpsUrl } from "@/lib/ai/request-auth";
 import { HEADER_AI_PROVIDER } from "@/lib/ai/request-auth";
 import { requireUser } from "@/lib/supabase/server";
 import { checkRateLimit, rateLimitIdentifier } from "@/lib/ai/rate-limit";
@@ -38,7 +38,12 @@ export async function POST(request: Request) {
   const provider = request.headers.get(HEADER_AI_PROVIDER) ?? "openrouter";
   if (provider === "custom") {
     const baseUrl = request.headers.get("x-ai-base-url")?.trim();
-    if (!baseUrl || !isSafeCustomUrl(baseUrl)) return Response.json({ valid: false, error: "Custom URL must be a public HTTPS endpoint" }, { status: 400 });
+    if (!baseUrl) return Response.json({ valid: false, error: "Custom URL must be a public HTTPS endpoint" }, { status: 400 });
+    try {
+      await assertPublicHttpsUrl(baseUrl);
+    } catch (error) {
+      return Response.json({ valid: false, error: error instanceof Error ? error.message : "Custom URL must be a public HTTPS endpoint" }, { status: 400 });
+    }
     return Response.json({ valid: true });
   }
   if (provider === "openrouter") {

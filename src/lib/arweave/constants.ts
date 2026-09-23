@@ -24,6 +24,8 @@ export const FREE_UPLOADS_PER_HOUR = 10;
 export const PRO_UPLOADS_PER_HOUR = 100;
 export const UPLOAD_RATE_WINDOW_MS = 60 * 60 * 1000;
 export const MAX_UPLOAD_SIZE_BYTES = MAX_UPLOAD_SIZE_MB * 1024 * 1024;
+/** Minimum passphrase length enforced by encryption, independent of the UI. */
+export const MIN_PASSPHRASE_LENGTH = 8;
 export const FREE_STORAGE_QUOTA_BYTES = FREE_STORAGE_QUOTA_MB * 1024 * 1024;
 /** Configurable lifetime free permanent-storage allowance. */
 export const DEFAULT_FREE_STORAGE_QUOTA_BYTES = FREE_STORAGE_QUOTA_BYTES;

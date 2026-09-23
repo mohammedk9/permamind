@@ -63,20 +63,11 @@ export function ChatApp() {
     deleteConversation,
     selectConversation,
     getConversation,
-    setConversationCloudSync,
-    syncConversationSummary,
+    enableConversationCloudSync,
+    disableConversationCloudSync,
     projects,
     createProject,
   } = useConversations();
-
-  const handleSyncSummary = useCallback(async (id: string, confirmed = false): Promise<"uploaded" | "unchanged"> => {
-    try {
-      const result = await syncConversationSummary(id, confirmed);
-      return result;
-    } catch (error) {
-      throw error;
-    }
-  }, [syncConversationSummary]);
 
   useEffect(() => {
     setStoragePolicy(loadStoragePolicy());
@@ -412,8 +403,8 @@ export function ChatApp() {
         onSelectProject={(id) => { setActiveProjectId(id); setArea("project"); window.history.pushState({}, "", `/project/${id}`); }}
         onRename={renameConversation}
         onDelete={deleteConversation}
-        onToggleCloudSync={(id) => setConversationCloudSync(id, !getConversation(id)?.syncToCloud)}
-        onSyncSummary={(id, confirmed) => handleSyncSummary(id, confirmed)}
+        onToggleCloudSync={(id) => enableConversationCloudSync(id, true)}
+        onDisableCloudSync={disableConversationCloudSync}
         onUpdateConversation={(id, updater) => {
           const conversation = getConversation(id);
           if (updater(conversation ?? { id, title: "", messages: [], createdAt: new Date(), updatedAt: new Date() }).permanentMemory !== conversation?.permanentMemory) togglePermanentMemory(id, updater);
@@ -430,8 +421,8 @@ export function ChatApp() {
           onNewChat={handleNewChat}
           onRename={renameConversation}
           onDelete={deleteConversation}
-          onToggleCloudSync={(id) => setConversationCloudSync(id, !getConversation(id)?.syncToCloud)}
-          onSyncSummary={(id, confirmed) => handleSyncSummary(id, confirmed)}
+          onToggleCloudSync={(id) => enableConversationCloudSync(id, true)}
+          onDisableCloudSync={disableConversationCloudSync}
           isSummarizing={isSummarizing}
           onSend={handleSend}
           model={model}

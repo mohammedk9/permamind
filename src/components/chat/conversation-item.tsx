@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { Check, Loader2, Pencil, Trash2, X, Star, ShieldCheck, Cloud, HardDrive, Upload } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -22,8 +22,8 @@ interface ConversationItemProps {
   onDelete: () => void;
   onTogglePermanentMemory?: () => void;
   onToggleStar?: () => void;
-  onToggleCloudSync?: () => void;
-  onSyncSummary?: (confirmed?: boolean) => Promise<"uploaded" | "unchanged">;
+  onToggleCloudSync?: () => Promise<"uploaded" | "unchanged" | "pending-summary" | void>;
+  onDisableCloudSync?: () => Promise<void>;
 }
 
 export function ConversationItem({
@@ -36,11 +36,12 @@ export function ConversationItem({
   onTogglePermanentMemory,
   onToggleStar,
   onToggleCloudSync,
-  onSyncSummary,
+  onDisableCloudSync,
 }: ConversationItemProps) {
   const [isEditing, setIsEditing] = useState(false);
   const [syncDialogOpen, setSyncDialogOpen] = useState(false);
-  const [syncState, setSyncState] = useState<"idle" | "sending" | "success" | "unchanged" | "error">("idle");
+  const [cloudAction, setCloudAction] = useState<"sync" | "remove">("sync");
+  const [syncState, setSyncState] = useState<"idle" | "sending" | "success" | "unchanged" | "removed" | "pending" | "error">("idle");
   const [syncError, setSyncError] = useState("");
   const [editTitle, setEditTitle] = useState(conversation.title);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -48,19 +49,25 @@ export function ConversationItem({
   const { locale } = useLocale();
   const ar = locale === "ar";
   const text = {
-    select: ar ? "اختيار لمزامنة الملخص" : "Select for summary sync",
-    local: ar ? "إبقاء محليًا فقط" : "Keep local only",
-    sync: ar ? "مزامنة الملخص" : "Sync summary",
-    title: ar ? "مزامنة ملخص المحادثة" : "Sync conversation summary",
-    sending: ar ? "جارٍ إرسال الملخص المشفر…" : "Sending encrypted summary…",
-    success: ar ? "تم إرسال الملخص بنجاح إلى Supabase." : "The summary was sent successfully to Supabase.",
-    unchanged: ar ? "البيانات محدثة ولا حاجة لإعادة الإرسال." : "The data is up to date; no re-upload is needed.",
-    error: ar ? "تعذر مزامنة الملخص." : "Could not sync the summary.",
-    cancel: ar ? "إلغاء" : "Cancel",
-    send: ar ? "إرسال الملخص" : "Send summary",
-    close: ar ? "إغلاق" : "Close",
+    select: ar ? "ظ…ط²ط§ظ…ظ†ط© ط§ظ„ظ…ظ„ط®طµ" : "Sync summary",
+    local: ar ? "ط¥ظ„ط؛ط§ط، ط§ظ„ظ…ط²ط§ظ…ظ†ط© ط§ظ„ط³ط­ط§ط¨ظٹط©" : "Cancel cloud sync",
+    sync: ar ? "ظ…ط²ط§ظ…ظ†ط© ط§ظ„ظ…ظ„ط®طµ" : "Sync summary",
+    title: ar ? "ظ…ط²ط§ظ…ظ†ط© ظ…ظ„ط®طµ ط§ظ„ظ…ط­ط§ط¯ط«ط©" : "Sync conversation summary",
+    sending: ar ? "ط¬ط§ط±ظچ ط¥ط±ط³ط§ظ„ ط§ظ„ظ…ظ„ط®طµ ط§ظ„ظ…ط´ظپط±â€¦" : "Sending encrypted summaryâ€¦",
+    removing: ar ? "ط¬ط§ط±ظچ ط­ط°ظپ ط§ظ„ظ…ظ„ط®طµ ط§ظ„ط³ط­ط§ط¨ظٹâ€¦" : "Removing cloud summaryâ€¦",
+    success: ar ? "طھظ… ط¥ط±ط³ط§ظ„ ط§ظ„ظ…ظ„ط®طµ ط¨ظ†ط¬ط§ط­ ط¥ظ„ظ‰ Supabase." : "The summary was sent successfully to Supabase.",
+    unchanged: ar ? "ط§ظ„ط¨ظٹط§ظ†ط§طھ ظ…ط­ط¯ط«ط© ظˆظ„ط§ ط­ط§ط¬ط© ظ„ط¥ط¹ط§ط¯ط© ط§ظ„ط¥ط±ط³ط§ظ„." : "The data is up to date; no re-upload is needed.",
+    pending: ar ? "ظ„ط§ ظٹظˆط¬ط¯ ظ…ظ„ط®طµ ط¨ط¹ط¯. ط³ظٹطھظ… ط±ظپط¹ظ‡ ط¹ظ†ط¯ ط¥ظ†ط´ط§ط¦ظ‡." : "No summary yet. It will upload after one is created.",
+    removePrompt: ar ? "ط³ظٹظڈط­ط°ظپ ط§ظ„ظ…ظ„ط®طµ ط§ظ„ظ…ط´ظپط± ظ…ظ† Supabase. طھط¨ظ‚ظ‰ ط§ظ„ظ…ط­ط§ط¯ط«ط© ط§ظ„ظƒط§ظ…ظ„ط© ط¹ظ„ظ‰ ظ‡ط°ط§ ط§ظ„ط¬ظ‡ط§ط²." : "The encrypted summary will be deleted from Supabase. The full conversation stays on this device.",
+    removed: ar ? "طھظ… ط­ط°ظپ ط§ظ„ظ…ظ„ط®طµ ظ…ظ† Supabase ظˆط¥ط¨ظ‚ط§ط، ط§ظ„ظ…ط­ط§ط¯ط«ط© ظ…ط­ظ„ظٹظ‹ط§." : "The cloud summary was deleted. The conversation stays on this device.",
+    error: ar ? "طھط¹ط°ط± ظ…ط²ط§ظ…ظ†ط© ط§ظ„ظ…ظ„ط®طµ." : "Could not sync the summary.",
+    removeError: ar ? "طھط¹ط°ط± ط­ط°ظپ ط§ظ„ظ…ظ„ط®طµ ط§ظ„ط³ط­ط§ط¨ظٹ." : "Could not remove the cloud summary.",
+    cancel: ar ? "ط¥ظ„ط؛ط§ط،" : "Cancel",
+    send: ar ? "ط¥ط±ط³ط§ظ„ ط§ظ„ظ…ظ„ط®طµ" : "Send summary",
+    remove: ar ? "ط­ط°ظپ ط§ظ„ظ…ظ„ط®طµ ط§ظ„ط³ط­ط§ط¨ظٹ" : "Delete cloud summary",
+    close: ar ? "ط¥ط؛ظ„ط§ظ‚" : "Close",
   };
-  const canSyncSummary = isCloudSyncEnabled() && conversation.syncToCloud === true && Boolean(meta?.summary?.trim());
+  const canSyncSummary = isCloudSyncEnabled() && Boolean(meta?.summary?.trim());
   const hasUploadedBackup = typeof window !== "undefined" && loadRegistry().snapshots.some((snapshot) => snapshot.txId && snapshot.conversationIds.includes(conversation.id));
 
   useEffect(() => {
@@ -86,11 +93,18 @@ export function ConversationItem({
     setIsEditing(false);
   }, [conversation.title]);
 
-  const handleDelete = (e: React.MouseEvent) => {
-    e.stopPropagation();
+  const openCloudDialog = (action: "sync" | "remove") => {
+    setCloudAction(action);
+    setSyncState("idle");
+    setSyncError("");
+    setSyncDialogOpen(true);
+  };
+
+  const handleDelete = (event: React.MouseEvent) => {
+    event.stopPropagation();
     if (
       window.confirm(
-        `Delete \"${conversation.title}\" locally? This removes it from this device. ${hasUploadedBackup ? "A previously uploaded encrypted backup may remain permanently on Arweave and cannot be deleted." : "No uploaded Arweave backup was found for this conversation."}`
+        `Delete "${conversation.title}" locally? This removes it from this device. ${hasUploadedBackup ? "A previously uploaded encrypted backup may remain permanently on Arweave and cannot be deleted." : "No uploaded Arweave backup was found for this conversation."}`
       )
     ) {
       onDelete();
@@ -155,7 +169,7 @@ export function ConversationItem({
         {isSummarizing ? (
           <span className="mt-1 flex items-center gap-1 text-xs text-muted-foreground">
             <Loader2 className="size-3 animate-spin" />
-            Summarizing…
+            Summarizingâ€¦
           </span>
         ) : meta?.summary ? (
           <span className="mt-1 line-clamp-2 text-xs text-muted-foreground">
@@ -179,17 +193,18 @@ export function ConversationItem({
         </span>
       </button>
       <div className="flex items-center gap-1 px-3 pb-2 text-[10px]">
-        <button type="button" className="text-muted-foreground underline-offset-2 hover:underline" onClick={(e) => { e.stopPropagation(); onToggleCloudSync?.(); }} aria-label={conversation.syncToCloud ? "Keep conversation local only" : "Select conversation for summary sync"}>
+        <button type="button" className="text-muted-foreground underline-offset-2 hover:underline" onClick={(e) => { e.stopPropagation(); openCloudDialog(conversation.syncToCloud ? "remove" : "sync"); }} aria-label={conversation.syncToCloud ? "Cancel cloud summary sync" : "Sync conversation summary"}>
           {conversation.syncToCloud ? text.local : text.select}
         </button>
-        {canSyncSummary && <button type="button" className="ms-auto inline-flex items-center gap-1 text-primary underline-offset-2 hover:underline" onClick={(e) => { e.stopPropagation(); setSyncState("idle"); setSyncError(""); setSyncDialogOpen(true); }} aria-label={text.sync}><Upload className="size-3" /> {text.sync}</button>}
+        {canSyncSummary && conversation.syncToCloud && <button type="button" className="ms-auto inline-flex items-center gap-1 text-primary underline-offset-2 hover:underline" onClick={(e) => { e.stopPropagation(); openCloudDialog("sync"); }} aria-label={text.sync}><Upload className="size-3" /> {text.sync}</button>}
       </div>
       {syncDialogOpen && <div role="dialog" aria-modal="true" aria-labelledby={`sync-title-${conversation.id}`} className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={() => { if (syncState !== "sending") setSyncDialogOpen(false); }}>
         <div className="w-full max-w-md rounded-xl border bg-background p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
-          <h2 id={`sync-title-${conversation.id}`} className="text-base font-semibold">{text.title}</h2>
-          {syncState === "idle" && <><p className="mt-3 whitespace-pre-line text-sm text-muted-foreground">{getCloudSummaryWarning(locale)}</p><div className="mt-5 flex justify-end gap-2"><Button type="button" variant="outline" onClick={() => setSyncDialogOpen(false)}>{text.cancel}</Button><Button type="button" onClick={() => { setSyncState("sending"); void onSyncSummary?.(true).then((result) => setSyncState(result === "unchanged" ? "unchanged" : "success")).catch((error: unknown) => { setSyncError(error instanceof Error ? error.message : text.error); setSyncState("error"); }); }}>{text.send}</Button></div></>}
-          {syncState === "sending" && <p className="mt-3 text-sm text-muted-foreground">{text.sending}</p>}
-          {(syncState === "success" || syncState === "unchanged" || syncState === "error") && <><p className={cn("mt-3 text-sm", syncState === "error" ? "text-destructive" : "text-status-success")}>{syncState === "success" ? text.success : syncState === "unchanged" ? text.unchanged : syncError || text.error}</p><div className="mt-5 flex justify-end"><Button type="button" onClick={() => setSyncDialogOpen(false)}>{text.close}</Button></div></>}
+          <h2 id={`sync-title-${conversation.id}`} className="text-base font-semibold">{cloudAction === "remove" ? text.local : text.title}</h2>
+          {syncState === "idle" && cloudAction === "sync" && <><p className="mt-3 whitespace-pre-line text-sm text-muted-foreground">{getCloudSummaryWarning(locale)}</p><div className="mt-5 flex justify-end gap-2"><Button type="button" variant="outline" onClick={() => setSyncDialogOpen(false)}>{text.cancel}</Button><Button type="button" onClick={() => { setSyncState("sending"); void onToggleCloudSync?.().then((result) => setSyncState(result === "pending-summary" ? "pending" : result === "unchanged" ? "unchanged" : "success")).catch((error: unknown) => { setSyncError(error instanceof Error ? error.message : text.error); setSyncState("error"); }); }}>{text.send}</Button></div></>}
+          {syncState === "idle" && cloudAction === "remove" && <><p className="mt-3 text-sm text-muted-foreground">{text.removePrompt}</p><div className="mt-5 flex justify-end gap-2"><Button type="button" variant="outline" onClick={() => setSyncDialogOpen(false)}>{text.cancel}</Button><Button type="button" variant="destructive" onClick={() => { setSyncState("sending"); void onDisableCloudSync?.().then(() => setSyncState("removed")).catch((error: unknown) => { setSyncError(error instanceof Error ? error.message : text.removeError); setSyncState("error"); }); }}>{text.remove}</Button></div></>}
+          {syncState === "sending" && <p className="mt-3 text-sm text-muted-foreground">{cloudAction === "remove" ? text.removing : text.sending}</p>}
+          {syncState !== "idle" && syncState !== "sending" && <><p className={cn("mt-3 text-sm", syncState === "error" ? "text-destructive" : "text-status-success")}>{syncState === "success" ? text.success : syncState === "unchanged" ? text.unchanged : syncState === "pending" ? text.pending : syncState === "removed" ? text.removed : syncError || (cloudAction === "remove" ? text.removeError : text.error)}</p><div className="mt-5 flex justify-end"><Button type="button" onClick={() => setSyncDialogOpen(false)}>{text.close}</Button></div></>}
         </div>
       </div>}
       <div className="absolute top-1.5 right-1 flex gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">

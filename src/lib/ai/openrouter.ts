@@ -1,3 +1,4 @@
+import { fetchPublicHttps } from "@/lib/ai/request-auth";
 import type { ChatCompletionMessage } from "@/lib/ai/types";
 import type { AiProvider } from "@/lib/settings/api-key-storage";
 
@@ -9,7 +10,14 @@ const DIRECT_URLS: Partial<Record<AiProvider, string>> = {
   qwen: "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions",
   kimi: "https://api.moonshot.ai/v1/chat/completions",
   grok: "https://api.x.ai/v1/chat/completions",
+  nanogpt: "https://nano-gpt.com/api/v1/chat/completions",
+  eden: "https://api.edenai.run/v3/chat/completions",
+  orcarouter: "https://api.orcarouter.ai/v1/chat/completions",
+  unorouter: "https://api.unorouter.com/v1/chat/completions",
+  llm7: "https://api.llm7.io/v1/chat/completions",
+  huggingface: "https://router.huggingface.co/v1/chat/completions",
 };
+const NATIVE_MODEL_PROVIDERS = new Set<AiProvider>(["openai", "deepseek", "qwen", "kimi", "grok"]);
 const GROQ_URL = "https://api.groq.com/openai/v1/chat/completions";
 const GOOGLE_AI_URL = "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions";
 
@@ -111,7 +119,9 @@ export async function createProviderStream(provider: AiProvider, model: string, 
   if (provider === "openrouter") return createOpenRouterStream(model, messages, apiKey);
   const url = DIRECT_URLS[provider];
   if (!url) throw new Error(`${provider} direct API is not configured yet. Use OpenRouter or a supported direct provider.`);
-  const directModel = model.includes("/") ? model.split("/").slice(1).join("/").replace(/:free$/, "") : model;
+  const directModel = NATIVE_MODEL_PROVIDERS.has(provider) && model.includes("/")
+    ? model.split("/").slice(1).join("/").replace(/:free$/, "")
+    : model;
   return fetch(url, {
     method: "POST",
     headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
@@ -120,9 +130,59 @@ export async function createProviderStream(provider: AiProvider, model: string, 
 }
 
 export async function createCustomStream(baseUrl: string, model: string, messages: ChatCompletionMessage[], apiKey: string) {
-  const url = new URL(baseUrl.endsWith("/chat/completions") ? baseUrl : `${baseUrl.replace(/\/$/, "")}/chat/completions`);
-  if (url.protocol !== "https:" || url.username || url.password || url.port) throw new Error("Custom AI URL must be a public HTTPS URL.");
-  return fetch(url, { method: "POST", headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" }, body: JSON.stringify({ model, messages, stream: true }) });
+  const endpoint = baseUrl.endsWith("/chat/completions") ? baseUrl : `${baseUrl.replace(/\/$/, "")}/chat/completions`;
+  return fetchPublicHttps(new URL(endpoint), {
+    method: "POST",
+    headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ model, messages, stream: true }),
+  });
+}
+
+export async function createCustomCompletion(
+  baseUrl: string,
+  model: string,
+  messages: ChatCompletionMessage[],
+  apiKey: string,
+  options?: { maxTokens?: number; temperature?: number },
+) {
+  const endpoint = baseUrl.endsWith("/chat/completions") ? baseUrl : `${baseUrl.replace(/\/$/, "")}/chat/completions`;
+  return fetchPublicHttps(new URL(endpoint), {
+    method: "POST",
+    headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+    body: JSON.stringify({
+      model,
+      messages,
+      stream: false,
+      max_tokens: options?.maxTokens ?? SUMMARY_MAX_TOKENS,
+      temperature: options?.temperature ?? SUMMARY_TEMPERATURE,
+    }),
+  });
+}
+
+export async function createProviderCompletion(
+  provider: AiProvider,
+  model: string,
+  messages: ChatCompletionMessage[],
+  apiKey: string,
+  options?: { maxTokens?: number; temperature?: number },
+) {
+  if (provider === "openrouter") return createOpenRouterCompletion(model, messages, apiKey, options);
+  const url = DIRECT_URLS[provider];
+  if (!url) throw new Error(`${provider} direct API is not configured yet. Use OpenRouter or a supported direct provider.`);
+  const directModel = NATIVE_MODEL_PROVIDERS.has(provider) && model.includes("/")
+    ? model.split("/").slice(1).join("/").replace(/:free$/, "")
+    : model;
+  return fetch(url, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+    body: JSON.stringify({
+      model: directModel,
+      messages,
+      stream: false,
+      max_tokens: options?.maxTokens ?? SUMMARY_MAX_TOKENS,
+      temperature: options?.temperature ?? SUMMARY_TEMPERATURE,
+    }),
+  });
 }
 
 export async function createOpenRouterCompletion(
@@ -173,7 +233,9 @@ export async function validateProviderKey(
       // No direct API integration for this provider yet (e.g. meta).
       return { valid: true, deferred: true };
     }
-    const res = await fetch(`${base}/models`, {
+    const modelsUrl = new URL(base);
+    modelsUrl.pathname = modelsUrl.pathname.replace(/\/chat\/completions$/, "/models");
+    const res = await fetch(modelsUrl, {
       headers: { Authorization: `Bearer ${apiKey}` },
       cache: "no-store",
     });

@@ -14,6 +14,7 @@ import {
   Lock,
 } from "lucide-react";
 import { LanguageToggle } from "@/components/landing/language-toggle";
+import { OwnershipMarks, ProductStage, ProviderRail } from "@/components/landing/provider-showcase";
 import { Logo } from "@/components/ui/logo";
 import { SplashScreen } from "@/components/landing/splash-screen";
 import { Locale, translations } from "@/lib/i18n/translations";
@@ -95,12 +96,14 @@ export default function LandingPage() {
             </div>
 
             {/* Title */}
-            <h1 className="text-4xl font-bold tracking-tight sm:text-6xl">
+            <h1 className="text-balance text-4xl font-bold tracking-tight sm:text-6xl">
               {t.heroTitle}{" "}
               <span className="bg-gradient-to-r from-primary to-primary/60 bg-clip-text text-transparent">
                 {t.heroTitleHighlight}
-              </span>{" "}
-              {t.heroTitleEnd}
+              </span>
+              {t.heroTitleEnd ? (
+                <span className="mt-2 block text-3xl sm:text-5xl">{t.heroTitleEnd}</span>
+              ) : null}
             </h1>
 
             {/* Description */}
@@ -126,7 +129,11 @@ export default function LandingPage() {
                 {t.heroSecondary}
               </a>
             </div>
+            <p className="mx-auto mt-4 max-w-xl text-sm text-muted-foreground">
+              {t.heroTrust}
+            </p>
           </div>
+          <ProviderRail label={t.providerRail} />
         </div>
       </section>
 
@@ -138,11 +145,20 @@ export default function LandingPage() {
               {t.proofLabel}
             </p>
             <h2 className="mt-4 text-3xl font-bold tracking-tight sm:text-4xl">
-              {t.trustTitle}
+              {t.compareTitle}
             </h2>
             <p className="mt-4 text-lg leading-relaxed text-muted-foreground">
-              {t.trustDescription}
+              {t.compareDescription}
             </p>
+            <div className="mt-6 grid gap-3">
+              {t.compare.map((item) => (
+                <div key={item.title} className="rounded-2xl border border-border/70 bg-card/60 p-4">
+                  <p className="text-sm font-semibold">{item.title}</p>
+                  <p className="mt-1 text-sm leading-6 text-muted-foreground">{item.description}</p>
+                </div>
+              ))}
+            </div>
+            <OwnershipMarks />
             <ul className="mt-6 grid gap-3 sm:grid-cols-2">
               {t.trustItems.map((item) => (
                 <li key={item} className="flex items-center gap-2 text-sm font-medium">
@@ -154,17 +170,20 @@ export default function LandingPage() {
               ))}
             </ul>
           </div>
-          <div className="rounded-3xl border border-primary/20 bg-card p-5 shadow-2xl shadow-primary/5 sm:p-7">
-            <div className="mb-5 flex items-center gap-2 text-xs font-medium text-muted-foreground">
-              <span className="size-2 rounded-full bg-emerald-500" />
-              PermaMind memory recall
-            </div>
-            <p className="text-sm font-medium text-muted-foreground">{t.proofQuestion}</p>
-            <div className="mt-5 rounded-2xl bg-primary/10 p-4 text-sm leading-7">
-              {t.proofAnswer}
-            </div>
-            <p className="mt-4 text-xs text-muted-foreground">{t.proofSource}</p>
-          </div>
+          <ProductStage
+            stages={[
+              { label: t.stageModel, value: t.stageModelValue },
+              { label: t.stageMemory, value: t.stageMemoryValue },
+              { label: t.stageVault, value: t.stageVaultValue },
+            ]}
+            question={t.proofQuestion}
+            answer={t.proofAnswer}
+            source={t.proofSource}
+            encrypted={t.stageEncrypted}
+            cipher={t.stageCipher}
+            permanent={t.stagePermanent}
+            rtl={isRTL}
+          />
         </div>
       </section>
 
@@ -180,7 +199,7 @@ export default function LandingPage() {
             </p>
           </div>
 
-          <div className="mt-16 grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="mt-16 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
             {t.features.map((feature) => {
               const Icon = featureIcons[feature.icon as keyof typeof featureIcons];
               return (
@@ -224,10 +243,15 @@ export default function LandingPage() {
           <div className="rounded-3xl border border-primary/20 bg-card p-6 shadow-xl shadow-primary/5">
             <div className="flex items-center gap-3">
               <div className="flex size-11 items-center justify-center rounded-xl bg-primary/10 text-sm font-bold text-primary">MCP</div>
-              <div><p className="font-semibold">Read-only memory bridge</p><p className="text-sm text-muted-foreground">PermaMind → Cursor / Claude / Codex</p></div>
+              <div>
+                <p className="font-semibold">{t.mcpCardTitle}</p>
+                <p className="text-sm text-muted-foreground">{t.mcpCardSubtitle}</p>
+              </div>
             </div>
-            <div className="mt-6 rounded-xl border bg-muted/30 p-4 font-mono text-xs text-muted-foreground">https://your-domain.com/api/mcp</div>
-            <p className="mt-4 text-sm leading-relaxed text-muted-foreground">{isRTL ? "يتم الاتصال بعد تسجيل الدخول وبموافقتك على الملخصات التي تريد مشاركتها." : "Connect after signing in and explicitly approve the summaries you want to share."}</p>
+            <div className="mt-6 rounded-xl border bg-muted/30 p-4 text-sm text-muted-foreground">
+              {t.mcpCardEndpoint}
+            </div>
+            <p className="mt-4 text-sm leading-relaxed text-muted-foreground">{t.mcpCardConnect}</p>
           </div>
         </div>
       </section>
@@ -333,16 +357,13 @@ export default function LandingPage() {
               <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">
                 {isRTL ? "روابط" : "Explore"}
               </p>
-              <div className="mt-5 grid grid-cols-2 gap-x-8 gap-y-4 text-sm">
-                <a href="#privacy" className="text-muted-foreground transition-colors hover:text-foreground">
+              <div className="mt-5 flex flex-col gap-4 text-sm">
+                <Link href="/privacy" className="text-muted-foreground transition-colors hover:text-foreground">
                   {t.footerPrivacy}
-                </a>
-                <a href="#terms" className="text-muted-foreground transition-colors hover:text-foreground">
+                </Link>
+                <Link href="/terms" className="text-muted-foreground transition-colors hover:text-foreground">
                   {t.footerTerms}
-                </a>
-                <a href="#help" className="text-muted-foreground transition-colors hover:text-foreground">
-                  {t.footerHelp}
-                </a>
+                </Link>
                 <a href="#top" className="text-muted-foreground transition-colors hover:text-foreground">
                   {isRTL ? "العودة للأعلى" : "Back to top"}
                 </a>
@@ -350,22 +371,7 @@ export default function LandingPage() {
             </nav>
           </div>
 
-          <div className="mt-14 grid gap-4 border-t border-border/60 pt-10 md:grid-cols-3">
-            <section id="privacy" className="scroll-mt-24 rounded-2xl border border-border/70 bg-background/40 p-5">
-              <h2 className="text-sm font-semibold text-foreground">{t.privacyTitle}</h2>
-              <p className="mt-3 text-sm leading-6 text-muted-foreground">{t.privacyDescription}</p>
-            </section>
-            <section id="terms" className="scroll-mt-24 rounded-2xl border border-border/70 bg-background/40 p-5">
-              <h2 className="text-sm font-semibold text-foreground">{t.termsTitle}</h2>
-              <p className="mt-3 text-sm leading-6 text-muted-foreground">{t.termsDescription}</p>
-            </section>
-            <section id="help" className="scroll-mt-24 rounded-2xl border border-border/70 bg-background/40 p-5">
-              <h2 className="text-sm font-semibold text-foreground">{t.helpTitle}</h2>
-              <p className="mt-3 text-sm leading-6 text-muted-foreground">{t.helpDescription}</p>
-            </section>
-          </div>
-
-          <div className="mt-10 flex flex-col gap-3 border-t border-border/60 pt-6 text-sm text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
+          <div className="mt-12 flex flex-col gap-3 border-t border-border/60 pt-6 text-sm text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
             <p>© {new Date().getFullYear()} PermaMind. {t.footerRights}</p>
             <p>{t.footerDescription}</p>
           </div>

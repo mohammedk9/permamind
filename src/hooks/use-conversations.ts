@@ -8,7 +8,7 @@ import {
 } from "@/lib/chat/conversation";
 import { loadChatData, saveChatData } from "@/lib/storage/chat-storage";
 import type { Conversation, Project } from "@/types/chat";
-import { uploadConversationSummary } from "@/lib/storage/sync-client";
+import { uploadConversationSummary, deleteConversationSummary } from "@/lib/storage/sync-client";
 import { isCloudSyncEnabled } from "@/lib/storage/storage-preferences";
 import { confirmCloudSummaryUpload } from "@/lib/storage/sync-consent";
 
@@ -129,17 +129,35 @@ export function useConversations(options: UseConversationsOptions = {}) {
     )));
   }, []);
 
-  const syncConversationSummary = useCallback(async (id: string, isConfirmed = false): Promise<"uploaded" | "unchanged"> => {
+  const enableConversationCloudSync = useCallback(async (id: string, isConfirmed = false): Promise<"uploaded" | "unchanged" | "pending-summary"> => {
     if (!isCloudSyncEnabled()) {
       throw new Error("Enable cloud storage and select the data you want to sync first");
     }
     const conversation = conversations.find((item) => item.id === id);
     if (!conversation) throw new Error("Conversation not found");
-    if (!conversation.syncToCloud) throw new Error("Cloud sync was not selected for this conversation");
-    if (!conversation.metadata?.summary?.trim()) throw new Error("This conversation does not have a summary yet");
+    if (!conversation.metadata?.summary?.trim()) {
+      setConversationCloudSync(id, true);
+      return "pending-summary";
+    }
     if (!isConfirmed && !confirmCloudSummaryUpload()) throw new Error("Cloud summary upload cancelled");
-    return uploadConversationSummary(conversation);
-  }, [conversations]);
+
+    const result = await uploadConversationSummary({ ...conversation, syncToCloud: true });
+    setConversationCloudSync(id, true);
+    return result;
+  }, [conversations, setConversationCloudSync]);
+
+  const disableConversationCloudSync = useCallback(async (id: string): Promise<void> => {
+    const conversation = conversations.find((item) => item.id === id);
+    if (!conversation) throw new Error("Conversation not found");
+    if (conversation.syncToCloud) await deleteConversationSummary(id);
+    setConversationCloudSync(id, false);
+  }, [conversations, setConversationCloudSync]);
+
+  const syncConversationSummary = useCallback(async (id: string, isConfirmed = false): Promise<"uploaded" | "unchanged"> => {
+    const result = await enableConversationCloudSync(id, isConfirmed);
+    if (result === "pending-summary") throw new Error("This conversation does not have a summary yet");
+    return result;
+  }, [enableConversationCloudSync]);
 
   return {
     conversations: sortedConversations,
@@ -154,6 +172,8 @@ export function useConversations(options: UseConversationsOptions = {}) {
     selectConversation,
     getConversation,
     setConversationCloudSync,
+    enableConversationCloudSync,
+    disableConversationCloudSync,
     syncConversationSummary,
     setActiveId,
     reload,

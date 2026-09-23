@@ -34,8 +34,8 @@ interface ChatMainProps {
   onNewChat: () => void;
   onRename: (id: string, title: string) => void;
   onDelete: (id: string) => void;
-  onToggleCloudSync?: (id: string) => void;
-  onSyncSummary?: (id: string, confirmed?: boolean) => Promise<"uploaded" | "unchanged">;
+  onToggleCloudSync?: (id: string) => Promise<"uploaded" | "unchanged" | "pending-summary" | void>;
+  onDisableCloudSync?: (id: string) => Promise<void>;
   isSummarizing?: (id: string) => boolean;
   onSend: (content: string) => void;
   model: string;
@@ -72,7 +72,7 @@ export function ChatMain({
   onRename,
   onDelete,
   onToggleCloudSync,
-  onSyncSummary,
+  onDisableCloudSync,
   isSummarizing,
   onSend,
   model,
@@ -143,7 +143,7 @@ export function ChatMain({
               onRename={onRename}
               onDelete={onDelete}
               onToggleCloudSync={onToggleCloudSync}
-              onSyncSummary={onSyncSummary}
+              onDisableCloudSync={onDisableCloudSync}
               isSummarizing={isSummarizing}
               className="min-h-0 w-full flex-1 border-0"
             />

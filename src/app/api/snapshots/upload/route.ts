@@ -20,10 +20,16 @@ export async function POST(request: Request) {
     const rate = checkUploadRate(userId, isPro);
     if (!rate.ok) return NextResponse.json({ code: "RATE_LIMITED", retryAfter: rate.retryAfter }, { status: 429 });
 
-    const body = (await request.json()) as {
-      encryptedPayload?: string;
-      metadata?: SnapshotMeta;
-    };
+    const rawBody = await readBodyWithLimit(request, MAX_UPLOAD_SIZE_BYTES);
+    if (rawBody === null) {
+      return NextResponse.json({ error: "Upload exceeds the maximum size" }, { status: 413 });
+    }
+    let body: { encryptedPayload?: string; metadata?: SnapshotMeta };
+    try {
+      body = JSON.parse(rawBody) as { encryptedPayload?: string; metadata?: SnapshotMeta };
+    } catch {
+      return NextResponse.json({ error: "Invalid snapshot envelope" }, { status: 400 });
+    }
 
     const payload = body.encryptedPayload ? new TextEncoder().encode(body.encryptedPayload) : null;
     if (payload && payload.byteLength > MAX_UPLOAD_SIZE_BYTES) {
@@ -55,5 +61,29 @@ export async function POST(request: Request) {
   } catch (error) {
     const message = error instanceof Error ? error.message : "Snapshot upload failed";
     return NextResponse.json({ error: message }, { status: 500 });
+  }
+}
+
+export async function readBodyWithLimit(request: Request, limit: number): Promise<string | null> {
+  if (!request.body) return "";
+  const reader = request.body.getReader();
+  const decoder = new TextDecoder();
+  let received = 0;
+  let body = "";
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      received += value.byteLength;
+      if (received > limit) {
+        await reader.cancel();
+        return null;
+      }
+      body += decoder.decode(value, { stream: true });
+    }
+    body += decoder.decode();
+    return body;
+  } finally {
+    reader.releaseLock();
   }
 }

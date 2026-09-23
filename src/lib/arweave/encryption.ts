@@ -24,6 +24,7 @@ import {
   KDF_HASH,
   KDF_ITERATIONS,
   KDF_SALT_LENGTH,
+  MIN_PASSPHRASE_LENGTH,
    AES_GCM_ALGORITHM_NAME,
 } from "./constants";
 
@@ -97,10 +98,17 @@ export function generateIV(): Uint8Array {
  * const key = await deriveKey("my-secret-passphrase", salt);
  * ```
  */
+export function assertPassphrase(passphrase: string): void {
+  if (typeof passphrase !== "string" || passphrase.length < MIN_PASSPHRASE_LENGTH) {
+    throw new Error(`Passphrase must be at least ${MIN_PASSPHRASE_LENGTH} characters`);
+  }
+}
+
 export async function deriveKey(
   passphrase: string,
   salt: Uint8Array
 ): Promise<CryptoKey> {
+  assertPassphrase(passphrase);
   // Step 1: Import the passphrase as a raw key material
   const keyMaterial = await crypto.subtle.importKey(
     "raw",

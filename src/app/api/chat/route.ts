@@ -13,13 +13,13 @@ import {
   resolveModelChain,
 } from "@/lib/ai/route-models";
 import type { ChatCompletionMessage, ChatRequestBody } from "@/lib/ai/types";
-import { checkRateLimit, rateLimitIdentifier, RATE_LIMIT_DAY_MS } from "@/lib/ai/rate-limit";
+import { checkRateLimit } from "@/lib/ai/rate-limit";
+import { reserveAiQuota } from "@/lib/ai/usage-quota";
 
 export const runtime = "nodejs";
 const MAX_MESSAGES = 100;
 const MAX_CONTENT_LENGTH = 20_000;
 const FALLBACK_DELAY_MS = 450;
-const FREE_DAILY_REQUEST_LIMIT = 10;
 const BYOK_CHAT_REQUESTS_PER_MINUTE = 30;
 
 function shouldDelayBeforeFallback(status: number): boolean {
@@ -57,28 +57,15 @@ export async function POST(request: Request) {
     return Response.json({ error: message }, { status: 401 });
   }
 
-  const ip = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? null;
-  const identifier = rateLimitIdentifier(ip, `${auth.mode}:${auth.apiKey}`);
-  let limiter;
-  if (auth.mode === "free") {
-    limiter = checkRateLimit(identifier, FREE_DAILY_REQUEST_LIMIT, RATE_LIMIT_DAY_MS);
-    if (!limiter.allowed) {
-      return Response.json(
-        { error: "You have used your 10 free messages for today. Add your own API key in Settings for unlimited chat, or come back tomorrow." },
-        { status: 429, headers: { "Retry-After": String(limiter.retryAfterSeconds) } }
-      );
-    }
-    // Burst guard on top of the daily allowance so the day's budget cannot be
-    // spent in a few seconds of scripted hammering.
-    const burst = checkRateLimit(`${identifier}:burst`, 5);
-    if (!burst.allowed) {
-      return Response.json(
-        { error: "Too many requests. Please slow down." },
-        { status: 429, headers: { "Retry-After": String(burst.retryAfterSeconds) } }
-      );
-    }
-  } else {
-    limiter = checkRateLimit(`${identifier}:min`, BYOK_CHAT_REQUESTS_PER_MINUTE);
+  const quota = await reserveAiQuota("chat", auth.mode === "free");
+  if (!quota.ok) {
+    return Response.json(
+      { error: quota.error },
+      { status: quota.status, headers: quota.retryAfterSeconds ? { "Retry-After": String(quota.retryAfterSeconds) } : undefined }
+    );
+  }
+  if (auth.mode !== "free") {
+    const limiter = checkRateLimit(`byok:${auth.apiKey.slice(-12)}`, BYOK_CHAT_REQUESTS_PER_MINUTE);
     if (!limiter.allowed) {
       return Response.json(
         { error: "Too many requests. Please slow down." },

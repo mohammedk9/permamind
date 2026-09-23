@@ -37,3 +37,22 @@ export async function PUT(request: Request) {
   if (error) return NextResponse.json({ error: "Could not save conversation summary" }, { status: 500 });
   return NextResponse.json({ summary: data });
 }
+
+export async function DELETE(request: Request) {
+  const { supabase, user } = await requireUser();
+  if (!supabase || !user) return NextResponse.json({ error: "Sign in required" }, { status: 401 });
+
+  const conversationId = new URL(request.url).searchParams.get("conversationId");
+  if (!conversationId || conversationId.length > 200) {
+    return NextResponse.json({ error: "A valid conversation id is required" }, { status: 400 });
+  }
+
+  const { error } = await supabase
+    .from("cloud_conversation_summaries")
+    .delete()
+    .eq("user_id", user.id)
+    .eq("conversation_id", conversationId);
+  if (error) return NextResponse.json({ error: "Could not delete conversation summary" }, { status: 500 });
+
+  return NextResponse.json({ deleted: true });
+}

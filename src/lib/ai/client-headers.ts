@@ -2,7 +2,7 @@ import type { AiProvider, ApiKeyMode } from "@/lib/settings/api-key-storage";
 import {
   HEADER_API_MODE,
   HEADER_OPENROUTER_KEY,
-} from "@/lib/ai/request-auth";
+} from "@/lib/ai/request-headers";
 
 export function buildApiHeaders(
   mode: ApiKeyMode,

@@ -386,7 +386,7 @@ export default function BackupPage() {
             <p className="mt-2 text-caption">Manual backups use the existing pipeline and can include everything when this policy is manual-only.</p>
           </SurfaceCard>
 
-          <SurfaceCard title="Queue health" description="Upload activity is persisted locally and survives browser restarts." actions={<StatusPill status={state.status} label={state.label} />}>
+          <SurfaceCard title="Queue health" description="Encrypted copies are stored on the server until an independent worker uploads them. Closing this browser does not cancel a queued copy." actions={<StatusPill status={state.status} label={state.label} />}>
             <div className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-4"><div><p className="text-caption">Pending</p><p className="font-semibold">{queue.pending}</p></div><div><p className="text-caption">Uploading</p><p className="font-semibold">{queue.uploading}</p></div><div><p className="text-caption">Completed</p><p className="font-semibold">{queue.done}</p></div><div><p className="text-caption">Failed</p><p className="font-semibold">{queue.failed}</p></div></div>
             {queue.failed > 0 && <Button className="mt-4" variant="outline" onClick={snapshot.retryFailed}><RefreshCw className="size-4" />Retry failed uploads</Button>}
           </SurfaceCard>

@@ -1,0 +1,19 @@
+{
+	"servers": {
+		"aihubmix": {
+			"type": "http",
+			"url": "https://mcp.aihubmix.com/mcp",
+			"headers": {
+				"X-Aihubmix-Access-Key": "${input:aihubmix-access-key}"
+			}
+		}
+	},
+	"inputs": [
+		{
+			"type": "promptString",
+			"id": "aihubmix-access-key",
+			"description": "AIHubMix Access Key",
+			"password": true
+		}
+	]
+}

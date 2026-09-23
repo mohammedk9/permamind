@@ -2,6 +2,7 @@
 
 import {
   Cloud,
+  Download,
   HardDrive,
   CheckCircle2,
   KeyRound,
@@ -34,6 +35,8 @@ import {
   type StoragePreferences,
 } from "@/lib/storage/storage-preferences";
 import { setSyncPassphrase } from "@/lib/storage/sync-encryption";
+import { loadChatData } from "@/lib/storage/chat-storage";
+import { buildConversationExport, conversationExportFileName } from "@/lib/storage/chat-export";
 
 interface SettingsDialogProps {
   mode: ApiKeyMode;
@@ -92,6 +95,17 @@ function StoragePreferencesPanel() {
     setPreferences(next);
     saveStoragePreferences(next);
   };
+  const downloadConversations = () => {
+    const { conversations } = loadChatData();
+    const exportedAt = new Date();
+    const blob = new Blob([JSON.stringify(buildConversationExport(conversations, exportedAt), null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = conversationExportFileName(exportedAt);
+    link.click();
+    URL.revokeObjectURL(url);
+  };
   return (
     <div className="space-y-3 text-xs">
       <p className="text-muted-foreground">Choose where selected data may be used. Changing this setting never uploads anything automatically.</p>
@@ -134,6 +148,10 @@ function StoragePreferencesPanel() {
         </div>
       )}
       <p className="rounded-md border border-amber-500/30 bg-amber-500/5 p-2 text-muted-foreground">Arweave is separate from Supabase and is available in both modes. It remains controlled by the existing Backup storage policy. Arweave data is permanent and cannot be deleted.</p>
+      <Button size="sm" variant="outline" onClick={downloadConversations}>
+        <Download className="size-3.5" />
+        Download conversations
+      </Button>
       <Button size="sm" variant="ghost" onClick={() => { setPreferences(DEFAULT_STORAGE_PREFERENCES); saveStoragePreferences(DEFAULT_STORAGE_PREFERENCES); }}>
         Reset storage choices
       </Button>
@@ -234,7 +252,7 @@ export function SettingsDialog({
             </section>
             <section className="rounded-lg border border-border bg-muted/30 p-3 text-xs text-muted-foreground">
               <h4 className="mb-1 font-semibold text-foreground">Privacy</h4>
-              <p>Your memory is encrypted, portable, and user-controlled. Conversations stay in your browser/device by default; you can export and restore them, and use a different AI provider. Only the context needed for an AI request is sent, and your API key and encryption passphrase stay local rather than on our servers.</p>
+              <p>Your memory is encrypted, portable, and user-controlled. Conversations stay in your browser/device by default; you can export and restore them, and use a different AI provider. Only the context needed for an AI request is sent. Your API key stays in this browser session and is never stored on our servers, and your encryption passphrase stays local.</p>
             </section>
             <section className="rounded-lg border border-amber-500/40 bg-amber-500/5 p-3 text-xs text-muted-foreground">
               <h4 className="mb-1 font-semibold text-foreground">Permanent storage</h4>
@@ -254,8 +272,9 @@ export function SettingsDialog({
                   <StatusBadge status={connectionStatus} />
                 </div>
                 <p className="text-xs text-muted-foreground">
-                  Stored only in your browser (localStorage). Sent per request to
-                  our API route — never saved on our servers.
+                  Kept only in this browser session. It is cleared when you close
+                  the browser, and it is never stored on our servers. You will
+                  need to enter it again after reopening the browser.
                 </p>
                 <Input
                   type="password"

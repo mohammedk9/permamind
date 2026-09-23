@@ -12,7 +12,12 @@ const { uploadedTxId, createTransactionMock, uploadTransactionMock, fetchMock } 
       txId,
     })),
     uploadTransactionMock: vi.fn(async () => txId),
-    fetchMock: vi.fn(async () => new Response(JSON.stringify({ txId }), { status: 200 })),
+    fetchMock: vi.fn(async (url: string) => {
+      if (String(url).endsWith("/api/snapshots/queue")) {
+        return new Response(JSON.stringify({ durable: true, status: "pending" }), { status: 200 });
+      }
+      return new Response(JSON.stringify({ txId }), { status: 200 });
+    }),
   };
 });
 
@@ -85,9 +90,9 @@ describe("Arweave pipeline integration", () => {
     // Queue processing is deterministic: Arweave transaction creation/upload are mocked.
     startProcessor({} as JWKInterface, passphrase);
     await vi.advanceTimersByTimeAsync(1000);
-    expect(fetchMock).toHaveBeenCalledOnce();
-    const requestInit = (fetchMock.mock.calls[0] as unknown as [string, { body?: string }])[1];
-    expect(JSON.parse(String(requestInit?.body))).toMatchObject({
+    expect(fetchMock.mock.calls.filter((call) => String(call[0]).endsWith("/api/snapshots/upload"))).toHaveLength(1);
+    const uploadCall = fetchMock.mock.calls.find((call) => String(call[0]).endsWith("/api/snapshots/upload")) as unknown as [string, { body?: string }];
+    expect(JSON.parse(String(uploadCall[1]?.body))).toMatchObject({
       encryptedPayload: queued[0].encryptedPayload,
     });
     expect(getQueueStatus().total).toBe(0);
@@ -126,6 +131,14 @@ describe("Arweave pipeline integration", () => {
     expect(loadChatData().conversations).toHaveLength(0);
   });
 
+  it("does not treat a snapshot as queued when durable storage rejects it", async () => {
+    fetchMock.mockImplementationOnce(async () => new Response(JSON.stringify({ error: "Sign in required" }), { status: 401 }));
+    const result = await runSnapshotPipeline([conversation()], "integration-passphrase", {});
+    expect(result.status).toBe("failed");
+    expect(JSON.parse(storage.getItem("permamind:upload:queue:v1")!).items).toHaveLength(0);
+    expect(loadRegistry().snapshots).toHaveLength(0);
+  });
+
   it("does not retry an upload when completion is ambiguous", async () => {
     fetchMock.mockResolvedValueOnce(new Response(JSON.stringify({ txId: uploadedTxId }), { status: 200 }));
     const result = await runSnapshotPipeline([conversation()], "integration-passphrase", {});
@@ -134,7 +147,7 @@ describe("Arweave pipeline integration", () => {
     startProcessor({} as JWKInterface, "integration-passphrase");
     await vi.advanceTimersByTimeAsync(1000);
 
-    expect(fetchMock).toHaveBeenCalledOnce();
+    expect(fetchMock.mock.calls.filter((call) => String(call[0]).endsWith("/api/snapshots/upload"))).toHaveLength(1);
     expect(getQueueStatus().total).toBe(0);
     expect(loadRegistry().snapshots[0].txId).toBe(uploadedTxId);
   });

@@ -4,8 +4,10 @@ import {
   parseSummaryResponse,
 } from "@/lib/ai/summarize";
 import {
+  createCustomCompletion,
   createFreeProviderCompletion,
   createOpenRouterCompletion,
+  createProviderCompletion,
   getFreeRoute,
   parseOpenRouterError,
 } from "@/lib/ai/openrouter";
@@ -18,13 +20,13 @@ import { getSummaryModel } from "@/lib/ai/summary-model";
 import type { ChatCompletionMessage } from "@/lib/ai/types";
 import type { Message } from "@/types/chat";
 import { sanitizeUpstreamError } from "@/lib/ai/openrouter";
-import { checkRateLimit, rateLimitIdentifier, RATE_LIMIT_DAY_MS } from "@/lib/ai/rate-limit";
+import { checkRateLimit } from "@/lib/ai/rate-limit";
+import { reserveAiQuota } from "@/lib/ai/usage-quota";
 
 export const runtime = "nodejs";
 const MAX_MESSAGES = 100;
 const MAX_CONTENT_LENGTH = 20_000;
 const FALLBACK_DELAY_MS = 450;
-const FREE_DAILY_SUMMARY_LIMIT = 10;
 const BYOK_SUMMARY_REQUESTS_PER_MINUTE = 20;
 
 function isValidMessage(
@@ -58,19 +60,15 @@ export async function POST(request: Request) {
 
   const { messages } = body;
 
-  const ip = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? null;
-  const identifier = rateLimitIdentifier(ip, `${auth.mode}:${auth.apiKey}`);
-  let limiter;
-  if (auth.mode === "free") {
-    limiter = checkRateLimit(identifier, FREE_DAILY_SUMMARY_LIMIT, RATE_LIMIT_DAY_MS);
-    if (!limiter.allowed) {
-      return Response.json(
-        { error: "You have used your free summary allowance for today. Add your own API key in Settings, or come back tomorrow." },
-        { status: 429, headers: { "Retry-After": String(limiter.retryAfterSeconds) } }
-      );
-    }
-  } else {
-    limiter = checkRateLimit(`${identifier}:min`, BYOK_SUMMARY_REQUESTS_PER_MINUTE);
+  const quota = await reserveAiQuota("summary", auth.mode === "free");
+  if (!quota.ok) {
+    return Response.json(
+      { error: quota.error },
+      { status: quota.status, headers: quota.retryAfterSeconds ? { "Retry-After": String(quota.retryAfterSeconds) } : undefined }
+    );
+  }
+  if (auth.mode !== "free") {
+    const limiter = checkRateLimit(`byok:summary:${auth.apiKey.slice(-12)}`, BYOK_SUMMARY_REQUESTS_PER_MINUTE);
     if (!limiter.allowed) {
       return Response.json(
         { error: "Too many summary requests. Please slow down." },
@@ -111,7 +109,9 @@ export async function POST(request: Request) {
     for (const tryModel of modelChain) {
       const upstream = auth.mode === "free"
         ? await createFreeProviderCompletion(getFreeRoute(tryModel), prompt)
-        : await createOpenRouterCompletion(tryModel, prompt, auth.apiKey);
+        : auth.provider === "custom"
+          ? await createCustomCompletion(auth.baseUrl ?? "", auth.modelName ?? tryModel, prompt, auth.apiKey)
+          : await createProviderCompletion(auth.provider, tryModel, prompt, auth.apiKey);
 
       if (!upstream.ok) {
         lastError = await parseOpenRouterError(upstream);

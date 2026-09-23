@@ -3,6 +3,9 @@ import { runSnapshotPipeline } from "../pipeline";
 import type { Conversation } from "@/types/chat";
 import { DEDUP_REGISTRY_KEY, SNAPSHOT_REGISTRY_KEY, UPLOAD_QUEUE_KEY } from "../constants";
 
+const fetchMock = vi.fn(async () => new Response(JSON.stringify({ durable: true, status: "pending" }), { status: 200 }));
+vi.stubGlobal("fetch", fetchMock);
+
 // Mock localStorage
 const localStorageMock = (() => {
   let store: Record<string, string> = {};
@@ -56,6 +59,8 @@ Object.defineProperty(global, "crypto", {
 describe("pipeline", () => {
   beforeEach(() => {
     localStorageMock.clear();
+    fetchMock.mockClear();
+    fetchMock.mockImplementation(async () => new Response(JSON.stringify({ durable: true, status: "pending" }), { status: 200 }));
     vi.clearAllMocks();
   });
 
@@ -175,19 +180,20 @@ describe("pipeline", () => {
       expect(result2.snapshotVersion).toBe(2);
     });
 
-    it("should handle empty passphrase gracefully", async () => {
+    it("rejects an empty or short passphrase before queueing", async () => {
       const conversations = [
         createConversation("conv1", [
           { id: "msg1", role: "user", content: "Hello" },
         ]),
       ];
-      const passphrase = "";
       const walletKey = {};
 
-      const result = await runSnapshotPipeline(conversations, passphrase, walletKey);
+      const empty = await runSnapshotPipeline(conversations, "", walletKey);
+      const short = await runSnapshotPipeline(conversations, "short", walletKey);
 
-      // Should still queue (encryption will use empty passphrase)
-      expect(result.status).toBe("queued");
+      expect(empty.status).toBe("failed");
+      expect(short.status).toBe("failed");
+      expect(JSON.parse(localStorage.getItem(UPLOAD_QUEUE_KEY) ?? "{\"items\":[]}").items).toHaveLength(0);
     });
 
     it("should handle null walletKey", async () => {

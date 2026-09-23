@@ -184,6 +184,23 @@
   }
 }
 
+@keyframes logo-marquee {
+  from { transform: translateX(0); }
+  to { transform: translateX(-50%); }
+}
+
+.logo-track {
+  animation: logo-marquee 42s linear infinite;
+}
+
+.logo-mask {
+  mask-image: linear-gradient(to right, transparent, black 8%, black 92%, transparent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .logo-track { animation: none; }
+}
+
 /* ------------------------------------------------------------------ */
 /*  Splash screen animations                                          */
 /* ------------------------------------------------------------------ */
