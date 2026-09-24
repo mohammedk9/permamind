@@ -1,11 +1,14 @@
 export type MessageRole = "user" | "assistant";
 
+export interface MessageSource { title: string; url: string; }
+
 export interface Message {
   id: string;
   role: MessageRole;
   content: string;
   createdAt: Date;
   isStreaming?: boolean;
+  sources?: MessageSource[];
 }
 
 export interface MemoryFact {

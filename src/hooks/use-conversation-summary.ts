@@ -10,7 +10,9 @@ import {
 import { getSummaryModel } from "@/lib/ai/summary-model";
 import type { ApiKeyMode } from "@/lib/settings/api-key-storage";
 import type { TokenUsage } from "@/types/analytics";
-import type { Conversation, Message } from "@/types/chat";
+import type { Conversation, Message, Project } from "@/types/chat";
+import { syncExtractedMemory } from "@/lib/memory/ledger";
+import { mergeProjectFromConversations } from "@/lib/projects/context";
 
 const DEBOUNCE_MS = 2000;
 
@@ -33,7 +35,10 @@ export function useConversationSummary(
     conversationTitle: string;
     usage: TokenUsage;
     model: string;
-  }) => void
+  }) => void,
+  projects: Project[] = [],
+  conversations: Conversation[] = [],
+  updateProject?: (projectId: string, updater: (project: Project) => Project) => void,
 ) {
   const timersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(
     new Map()
@@ -84,6 +89,13 @@ export function useConversationSummary(
           project: parsed.project,
         },
       }));
+      syncExtractedMemory({ ...conversation, title: conversation.title, metadata: { summary: parsed.summary, topics: parsed.topics, tags: parsed.tags, entities: parsed.entities, messageFingerprint: fingerprint, generatedAt: new Date(), facts: parsed.facts, decisions: parsed.decisions, project: parsed.project } });
+      const projectId = conversation.projectId;
+      const project = projectId ? projects.find((item) => item.id === projectId) : undefined;
+      if (project && updateProject) {
+        const summarized = conversations.map((item) => item.id === conversationId ? { ...item, metadata: { summary: parsed.summary, topics: parsed.topics, tags: parsed.tags, entities: parsed.entities, messageFingerprint: fingerprint, generatedAt: new Date(), facts: parsed.facts, decisions: parsed.decisions, project: parsed.project } } : item);
+        updateProject(project.id, () => mergeProjectFromConversations(project, summarized));
+      }
 
       if (parsed.usage && onSummaryComplete) {
         onSummaryComplete({
@@ -94,7 +106,7 @@ export function useConversationSummary(
         });
       }
     },
-    [getConversation, getRequestHeaders, mode, onSummaryComplete, updateConversation]
+    [conversations, getConversation, getRequestHeaders, mode, onSummaryComplete, projects, updateConversation, updateProject]
   );
 
   const queueSummary = useCallback(

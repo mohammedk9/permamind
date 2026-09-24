@@ -1,26 +1,33 @@
 "use client";
 
 import { ArrowUp, FileText, Globe2, ImagePlus, Loader2, Mic, Paperclip, Square, X } from "lucide-react";
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { useLocale } from "@/hooks/use-locale";
+import { QUICK_COMMANDS, type QuickCommand } from "@/lib/chat/quick-commands";
+import { extractAttachmentText } from "@/lib/documents/extract";
+import { attachmentKind, attachmentSizeLimit, composeMessageContent, MAX_ATTACHMENT_COUNT, prepareAttachments, type AttachmentInput } from "@/lib/documents/limits";
+import { cn } from "@/lib/utils";
 
 interface ChatInputProps {
-  onSend: (content: string) => void;
+  onSend: (content: string, displayContent?: string) => void;
+  onQuickCommand?: (command: QuickCommand) => void;
   disabled?: boolean;
   isLoading?: boolean;
   webSearchEnabled?: boolean;
   onWebSearchChange?: (enabled: boolean) => void;
 }
 
-export function ChatInput({ onSend, disabled, isLoading, webSearchEnabled = false, onWebSearchChange }: ChatInputProps) {
+interface PendingAttachment extends AttachmentInput { id: string; status: "reading" | "ready" | "error"; }
+
+export function ChatInput({ onSend, onQuickCommand, disabled, isLoading, webSearchEnabled = false, onWebSearchChange }: ChatInputProps) {
   const { locale } = useLocale();
   const ar = locale === "ar";
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
-  const [files, setFiles] = useState<File[]>([]);
+  const [files, setFiles] = useState<PendingAttachment[]>([]);
   const [isRecording, setIsRecording] = useState(false);
   const [isTranscribing, setIsTranscribing] = useState(false);
   const [voiceError, setVoiceError] = useState<string | null>(null);
@@ -28,6 +35,10 @@ export function ChatInput({ onSend, disabled, isLoading, webSearchEnabled = fals
   const chunksRef = useRef<Blob[]>([]);
   const streamRef = useRef<MediaStream | null>(null);
   const recordingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const controllers = useRef(new Map<string, AbortController>());
+  const reading = files.some((file) => file.status === "reading");
+
+  useEffect(() => () => controllers.current.forEach((controller) => controller.abort()), []);
 
   const transcribe = useCallback(async (blob: Blob) => {
     setIsTranscribing(true);
@@ -86,20 +97,52 @@ export function ChatInput({ onSend, disabled, isLoading, webSearchEnabled = fals
 
   const addFiles = (selected: FileList | null) => {
     if (!selected) return;
-    setFiles((current) => [...current, ...Array.from(selected)].slice(0, 5));
+    const accepted = Array.from(selected).slice(0, Math.max(0, MAX_ATTACHMENT_COUNT - files.length));
+    const pending = accepted.map((file): PendingAttachment => {
+      const kind = attachmentKind(file);
+      const error = kind === "unsupported"
+        ? (ar ? "نوع الملف غير مدعوم" : "Unsupported file type")
+        : file.size > attachmentSizeLimit(kind)
+          ? (ar ? "الملف أكبر من الحد المسموح" : "File exceeds the size limit")
+          : undefined;
+      return { id: crypto.randomUUID(), name: file.name, type: file.type, size: file.size, status: error ? "error" : "reading", error };
+    });
+    setFiles((current) => [...current, ...pending].slice(0, MAX_ATTACHMENT_COUNT));
+    pending.forEach((item, index) => {
+      if (item.error) return;
+      const controller = new AbortController();
+      controllers.current.set(item.id, controller);
+      void extractAttachmentText(accepted[index], undefined, controller.signal)
+        .then((text) => setFiles((current) => current.map((file) => file.id === item.id ? { ...file, text, status: text.trim() ? "ready" : "error", error: text.trim() ? undefined : (ar ? "لم يتم العثور على نص" : "No text found") } : file)))
+        .catch((error: unknown) => {
+          if (error instanceof DOMException && error.name === "AbortError") return;
+          setFiles((current) => current.map((file) => file.id === item.id ? { ...file, status: "error", error: ar ? "تعذر قراءة الملف" : "Could not read file" } : file));
+        })
+        .finally(() => controllers.current.delete(item.id));
+    });
+  };
+
+  const removeFile = (id: string) => {
+    controllers.current.get(id)?.abort();
+    controllers.current.delete(id);
+    setFiles((current) => current.filter((file) => file.id !== id));
   };
 
   const handleSubmit = useCallback(() => {
     const value = textareaRef.current?.value.trim();
-    if ((!value && files.length === 0) || disabled || isLoading) return;
-    const attachmentText = files.length ? `\n\n[Attachments: ${files.map((file) => file.name).join(", ")}]` : "";
-    onSend(`${value}${attachmentText}`.trim());
+    if ((!value && !files.some((file) => file.text)) || disabled || isLoading || reading) return;
+    const prepared = prepareAttachments(files);
+    const message = composeMessageContent(value ?? "", prepared);
+    if (!message.content) return;
+    controllers.current.forEach((controller) => controller.abort());
+    controllers.current.clear();
+    onSend(message.content, message.displayContent);
     setFiles([]);
     if (textareaRef.current) {
       textareaRef.current.value = "";
       textareaRef.current.style.height = "auto";
     }
-  }, [files, onSend, disabled, isLoading]);
+  }, [files, onSend, disabled, isLoading, reading]);
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === "Enter" && !e.shiftKey) {
@@ -111,11 +154,18 @@ export function ChatInput({ onSend, disabled, isLoading, webSearchEnabled = fals
   return (
     <div className="sticky bottom-0 z-10 border-t border-border bg-background/95 p-2 pb-[max(0.75rem,env(safe-area-inset-bottom))] backdrop-blur sm:p-4">
       <div className="surface-elevated mx-auto max-w-3xl rounded-2xl border border-input bg-card p-2 sm:p-3">
-        {files.length > 0 && <div className="mb-2 flex flex-wrap gap-2 px-1">{files.map((file, index) => <div key={`${file.name}-${index}`} className="flex items-center gap-2 rounded-lg border bg-muted/60 px-2 py-1.5 text-xs"><span className="flex size-6 items-center justify-center rounded bg-background">{file.type.startsWith("image/") ? <ImagePlus className="size-3.5" /> : <FileText className="size-3.5" />}</span><span className="max-w-40 truncate">{file.name}</span><button type="button" onClick={() => setFiles((current) => current.filter((_, itemIndex) => itemIndex !== index))} aria-label={`Remove ${file.name}`}><X className="size-3.5 text-muted-foreground" /></button></div>)}</div>}
+        {files.length > 0 && <div className="mb-2 flex flex-wrap gap-2 px-1">{files.map((file) => <div key={file.id} className={cn("flex items-center gap-2 rounded-lg border bg-muted/60 px-2 py-1.5 text-xs", file.status === "error" && "border-destructive/40 text-destructive")}><span className="flex size-6 items-center justify-center rounded bg-background">{file.status === "reading" ? <Loader2 className="size-3.5 animate-spin" aria-label={ar ? "جارٍ قراءة الملفات" : "Reading files"} /> : file.type.startsWith("image/") ? <ImagePlus className="size-3.5" /> : <FileText className="size-3.5" />}</span><span className="max-w-40 truncate">{file.name}</span><span className="sr-only">{file.error ?? file.status}</span><button type="button" onClick={() => removeFile(file.id)} aria-label={ar ? `إزالة ${file.name}` : `Remove ${file.name}`}><X className="size-3.5 text-muted-foreground" /></button></div>)}</div>}
         {voiceError && <p className="mb-2 px-1 text-xs text-destructive" role="alert">{voiceError}</p>}
+        <div className="mb-2 flex gap-2 overflow-x-auto px-1">
+          {QUICK_COMMANDS.map((command) => (
+            <Button key={command.id} type="button" variant="outline" size="sm" className="shrink-0 rounded-full" onClick={() => onQuickCommand?.(command.id)} disabled={isLoading}>
+              {command.label}
+            </Button>
+          ))}
+        </div>
         <div className="flex items-end gap-2">
-        <input ref={fileRef} type="file" multiple accept="image/*,.pdf,.txt,.md,.doc,.docx,.csv" className="sr-only" onChange={(event) => { addFiles(event.target.files); event.currentTarget.value = ""; }} />
-         <Button type="button" variant="ghost" size="icon" className="mb-0.5 rounded-xl" onClick={() => fileRef.current?.click()} disabled={disabled || isLoading} aria-label={ar ? "إرفاق صور أو ملفات" : "Attach images or files"}><Paperclip className="size-4" /></Button>
+        <input ref={fileRef} type="file" multiple accept="image/*,.pdf,.docx,.txt,.md,.csv" className="sr-only" onChange={(event) => { addFiles(event.target.files); event.currentTarget.value = ""; }} />
+         <Button type="button" variant="ghost" size="icon" className="mb-0.5 rounded-xl" onClick={() => fileRef.current?.click()} disabled={disabled || isLoading || files.length >= MAX_ATTACHMENT_COUNT} aria-label={ar ? "إرفاق صور أو ملفات" : "Attach images or files"}><Paperclip className="size-4" /></Button>
          <Button type="button" variant={isRecording ? "secondary" : "ghost"} size="icon" className={`mb-0.5 rounded-xl ${isRecording ? "text-destructive ring-1 ring-destructive/30" : ""}`} onClick={() => void toggleRecording()} disabled={disabled || isLoading || isTranscribing} aria-label={isRecording ? (ar ? "إيقاف التسجيل" : "Stop recording") : (isTranscribing ? (ar ? "جارٍ تحويل الصوت إلى نص" : "Transcribing audio") : (ar ? "تسجيل رسالة صوتية" : "Record voice message"))} title={ar ? "تحويل الكلام إلى نص" : "Convert speech to text"}>{isTranscribing ? <Loader2 className="size-4 animate-spin" /> : isRecording ? <Square className="size-3.5 fill-current" /> : <Mic className="size-4" />}</Button>
         <Button
           type="button"
@@ -156,10 +206,10 @@ export function ChatInput({ onSend, disabled, isLoading, webSearchEnabled = fals
           size="icon"
           className="shrink-0 rounded-xl"
           onClick={handleSubmit}
-          disabled={disabled || isLoading}
-          aria-label={isLoading ? (ar ? "جارٍ إنشاء الرد" : "Generating response") : (ar ? "إرسال الرسالة" : "Send message")}
+          disabled={disabled || isLoading || reading}
+          aria-label={isLoading || reading ? (ar ? "جارٍ إنشاء الرد" : "Generating response") : (ar ? "إرسال الرسالة" : "Send message")}
         >
-          {isLoading ? (
+          {isLoading || reading ? (
             <Loader2 aria-hidden="true" className="size-4 animate-spin motion-reduce:animate-none" />
           ) : (
             <ArrowUp aria-hidden="true" className="size-4" />

@@ -25,6 +25,9 @@ import type { AnalyticsSummary } from "@/types/analytics";
 import type { Conversation } from "@/types/chat";
 import type { RetrievedMemory } from "@/types/memory";
 import { useLocale } from "@/hooks/use-locale";
+import { useOnlineStatus } from "@/hooks/use-online-status";
+import type { QuickCommand } from "@/lib/chat/quick-commands";
+import { OFFLINE_MODEL_NOTICE } from "@/lib/pwa/cache-scope";
 
 interface ChatMainProps {
   conversation: Conversation | null;
@@ -37,7 +40,8 @@ interface ChatMainProps {
   onToggleCloudSync?: (id: string) => Promise<"uploaded" | "unchanged" | "pending-summary" | void>;
   onDisableCloudSync?: (id: string) => Promise<void>;
   isSummarizing?: (id: string) => boolean;
-  onSend: (content: string) => void;
+  onSend: (content: string, displayContent?: string) => void;
+  onQuickCommand: (command: QuickCommand) => void;
   model: string;
   onModelChange: (model: string) => void;
   mode: ApiKeyMode;
@@ -75,6 +79,7 @@ export function ChatMain({
   onDisableCloudSync,
   isSummarizing,
   onSend,
+  onQuickCommand,
   model,
   onModelChange,
   mode,
@@ -100,6 +105,7 @@ export function ChatMain({
   searchUsage,
 }: ChatMainProps) {
   const { locale } = useLocale();
+  const online = useOnlineStatus();
   const ar = locale === "ar";
   const title = conversation?.title ?? (ar ? "محادثة جديدة" : "New conversation");
   const messages = conversation?.messages ?? [];
@@ -120,6 +126,7 @@ export function ChatMain({
         title={title}
         eyebrow={ar ? "المحادثة" : "Chat"}
         actions={<div className="flex min-w-0 flex-wrap items-center justify-end gap-1.5 sm:gap-2">
+        {!online && <span className="rounded-full border border-destructive/30 bg-destructive/10 px-2 py-1 text-xs text-destructive">{ar ? "غير متصل" : "Offline"}</span>}
         <Sheet>
           <SheetTrigger
             render={
@@ -180,7 +187,8 @@ export function ChatMain({
 
       <div className="relative">
         {webSearchEnabled && searchUsage && <p className="absolute bottom-1 right-5 z-20 text-[10px] text-muted-foreground">{ar ? `بحث الويب: ${searchUsage.used}/${searchUsage.limit}` : `Web search: ${searchUsage.used}/${searchUsage.limit}`}</p>}
-        <ChatInput onSend={onSend} isLoading={isLoading} disabled={!canSend} webSearchEnabled={webSearchEnabled} onWebSearchChange={onWebSearchChange} />
+        <ChatInput onSend={onSend} onQuickCommand={onQuickCommand} isLoading={isLoading} disabled={!canSend || !online} webSearchEnabled={webSearchEnabled} onWebSearchChange={onWebSearchChange} />
+        {!online && <p className="mx-auto mt-2 max-w-3xl px-2 text-xs text-muted-foreground" role="status">{OFFLINE_MODEL_NOTICE}</p>}
       </div>
     </div>
   );

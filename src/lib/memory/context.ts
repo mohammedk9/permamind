@@ -1,9 +1,10 @@
 import type { ChatCompletionMessage } from "@/lib/ai/types";
-import type { RetrievedMemory } from "@/types/memory";
+import type { MemoryRecord, RetrievedMemory } from "@/types/memory";
 import { formatConversationTime } from "@/lib/format/date";
 
 const MAX_CONTEXT_CHARS = 1600;
 const MAX_MEMORY_EXCERPT_CHARS = 420;
+const MAX_STRUCTURED_CHARS = 1400;
 
 function formatMemoryBlock(memory: RetrievedMemory, index: number): string {
   const when = formatConversationTime(memory.updatedAt);
@@ -41,14 +42,33 @@ The following memories were retrieved from prior chats because they may be relev
 ${blocks.join("\n\n")}`;
 }
 
+function formatStructuredMemory(records: MemoryRecord[]): string {
+  const active = records
+    .filter((record) => record.status === "active" && record.text.trim())
+    .sort((left, right) => Number(right.pinned) - Number(left.pinned) || right.confidence.localeCompare(left.confidence));
+  const lines: string[] = [];
+  let total = 0;
+  for (const record of active) {
+    const when = formatConversationTime(new Date(record.updatedAt));
+    const line = `- [${record.pinned ? "pinned " : ""}${record.kind}, ${record.confidence} confidence, source: "${record.conversationTitle}", ${when}] ${record.text}`;
+    if (total + line.length > MAX_STRUCTURED_CHARS) break;
+    lines.push(line);
+    total += line.length;
+  }
+  if (!lines.length) return "";
+  return `Stable memory approved for this user. Treat pinned and high-confidence items as current. Do not revive a memory that is absent here; the user may have corrected or forgotten it. Mention the source only when useful.\n\n${lines.join("\n")}`;
+}
+
 export function buildMessagesWithMemory(
   messages: ChatCompletionMessage[],
   memories: RetrievedMemory[],
   previousConversationQuery = false,
-  projectContext = ""
+  projectContext = "",
+  records: MemoryRecord[] = [],
 ): ChatCompletionMessage[] {
   const memoryPrompt = buildMemorySystemPrompt(memories, previousConversationQuery);
-  const systemPrompt = [projectContext, memoryPrompt].filter(Boolean).join("\n\n");
+  const structuredPrompt = previousConversationQuery ? "" : formatStructuredMemory(records);
+  const systemPrompt = [projectContext, structuredPrompt, memoryPrompt].filter(Boolean).join("\n\n");
   if (!systemPrompt) return messages;
 
   const withoutSystem = messages.filter((m) => m.role !== "system");

@@ -1,5 +1,6 @@
 import type { Conversation } from "@/types/chat";
-import type { RetrievedMemory } from "@/types/memory";
+import type { MemoryRecord, RetrievedMemory } from "@/types/memory";
+import { cosineSimilarity, embedText } from "./embeddings";
 import { graphConversationNeighbors, updateMemoryGraph } from "./graph";
 
 const MAX_MEMORIES = 3;
@@ -384,7 +385,9 @@ export function retrieveRelevantMemories(
   query: string,
   conversations: Conversation[],
   excludeConversationId?: string | null,
-  previousConversationQuery = false
+  previousConversationQuery = false,
+  records: MemoryRecord[] = [],
+  semanticDocuments: Array<{ id: string; vector: Float32Array }> = [],
 ): RetrievedMemory[] {
   const q = query.trim();
   if (q.length < MIN_QUERY_LENGTH && !previousConversationQuery) return [];
@@ -498,7 +501,7 @@ export function retrieveRelevantMemories(
   }
 
   const ranked = selectMemoriesByScore(results);
-  if (ranked.length > 0) return ranked;
+  if (ranked.length > 0 || previousConversationQuery) return mergeSemanticMemories(ranked, query, conversations, records, semanticDocuments);
 
   if (results.length === 0 && !previousConversationQuery) {
     const recentWithSummary = conversations
@@ -525,5 +528,65 @@ export function retrieveRelevantMemories(
     }
   }
 
-  return selectMemoriesByScore(results);
+  return mergeSemanticMemories(selectMemoriesByScore(results), query, conversations, records, semanticDocuments);
+}
+
+const SEMANTIC_SCORE = 0.22;
+
+function mergeSemanticMemories(
+  lexical: RetrievedMemory[],
+  query: string,
+  conversations: Conversation[],
+  records: MemoryRecord[],
+  semanticDocuments: Array<{ id: string; vector: Float32Array }>,
+): RetrievedMemory[] {
+  const queryVector = embedText(query);
+  if (![...queryVector].some(Boolean)) return lexical;
+  const active = records.filter((record) => record.status === "active" && record.text.trim());
+  const additions: RetrievedMemory[] = [];
+
+  for (const record of active) {
+    const overlap = cosineSimilarity(queryVector, embedText(record.text));
+    if (!record.pinned && overlap < SEMANTIC_SCORE) continue;
+    additions.push({
+      conversationId: record.conversationId,
+      conversationTitle: record.conversationTitle,
+      source: record.kind === "decision" ? "decision" : record.kind === "project" ? "project" : "fact",
+      excerpt: record.text,
+      recordId: record.id,
+      score: record.pinned ? Math.max(overlap, SEMANTIC_SCORE) + 1.4 : overlap * 3,
+      confidence: record.confidence,
+      reason: record.pinned ? "pinned memory" : "meaning match",
+      updatedAt: new Date(record.updatedAt),
+    });
+  }
+
+  for (const document of semanticDocuments) {
+    const overlap = cosineSimilarity(queryVector, document.vector);
+    if (overlap < SEMANTIC_SCORE || lexical.some((memory) => memory.conversationId === document.id.replace(/^summary:/, ""))) continue;
+    const conversation = conversations.find((item) => item.id === document.id.replace(/^summary:/, ""));
+    if (!conversation?.metadata?.summary) continue;
+    additions.push({
+      conversationId: conversation.id,
+      conversationTitle: conversation.title,
+      source: "summary",
+      excerpt: conversation.metadata.summary,
+      score: overlap * 3,
+      confidence: overlap >= 0.72 ? "high" : "medium",
+      reason: "meaning match",
+      updatedAt: conversation.updatedAt,
+    });
+  }
+
+  const merged = [...lexical];
+  for (const addition of additions.sort((left, right) => right.score - left.score)) {
+    const duplicate = merged.find((memory) => memory.recordId === addition.recordId || (memory.conversationId === addition.conversationId && memory.excerpt === addition.excerpt));
+    if (duplicate) {
+      duplicate.score = Math.max(duplicate.score, addition.score);
+      duplicate.reason = addition.reason === "pinned memory" ? addition.reason : duplicate.reason;
+      continue;
+    }
+    merged.push(addition);
+  }
+  return selectMemoriesByScore(merged, MEMORY_TOKEN_BUDGET);
 }

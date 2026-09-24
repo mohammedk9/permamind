@@ -11,6 +11,7 @@ import type {
   SnapshotPayload,
   SnapshotConversation,
 } from "./snapshot-types";
+import { mergeConversationsByMessage } from "@/lib/storage/message-merge";
 import {
   MAX_DECOMPRESSED_PAYLOAD_BYTES,
   MAX_ENCRYPTED_PAYLOAD_BYTES,
@@ -45,6 +46,9 @@ export interface RestorePreview {
   snapshotVersion: number;
   conversations: Conversation[];
   messageCount: number;
+  addedMessages?: number;
+  conflictedMessages?: number;
+  conflictedDecisions?: number;
 }
 
 class CorruptSnapshotError extends Error {
@@ -195,23 +199,18 @@ export async function previewSnapshotByTxId(options: Omit<ManualRestoreOptions, 
   return { txId: options.txId, snapshotVersion: meta.version, conversations, messageCount };
 }
 
-/** Applies an already reviewed preview. This function is never called by preview itself. */
+/** Applies an already reviewed preview. Merge keeps every message and conflicting decision. */
 export function applyRestorePreview(preview: RestorePreview, mode: "replace" | "merge"): void {
   if (mode === "replace") {
     saveChatData(preview.conversations, preview.conversations[0]?.id ?? null);
     return;
   }
   const local = loadChatData();
-  const byId = new Map(local.conversations.map((conversation) => [conversation.id, conversation]));
-  for (const remote of preview.conversations) {
-    const current = byId.get(remote.id);
-    if (!current || remote.updatedAt.getTime() > current.updatedAt.getTime()) byId.set(remote.id, remote);
-  }
-  const conversations = [...byId.values()];
-  const activeId = local.activeId && conversations.some((item) => item.id === local.activeId)
+  const merged = mergeConversationsByMessage(local.conversations, preview.conversations);
+  const activeId = local.activeId && merged.conversations.some((item) => item.id === local.activeId)
     ? local.activeId
-    : conversations[0]?.id ?? null;
-  saveChatData(conversations, activeId, local.projects);
+    : merged.conversations[0]?.id ?? null;
+  saveChatData(merged.conversations, activeId, local.projects);
 }
 
 function toConversation(c: SnapshotConversation): Conversation {

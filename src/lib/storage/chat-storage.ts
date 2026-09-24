@@ -7,6 +7,7 @@ interface StoredMessage {
   role: Message["role"];
   content: string;
   createdAt: string;
+  sources?: Message["sources"];
 }
 
 interface StoredMetadata {
@@ -85,6 +86,7 @@ function serializeMessage(message: Message): StoredMessage {
     role: message.role,
     content: message.content,
     createdAt: message.createdAt.toISOString(),
+    sources: message.sources,
   };
 }
 
@@ -113,6 +115,7 @@ function deserializeMessage(stored: StoredMessage): Message {
     role: stored.role,
     content: stored.content,
     createdAt: new Date(stored.createdAt),
+    sources: stored.sources,
   };
 }
 

@@ -85,8 +85,12 @@ export function useConversations(options: UseConversationsOptions = {}) {
   }, [addConversation]);
 
   const createProject = useCallback((project: Project) => {
-    setProjects((prev) => [project, ...prev]);
+    setProjects((previous) => [project, ...previous]);
     return project;
+  }, []);
+
+  const updateProject = useCallback((projectId: string, updater: (project: Project) => Project) => {
+    setProjects((previous) => previous.map((project) => project.id === projectId ? updater(project) : project));
   }, []);
 
   const renameConversation = useCallback((id: string, title: string) => {
@@ -179,5 +183,6 @@ export function useConversations(options: UseConversationsOptions = {}) {
     reload,
     projects,
     createProject,
+    updateProject,
   };
 }

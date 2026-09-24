@@ -57,6 +57,14 @@ export function ChatMessage({ message }: ChatMessageProps) {
             )}
           </p>
         )}
+        {message.sources && (
+          <div className="mt-3 space-y-1">
+            <p className="text-xs font-medium text-muted-foreground">{message.sources.length ? "Sources" : "No web results"}</p>
+            {message.sources.map((source) => (
+              <a key={source.url} href={source.url} target="_blank" rel="noreferrer" className="block truncate text-xs text-primary underline-offset-2 hover:underline">{source.title || source.url}</a>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );

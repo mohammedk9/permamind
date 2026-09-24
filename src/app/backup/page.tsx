@@ -22,6 +22,8 @@ import { startProcessor, stopProcessor } from "@/lib/arweave/queue-processor";
 import Arweave from "arweave";
 import { useLocale } from "@/hooks/use-locale";
 import { previewCloudSync, applyCloudSyncChoice, type SyncPreview } from "@/lib/storage/sync-restore";
+import { buildRecoveryBundle, parseRecoveryBundle } from "@/lib/arweave/recovery-bundle";
+import { mergeConversationsByMessage } from "@/lib/storage/message-merge";
 
 const emptyQueue: QueueStatusSummary = { total: 0, pending: 0, uploading: 0, done: 0, failed: 0, lastUploadedAt: null };
 type ArweaveWalletApi = NonNullable<Window["arweaveWallet"]> & {
@@ -149,28 +151,26 @@ export default function BackupPage() {
     window.setTimeout(() => setCopiedTxId(false), 1500);
   };
   const downloadRecoveryCard = () => {
-    if (!latestAvailable?.txId) return;
-    const card = [
-      "PermaMind recovery information",
-      "",
-      `Snapshot version: ${latestAvailable.version}`,
-      `Arweave transaction ID: ${latestAvailable.txId}`,
-      `Created: ${latestAvailable.createdAt}`,
-      "",
-      "How to restore:",
-      "1. Open PermaMind and go to Backup.",
-      "2. Enter the same backup passphrase used when this snapshot was created.",
-      "3. Use Restore latest, or provide this transaction ID if manual recovery is supported.",
-      "",
-      "Security warning: this file does not contain your passphrase. Keep the passphrase separately.",
-      "If you lose the passphrase, the encrypted backup cannot be decrypted.",
-    ].join("\n");
-    const url = URL.createObjectURL(new Blob([card], { type: "text/plain;charset=utf-8" }));
+    if (!latestAvailable?.txId || passphrase.length < 8) return;
+    const bundle = buildRecoveryBundle({ txId: latestAvailable.txId, snapshotVersion: latestAvailable.version, createdAt: latestAvailable.createdAt, passphrase });
+    const url = URL.createObjectURL(new Blob([JSON.stringify(bundle, null, 2)], { type: "application/json" }));
     const link = document.createElement("a");
     link.href = url;
-    link.download = `permamind-recovery-v${latestAvailable.version}.txt`;
+    link.download = `permamind-recovery-v${latestAvailable.version}.json`;
     link.click();
     URL.revokeObjectURL(url);
+  };
+  const importRecoveryBundle = async (file: File) => {
+    try {
+      const bundle = parseRecoveryBundle(JSON.parse(await file.text()));
+      setManualTxId(bundle.txId);
+      setPassphrase(bundle.passphrase);
+      setArweavePreview(null);
+      setArweavePreviewError(null);
+      setRestoreResult({ status: "cancelled", conversationCount: 0, snapshotVersion: bundle.snapshotVersion, message: ar ? "تم استيراد ملف الاستعادة. راجع المعاينة قبل الكتابة." : "Recovery file imported. Preview it before writing local data.", error: null });
+    } catch (error) {
+      setArweavePreviewError(error instanceof Error ? error.message : "Recovery file is invalid");
+    }
   };
   const savePolicy = (value: StoragePolicy) => { setPolicy(value); saveStoragePolicy(value); };
   const manualBackup = async () => { setConfirm(null); await snapshot.triggerSnapshot(true); refresh(); };
@@ -197,9 +197,14 @@ export default function BackupPage() {
   };
   const applyManualPreview = (mode: "replace" | "merge") => {
     if (!arweavePreview || !window.confirm(ar ? "هل توافق صراحةً على تطبيق هذه المعاينة؟" : "Do you explicitly approve applying this preview?")) return;
+    if (mode === "merge") {
+      const local = conversations.conversations;
+      const plan = mergeConversationsByMessage(local, arweavePreview.conversations);
+      setArweavePreview({ ...arweavePreview, addedMessages: plan.addedMessages, conflictedMessages: plan.conflictedMessages, conflictedDecisions: plan.conflictedDecisions });
+    }
     applyRestorePreview(arweavePreview, mode);
     conversations.reload();
-    setRestoreResult({ status: "restored", conversationCount: arweavePreview.conversations.length, snapshotVersion: arweavePreview.snapshotVersion, message: mode === "merge" ? "Snapshot merged; local data was retained" : "Snapshot restored", error: null });
+    setRestoreResult({ status: "restored", conversationCount: arweavePreview.conversations.length, snapshotVersion: arweavePreview.snapshotVersion, message: mode === "merge" ? (ar ? "تم دمج الرسائل. الرسائل والقرارات المتعارضة بقيت كنسختين." : "Messages merged. Conflicting messages and decisions were kept as two copies.") : (ar ? "تم استبدال البيانات المحلية." : "Snapshot restored"), error: null });
   };
   const percentage = usage?.percentageUsed ?? 0;
   const quotaStatus: Status = percentage >= 100 ? "error" : percentage >= 80 ? "attention" : "success";
@@ -400,9 +405,9 @@ export default function BackupPage() {
             <p id="passphrase-help" className="mt-2 text-caption">Use the same passphrase for restore. It is never displayed after you hide it.</p>{passphrase.length > 0 && passphrase.length < 8 && <p className="mt-1 text-sm text-status-error" role="alert">Use at least 8 characters for a stronger recovery passphrase.</p>}
           </SurfaceCard>
            <SurfaceCard title="Latest restore" description="Restoring replaces the current local conversation data with the latest available encrypted snapshot.">
-            {latestAvailable ? <div className="space-y-3 text-sm"><div className="flex items-center gap-2"><CheckCircle2 className="size-4 text-status-success" /><span>Version {latestAvailable.version} is available and stored on Arweave</span></div><p className="text-muted-foreground">Created {formatDate(latestAvailable.createdAt)} · Uploaded {formatDate(latestAvailable.uploadedAt ?? latestAvailable.createdAt)} · {latestAvailable.conversationIds.length} conversations · {latestAvailable.messageCount} messages</p><div className="rounded-md border border-border bg-muted/30 p-3"><p className="text-caption">Arweave transaction</p><p className="mt-1 break-all font-mono text-xs">{latestAvailable.txId}</p><div className="mt-2 flex flex-wrap gap-2"><Button type="button" variant="outline" size="sm" onClick={copyTxId}>{copiedTxId ? "Copied" : "Copy transaction ID"}</Button><Button type="button" variant="outline" size="sm" onClick={downloadRecoveryCard}>Download recovery card</Button><a className="inline-flex items-center rounded-md border px-3 py-2 text-xs hover:bg-muted" href={`https://viewblock.io/arweave/tx/${latestAvailable.txId}`} target="_blank" rel="noreferrer">Open in ViewBlock</a><a className="inline-flex items-center rounded-md border px-3 py-2 text-xs hover:bg-muted" href={`https://arweave.net/${latestAvailable.txId}`} target="_blank" rel="noreferrer">Open gateway</a></div></div><p className="text-status-attention">Restore is destructive to current local data and cannot be undone by this UI.</p></div> : <div className="flex items-center gap-3 text-sm text-muted-foreground"><Archive className="size-5" />Create and upload a backup before restoring.</div>}
+            {latestAvailable ? <div className="space-y-3 text-sm"><div className="flex items-center gap-2"><CheckCircle2 className="size-4 text-status-success" /><span>Version {latestAvailable.version} is available and stored on Arweave</span></div><p className="text-muted-foreground">Created {formatDate(latestAvailable.createdAt)} · Uploaded {formatDate(latestAvailable.uploadedAt ?? latestAvailable.createdAt)} · {latestAvailable.conversationIds.length} conversations · {latestAvailable.messageCount} messages</p><div className="rounded-md border border-border bg-muted/30 p-3"><p className="text-caption">Arweave transaction</p><p className="mt-1 break-all font-mono text-xs">{latestAvailable.txId}</p><div className="mt-2 flex flex-wrap gap-2"><Button type="button" variant="outline" size="sm" onClick={copyTxId}>{copiedTxId ? "Copied" : "Copy transaction ID"}</Button><Button type="button" variant="outline" size="sm" disabled={passphrase.length < 8} onClick={downloadRecoveryCard}>{ar ? "تنزيل حزمة الاستعادة" : "Download recovery file"}</Button><a className="inline-flex items-center rounded-md border px-3 py-2 text-xs hover:bg-muted" href={`https://viewblock.io/arweave/tx/${latestAvailable.txId}`} target="_blank" rel="noreferrer">Open in ViewBlock</a><a className="inline-flex items-center rounded-md border px-3 py-2 text-xs hover:bg-muted" href={`https://arweave.net/${latestAvailable.txId}`} target="_blank" rel="noreferrer">Open gateway</a></div></div><p className="text-status-attention">Restore is destructive to current local data and cannot be undone by this UI.</p></div> : <div className="flex items-center gap-3 text-sm text-muted-foreground"><Archive className="size-5" />Create and upload a backup before restoring.</div>}
             {restoreResult && <p className={restoreResult.status === "restored" ? "mt-4 text-sm text-status-success" : "mt-4 text-sm text-status-error"} role="status">{restoreResult.message}{restoreResult.error ? `: ${restoreResult.error}` : ""}</p>}
-             <div className="mt-5 border-t pt-4"><p className="text-label">Recover from another browser</p><p className="mt-1 text-caption">أدخل معرف Arweave وكلمة المرور لاستعادة النسخة المشفرة. إذا فقدت كلمة المرور، فلن تتمكن من فتح النسخة ولا يمكن لـ PermaMind أو Arweave استعادتها.</p><div className="mt-2 flex gap-2"><Input value={manualTxId} onChange={(e) => { setManualTxId(e.target.value); setArweavePreview(null); setArweavePreviewError(null); }} placeholder="Arweave transaction ID" aria-label="Arweave transaction ID" /><Button variant="outline" disabled={restoreWorking || !passphrase || !/^[A-Za-z0-9_-]{43}$/.test(manualTxId.trim())} onClick={() => void previewManual()}>Preview encrypted snapshot</Button></div>{arweavePreviewError && <p className="mt-2 text-sm text-status-error" role="alert">{arweavePreviewError}</p>}{arweavePreview && <div className="mt-3 rounded-md border p-3 text-sm"><p>Snapshot v{arweavePreview.snapshotVersion} · {arweavePreview.conversations.length} conversations · {arweavePreview.messageCount} messages</p><p className="mt-1 text-caption">Download, verification, decryption and decompression completed locally. Preview did not change local data.</p><div className="mt-2 flex gap-2"><Button onClick={() => applyManualPreview("replace")}>Restore snapshot</Button><Button variant="outline" onClick={() => applyManualPreview("merge")}>Merge with local</Button></div></div>}</div>
+             <div className="mt-5 border-t pt-4"><p className="text-label">Recover from another browser</p><p className="mt-1 text-caption">{ar ? "استورد ملف الاستعادة أو أدخل معرف Arweave وكلمة المرور. الملف يحتوي كلمة المرور؛ احتفظ به خارج المتصفح. فقدانه أو فقدان كلمة المرور يجعل النسخة غير قابلة للقراءة." : "Import the recovery file, or enter the Arweave ID and passphrase manually. The file contains the passphrase, so keep it outside the browser. Losing either makes the archive unreadable."}</p><label className="mt-2 inline-flex cursor-pointer items-center rounded-md border px-3 py-2 text-xs hover:bg-muted">{ar ? "استيراد حزمة الاستعادة" : "Import recovery file"}<input className="sr-only" type="file" accept="application/json,.json" onChange={(event) => { const file = event.target.files?.[0]; if (file) void importRecoveryBundle(file); event.target.value = ""; }} /></label><div className="mt-2 flex gap-2"><Input value={manualTxId} onChange={(e) => { setManualTxId(e.target.value); setArweavePreview(null); setArweavePreviewError(null); }} placeholder="Arweave transaction ID" aria-label="Arweave transaction ID" /><Button variant="outline" disabled={restoreWorking || !passphrase || !/^[A-Za-z0-9_-]{43}$/.test(manualTxId.trim())} onClick={() => void previewManual()}>Preview encrypted snapshot</Button></div>{arweavePreviewError && <p className="mt-2 text-sm text-status-error" role="alert">{arweavePreviewError}</p>}{arweavePreview && <div className="mt-3 rounded-md border p-3 text-sm"><p>Snapshot v{arweavePreview.snapshotVersion} · {arweavePreview.conversations.length} conversations · {arweavePreview.messageCount} messages</p><p className="mt-1 text-caption">Download, verification, decryption and decompression completed locally. Preview did not change local data.</p><div className="mt-2 flex gap-2"><Button onClick={() => applyManualPreview("replace")}>Restore snapshot</Button><Button variant="outline" onClick={() => applyManualPreview("merge")}>Merge with local</Button></div></div>}</div>
            </SurfaceCard>
         </div>
       </div>

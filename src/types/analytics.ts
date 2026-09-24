@@ -8,7 +8,7 @@ export interface TokenUsage {
 export interface MemoryInjectionRecord {
   conversationId: string;
   conversationTitle: string;
-  source: "summary" | "message";
+  source: "summary" | "message" | "fact" | "decision" | "project";
   excerpt: string;
   score: number;
 }

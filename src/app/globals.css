@@ -190,11 +190,17 @@
 }
 
 .logo-track {
-  animation: logo-marquee 42s linear infinite;
+  animation: logo-marquee 56s linear infinite;
+  will-change: transform;
+}
+
+.logo-mask:hover .logo-track,
+.logo-mask:focus-within .logo-track {
+  animation-play-state: paused;
 }
 
 .logo-mask {
-  mask-image: linear-gradient(to right, transparent, black 8%, black 92%, transparent);
+  mask-image: linear-gradient(to right, transparent, black 12%, black 88%, transparent);
 }
 
 @media (prefers-reduced-motion: reduce) {

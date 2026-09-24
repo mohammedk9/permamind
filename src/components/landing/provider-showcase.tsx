@@ -1,72 +1,81 @@
-import type { ComponentType } from "react";
-import {
-  ArweaveMark,
-  ClaudeMark,
-  CodexMark,
-  CursorMark,
-  DeepSeekMark,
-  GeminiMark,
-  GrokMark,
-  GroqMark,
-  KimiMark,
-  MetaMark,
-  OpenAIMark,
-  OpenRouterMark,
-  QwenMark,
-} from "@/components/landing/brand-marks";
+import { cn } from "@/lib/utils";
 
-type Brand = {
+type LogoBrand = {
   name: string;
-  Mark: ComponentType<{ className?: string }>;
+  src: string;
   emphasis?: boolean;
 };
 
-const modelBrands: Brand[] = [
-  { name: "OpenAI", Mark: OpenAIMark },
-  { name: "Claude", Mark: ClaudeMark },
-  { name: "Gemini", Mark: GeminiMark },
-  { name: "DeepSeek", Mark: DeepSeekMark },
-  { name: "Qwen", Mark: QwenMark },
-  { name: "Grok", Mark: GrokMark },
-  { name: "Kimi", Mark: KimiMark },
-  { name: "Meta", Mark: MetaMark },
-  { name: "Groq", Mark: GroqMark },
-  { name: "OpenRouter", Mark: OpenRouterMark },
+const modelNames = [
+  "OpenAI",
+  "Claude",
+  "Gemini",
+  "DeepSeek",
+  "Qwen",
+  "Grok",
+  "Kimi",
+  "Groq",
 ];
 
-const workBrands: Brand[] = [
-  { name: "Cursor", Mark: CursorMark },
-  { name: "Claude", Mark: ClaudeMark },
-  { name: "Codex", Mark: CodexMark },
-  { name: "Arweave", Mark: ArweaveMark, emphasis: true },
+const workBrands: LogoBrand[] = [
+  { name: "Cursor", src: "/logos/cursor.svg" },
+  { name: "Claude Code", src: "/logos/claude.code.svg" },
+  { name: "Codex", src: "/logos/codex.svg" },
+  { name: "Arweave", src: "/logos/arweave.svg", emphasis: true },
 ];
 
-function BrandChip({ brand }: { brand: Brand }) {
+function BrandLogo({
+  src,
+  framed = false,
+}: {
+  src: string;
+  framed?: boolean;
+}) {
+  return (
+    <img
+      src={src}
+      alt=""
+      draggable={false}
+      className={cn(
+        "h-7 w-auto max-w-28 shrink-0 object-contain object-center",
+        framed && "h-6 max-w-8",
+      )}
+    />
+  );
+}
+
+function BrandChip({ brand }: { brand: LogoBrand }) {
   return (
     <span
-      className={`inline-flex shrink-0 items-center gap-2.5 rounded-full border px-4 py-2 text-sm font-semibold ${
+      className={cn(
+        "inline-flex h-12 shrink-0 items-center gap-2.5 rounded-full border px-4 text-sm font-semibold",
         brand.emphasis
           ? "border-primary/40 bg-primary/10 text-foreground shadow-sm shadow-primary/10"
-          : "border-border/80 bg-card/80 text-foreground/80"
-      }`}
+          : "border-border/80 bg-card/80 text-foreground/80",
+      )}
     >
-      <brand.Mark className={`size-5 ${brand.emphasis ? "text-primary" : ""}`} />
+      <BrandLogo src={brand.src} />
       {brand.name}
     </span>
   );
 }
 
 export function ProviderRail({ label }: { label: string }) {
-  const brands = [...modelBrands, ...modelBrands];
+  const names = [...modelNames, ...modelNames];
   return (
     <div className="relative mt-12">
       <p className="mb-4 text-center text-xs font-semibold uppercase tracking-[0.22em] text-muted-foreground">
         {label}
       </p>
-      <div className="logo-mask overflow-hidden">
-        <div className="logo-track flex w-max gap-3 py-1">
-          {brands.map((brand, index) => (
-            <BrandChip key={`${brand.name}-${index}`} brand={brand} />
+      <div className="logo-mask overflow-hidden" dir="ltr">
+        <div className="logo-track flex w-max items-center gap-3 py-1">
+          {names.map((name, index) => (
+            <span
+              key={`${name}-${index}`}
+              className="inline-flex h-12 shrink-0 items-center rounded-full border border-border/80 bg-card/80 px-4 text-sm font-semibold text-foreground/80"
+            >
+              {name}
+            </span>
           ))}
         </div>
       </div>
@@ -128,8 +137,8 @@ export function ProductStage({
 
       <div className="relative mt-4 grid gap-3 sm:grid-cols-[1fr_auto_1fr] sm:items-center">
         <div className="flex items-center gap-3 rounded-2xl border border-border bg-background p-3">
-          <span className="flex size-10 items-center justify-center rounded-xl bg-primary/10 text-primary">
-            <OpenAIMark className="size-5" />
+          <span className="flex size-10 items-center justify-center rounded-xl bg-primary/10 text-xs font-semibold tracking-wide text-foreground">
+            AES
           </span>
           <div>
             <p className="text-sm font-semibold">{encrypted}</p>
@@ -140,8 +149,8 @@ export function ProductStage({
           →
         </span>
         <div className="flex items-center gap-3 rounded-2xl border border-primary/30 bg-primary/10 p-3">
-          <span className="flex size-10 items-center justify-center rounded-xl bg-background text-primary">
-            <ArweaveMark className="size-6" />
+          <span className="flex size-10 items-center justify-center overflow-hidden rounded-xl bg-background">
+            <BrandLogo src={workBrands[3].src} framed />
           </span>
           <div>
             <p className="text-sm font-semibold">Arweave</p>

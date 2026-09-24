@@ -4,6 +4,7 @@ import { Geist, Geist_Mono } from "next/font/google";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { APP_DESCRIPTION, APP_NAME } from "@/lib/constants";
 import { LocaleProvider } from "@/components/i18n/locale-provider";
+import { ServiceWorkerRegistration } from "@/components/pwa/service-worker-registration";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -84,6 +85,7 @@ export default function RootLayout({
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
         <TooltipProvider>
+          <ServiceWorkerRegistration />
           <LocaleProvider>{children}</LocaleProvider>
         </TooltipProvider>
       </body>

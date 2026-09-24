@@ -4,10 +4,14 @@ import { Loader2 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { needsSummary } from "@/lib/ai/summarize";
 import { buildMessagesWithMemory } from "@/lib/memory/context";
+import { projectConversationContext } from "@/lib/projects/context";
+import { embedText, syncMemoryEmbeddings, type MemoryEmbeddingDocument } from "@/lib/memory/embeddings";
+import { activeMemoryRecords, forgetMemoryRecord, loadMemoryLedger, syncExtractedMemory, updateMemoryRecord } from "@/lib/memory/ledger";
 import { isPreviousConversationQuery, previousConversationSearchQuery, retrieveRelevantMemories } from "@/lib/memory/retrieve";
 
 import { ChatMain } from "@/components/chat/chat-main";
 import { ChatSidebar } from "@/components/chat/chat-sidebar";
+import { MemoryReview, memoryReviewItems, type MemoryReviewItem } from "@/components/chat/memory-review";
 import { ProjectWorkspace } from "@/components/chat/project-workspace";
 import { WorkspaceStartDialog } from "@/components/chat/workspace-start-dialog";
 import { AppShell, type ProductArea } from "@/components/layout/app-shell";
@@ -21,13 +25,16 @@ import { useConversationSummary } from "@/hooks/use-conversation-summary";
 import { useConversations } from "@/hooks/use-conversations";
 import { useSnapshot } from "@/hooks/use-snapshot";
 import { createId, truncateTitle } from "@/lib/chat/conversation";
+import { QUICK_COMMANDS, buildQuickCommandReply, localCommandMessages, type QuickCommand } from "@/lib/chat/quick-commands";
+import { getLastSnapshot } from "@/lib/arweave/snapshot-registry";
 import { startProcessor, stopProcessor } from "@/lib/arweave/queue-processor";
 import type { ChatCompletionMessage } from "@/lib/ai/types";
 import type { Message, Project } from "@/types/chat";
-import type { RetrievedMemory } from "@/types/memory";
-import type { InternetSearchResult } from "@/lib/search/exa";
+import type { MemoryRecord, RetrievedMemory } from "@/types/memory";
+import { applyWebContext, shouldSearchWeb } from "@/lib/search/web-context";
 import { dismissPermanentMemoryWarning, isPermanentMemoryWarningDismissed } from "@/lib/arweave/storage-policy";
 import { MemoryExperience } from "@/components/memory/memory-experience";
+import { MemoryControls } from "@/components/memory/memory-controls";
 import { SettingsShell } from "@/components/settings/settings-shell";
 import { ChatPolicies } from "@/components/legal/policy-sheets";
 import { SnapshotSettings } from "@/components/arweave/snapshot-settings";
@@ -67,6 +74,7 @@ export function ChatApp() {
     disableConversationCloudSync,
     projects,
     createProject,
+    updateProject,
   } = useConversations();
 
   useEffect(() => {
@@ -105,6 +113,9 @@ export function ChatApp() {
   }, [snapshotsEnabled, snapshotPassphrase]);
 
   const [memoriesUsed, setMemoriesUsed] = useState<RetrievedMemory[]>([]);
+  const [pendingReview, setPendingReview] = useState<{ content: string; displayContent: string; items: MemoryReviewItem[]; memories: RetrievedMemory[]; records: MemoryRecord[]; projectContext: string } | null>(null);
+  const [memoryRecords, setMemoryRecords] = useState<MemoryRecord[]>([]);
+  const [semanticVectors, setSemanticVectors] = useState<Array<{ id: string; vector: Float32Array }>>([]);
   const [area, setArea] = useState<ProductArea>("chat");
   const [webSearchEnabled, setWebSearchEnabled] = useState(false);
   const [searchUsage, setSearchUsage] = useState<{ used: number; limit: number } | null>(null);
@@ -126,6 +137,31 @@ export function ChatApp() {
     const path = next === "chat" ? "/chat" : `/${next}`;
     if (window.location.pathname !== path) window.history.pushState({}, "", path);
   }, []);
+
+  const refreshMemoryIndex = useCallback(async (source = conversations) => {
+    let records = loadMemoryLedger();
+    for (const conversation of source) records = syncExtractedMemory(conversation);
+    setMemoryRecords(records);
+    const documents: MemoryEmbeddingDocument[] = [];
+    for (const conversation of source) {
+      const metadata = conversation.metadata;
+      if (!metadata) continue;
+      documents.push({ id: `summary:${conversation.id}`, conversationId: conversation.id, conversationTitle: conversation.title, source: "summary", text: [conversation.title, metadata.summary, ...metadata.topics, ...metadata.entities].join(" "), updatedAt: metadata.generatedAt.toISOString() });
+    }
+    for (const record of records.filter((record) => record.status === "active")) {
+      documents.push({ id: record.id, conversationId: record.conversationId, conversationTitle: record.conversationTitle, source: record.kind === "decision" ? "decision" : record.kind === "project" ? "project" : "fact", text: record.text, updatedAt: record.updatedAt });
+    }
+    await syncMemoryEmbeddings(documents);
+    setSemanticVectors(documents.map((document) => ({ id: document.id, vector: embedText(document.text) })));
+  }, [conversations]);
+
+  useEffect(() => {
+    if (!isHydrated) return;
+    const timer = window.setTimeout(() => { void refreshMemoryIndex(); }, 300);
+    return () => window.clearTimeout(timer);
+  }, [isHydrated, refreshMemoryIndex]);
+
+  const changeMemory = useCallback((change: () => MemoryRecord[]) => setMemoryRecords(change()), []);
 
   const apiSettings = useApiSettings();
   const {
@@ -171,7 +207,10 @@ export function ChatApp() {
         conversationTitle: params.conversationTitle,
         usage: params.usage,
       });
-    }
+    },
+    projects,
+    conversations,
+    updateProject,
   );
 
   const backfillDone = useRef(false);
@@ -196,6 +235,21 @@ export function ChatApp() {
     setMemoriesUsed([]);
   }, [activeProjectId, createAndSelect, clearError, updateConversation]);
 
+  const handleQuickCommand = useCallback((command: QuickCommand) => {
+    let conversationId = activeId;
+    if (!conversationId) conversationId = createAndSelect().id;
+    const project = projects.find((item) => item.id === activeProjectId) ?? null;
+    const prompt = QUICK_COMMANDS.find((item) => item.id === command)?.label ?? command;
+    const reply = buildQuickCommandReply(command, { project, conversations, snapshot: getLastSnapshot() });
+    const [userMessage, assistantMessage] = localCommandMessages(prompt, reply);
+    updateConversation(conversationId, (current) => ({
+      ...current,
+      title: current.messages.length === 0 ? truncateTitle(prompt) : current.title,
+      messages: [...current.messages, userMessage, assistantMessage],
+      updatedAt: new Date(),
+    }));
+  }, [activeId, activeProjectId, conversations, createAndSelect, projects, updateConversation]);
+
   const handleNewProject = useCallback(() => {
     const name = window.prompt("Project name", "New project")?.trim();
     if (!name) return;
@@ -216,7 +270,7 @@ export function ChatApp() {
   );
 
   const handleSend = useCallback(
-    async (content: string) => {
+    async (content: string, displayContent?: string, approved?: { memories: RetrievedMemory[]; records: MemoryRecord[]; projectContext: string }) => {
       if (!canSendRequests) {
         clearError();
         return;
@@ -236,10 +290,11 @@ export function ChatApp() {
         conversations.find((c) => c.id === conversationId);
       const conversationTitle = conv?.title ?? truncateTitle(content);
 
+      const visibleContent = displayContent ?? content;
       const userMessage: Message = {
         id: createId(),
         role: "user",
-        content,
+        content: visibleContent,
         createdAt: new Date(),
       };
 
@@ -257,19 +312,33 @@ export function ChatApp() {
           ? activeConversation.messages
           : []);
 
-      const previousConversationQuery = isPreviousConversationQuery(content);
-      const memories = retrieveRelevantMemories(
-        previousConversationQuery ? previousConversationSearchQuery(content) || content : content,
+      const previousConversationQuery = isPreviousConversationQuery(visibleContent);
+      const records = approved?.records ?? activeMemoryRecords();
+      const memories = approved?.memories ?? retrieveRelevantMemories(
+        previousConversationQuery ? previousConversationSearchQuery(visibleContent) || visibleContent : visibleContent,
         conversations,
         conversationId,
-        previousConversationQuery
+        previousConversationQuery,
+        records,
+        semanticVectors,
       );
+      const project = projects.find((item) => item.id === (conv?.projectId ?? (conversationId === activeId ? activeProjectId : undefined)));
+      const projectContext = approved?.projectContext ?? (project ? projectConversationContext(project) : "");
+      if (!approved) {
+        const reviewRecords = previousConversationQuery ? [] : records.filter((record) => record.status === "active");
+        const items = memoryReviewItems(memories, reviewRecords, projectContext);
+        if (items.length) {
+          setPendingReview({ content, displayContent: visibleContent, items, memories, records: reviewRecords, projectContext });
+          return;
+        }
+      }
+      setPendingReview(null);
       setMemoriesUsed(memories);
 
       recordMemoryRetrieval({
         conversationId,
         conversationTitle,
-        query: content,
+        query: visibleContent,
         memories,
       });
 
@@ -277,27 +346,27 @@ export function ChatApp() {
         toApiMessages([...priorMessages, userMessage]),
         memories,
         previousConversationQuery,
-        activeProjectId ? (() => { const project = projects.find((item) => item.id === activeProjectId); return project ? `You are working inside the project "${project.name}". Use this project context when answering.\nSummary: ${project.summary || "Not yet available"}\nGoals: ${project.goals.join(", ") || "None recorded"}\nTasks: ${project.tasks.join(", ") || "None recorded"}\nDecisions: ${project.decisions.join(", ") || "None recorded"}\nOpen questions: ${project.openQuestions.join(", ") || "None recorded"}` : ""; })() : ""
+        projectContext,
+        records,
       );
 
       let messagesForRequest = apiMessages;
-      if (webSearchEnabled) {
-        const response = await fetch(`/api/search?q=${encodeURIComponent(content)}`);
+      let sources: Message["sources"];
+      if (shouldSearchWeb(visibleContent, webSearchEnabled)) {
+        const response = await fetch(`/api/search?q=${encodeURIComponent(visibleContent)}`);
         if (!response.ok) {
           const payload = await response.json().catch(() => null) as { error?: string } | null;
           throw new Error(payload?.error ?? "Web search failed");
         }
-        const payload = await response.json() as { results: InternetSearchResult[]; used: number; limit: number };
+        const payload = await response.json() as { results: Array<{ title: string; url: string; text: string }>; used: number; limit: number };
         setSearchUsage({ used: payload.used, limit: payload.limit });
-        if (payload.results.length) {
-          const webContext = payload.results.map((item, index) => `${index + 1}. ${item.title}\n${item.text}\nSource: ${item.url}`).join("\n\n");
-          messagesForRequest = [...apiMessages.slice(0, -1), { role: "user", content: `Live web context (use only as supporting evidence; cite sources when relevant):\n${webContext}\n\nUser question:\n${content}` }];
-        }
+        sources = payload.results.map((item) => ({ title: item.title, url: item.url }));
+        messagesForRequest = applyWebContext(apiMessages, content, payload.results);
       }
 
       updateConversation(conversationId, (c) => {
         const title =
-          c.messages.length === 0 ? truncateTitle(content) : c.title;
+          c.messages.length === 0 ? truncateTitle(visibleContent) : c.title;
         return {
           ...c,
           title,
@@ -328,6 +397,7 @@ export function ChatApp() {
                 content: result.success
                   ? m.content
                   : m.content || "No response received.",
+                sources,
               }
             : m
         ),
@@ -372,6 +442,9 @@ export function ChatApp() {
       webSearchEnabled,
       snapshot,
       updateConversation,
+      projects,
+      activeProjectId,
+      semanticVectors,
     ]
   );
 
@@ -412,7 +485,17 @@ export function ChatApp() {
         }}
         isSummarizing={isSummarizing}
       />}>
-        <div className={area === "chat" ? "flex min-h-0 min-w-0 flex-1 overflow-hidden" : "hidden"} aria-hidden={area !== "chat"}>
+        <div className={area === "chat" ? "flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden" : "hidden"} aria-hidden={area !== "chat"}>
+        <MemoryControls compact records={memoryRecords} onPin={(id, pinned) => changeMemory(() => updateMemoryRecord(id, { pinned }))} onCorrect={(id, text) => changeMemory(() => updateMemoryRecord(id, { text }))} onForget={(id) => changeMemory(() => forgetMemoryRecord(id))} onRestore={(id) => changeMemory(() => updateMemoryRecord(id, { status: "active" }))} />
+        {pendingReview && <MemoryReview items={pendingReview.items} onCancel={() => setPendingReview(null)} onConfirm={(excludedIds) => {
+          const excluded = new Set(excludedIds);
+          const review = pendingReview;
+          const memories = review.memories.filter((memory) => !excluded.has(`memory:${memory.conversationId}:${memory.messageId ?? memory.recordId ?? memory.source}`));
+          const records = review.records.filter((record) => !excluded.has(`record:${record.id}`));
+          const projectContext = excluded.has("project:summary") ? "" : review.projectContext;
+          setPendingReview(null);
+          void handleSend(review.content, review.displayContent, { memories, records, projectContext });
+        }} />}
         <ChatMain
           conversation={activeConversation}
           conversations={conversations}
@@ -425,6 +508,7 @@ export function ChatApp() {
           onDisableCloudSync={disableConversationCloudSync}
           isSummarizing={isSummarizing}
           onSend={handleSend}
+          onQuickCommand={handleQuickCommand}
           model={model}
           onModelChange={setModel}
           mode={mode}
@@ -441,8 +525,8 @@ export function ChatApp() {
           searchUsage={searchUsage}
         />
         </div>
-        {area === "memory" && <MemoryExperience conversations={conversations} onOpenConversation={(id) => { selectConversation(id); navigate("chat"); }} />}
-        {area === "project" && activeProjectId && (() => { const project = projects.find((item) => item.id === activeProjectId); return project ? <ProjectWorkspace project={project} conversations={conversations.filter((conversation) => conversation.projectId === project.id)} onOpenConversation={(id) => { selectConversation(id); navigate("chat"); }} /> : null; })()}
+        {area === "memory" && <MemoryExperience conversations={conversations} records={memoryRecords} onPin={(id, pinned) => changeMemory(() => updateMemoryRecord(id, { pinned }))} onCorrect={(id, text) => changeMemory(() => updateMemoryRecord(id, { text }))} onForget={(id) => changeMemory(() => forgetMemoryRecord(id))} onRestore={(id) => changeMemory(() => updateMemoryRecord(id, { status: "active" }))} onOpenConversation={(id) => { selectConversation(id); navigate("chat"); }} />}
+        {area === "project" && activeProjectId && (() => { const project = projects.find((item) => item.id === activeProjectId); return project ? <ProjectWorkspace project={project} conversations={conversations.filter((conversation) => conversation.projectId === project.id)} unlinkedConversations={conversations.filter((conversation) => conversation.projectId !== project.id)} onOpenConversation={(id) => { selectConversation(id); navigate("chat"); }} onLinkConversation={(id) => updateConversation(id, (conversation) => ({ ...conversation, projectId: project.id, updatedAt: new Date() }))} onAddTask={(task) => updateProject(project.id, (current) => ({ ...current, tasks: [...current.tasks, task.trim()].filter((item, index, all) => item && all.indexOf(item) === index).slice(0, 12), updatedAt: new Date() }))} /> : null; })()}
         {area === "settings" && <SettingsShell conversations={conversations} apiKey={apiKey} provider={provider} onProviderChange={setProvider} baseUrl={baseUrl} onBaseUrlChange={setBaseUrl} modelName={modelName} onModelNameChange={setModelName} connectionStatus={connectionStatus} onApiKeyChange={setApiKey} onValidate={validateKey} onClearKey={clearKey} onClearAnalytics={clearAnalytics} />}
       </AppShell>
     </>
