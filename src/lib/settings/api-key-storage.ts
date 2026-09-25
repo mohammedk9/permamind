@@ -1,5 +1,5 @@
 export type ApiKeyMode = "free" | "byok";
-export type AiProvider = "openrouter" | "openai" | "anthropic" | "google" | "deepseek" | "qwen" | "kimi" | "meta" | "grok" | "nanogpt" | "eden" | "orcarouter" | "unorouter" | "llm7" | "huggingface" | "custom";
+export type AiProvider = "openrouter" | "openai" | "anthropic" | "google" | "deepseek" | "qwen" | "kimi" | "meta" | "grok" | "nanogpt" | "eden" | "orcarouter" | "unorouter" | "llm7" | "huggingface" | "custom" | "ollama";
 
 const STORAGE_KEY = "permamind:api-settings:v1";
 /**

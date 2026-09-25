@@ -1,4 +1,4 @@
-import { fetchPublicHttps } from "@/lib/ai/request-auth";
+import { fetchPublicHttps, isLocalOllamaUrl } from "@/lib/ai/request-auth";
 import type { ChatCompletionMessage } from "@/lib/ai/types";
 import type { AiProvider } from "@/lib/settings/api-key-storage";
 
@@ -131,11 +131,13 @@ export async function createProviderStream(provider: AiProvider, model: string, 
 
 export async function createCustomStream(baseUrl: string, model: string, messages: ChatCompletionMessage[], apiKey: string) {
   const endpoint = baseUrl.endsWith("/chat/completions") ? baseUrl : `${baseUrl.replace(/\/$/, "")}/chat/completions`;
-  return fetchPublicHttps(new URL(endpoint), {
+  const local = isLocalOllamaUrl(baseUrl);
+  const request = {
     method: "POST",
-    headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+    headers: { ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}), "Content-Type": "application/json" },
     body: JSON.stringify({ model, messages, stream: true }),
-  });
+  };
+  return local ? fetch(endpoint, request) : fetchPublicHttps(new URL(endpoint), request);
 }
 
 export async function createCustomCompletion(
@@ -146,9 +148,10 @@ export async function createCustomCompletion(
   options?: { maxTokens?: number; temperature?: number },
 ) {
   const endpoint = baseUrl.endsWith("/chat/completions") ? baseUrl : `${baseUrl.replace(/\/$/, "")}/chat/completions`;
-  return fetchPublicHttps(new URL(endpoint), {
+  const local = isLocalOllamaUrl(baseUrl);
+  const request = {
     method: "POST",
-    headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+    headers: { ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}), "Content-Type": "application/json" },
     body: JSON.stringify({
       model,
       messages,
@@ -156,7 +159,8 @@ export async function createCustomCompletion(
       max_tokens: options?.maxTokens ?? SUMMARY_MAX_TOKENS,
       temperature: options?.temperature ?? SUMMARY_TEMPERATURE,
     }),
-  });
+  };
+  return local ? fetch(endpoint, request) : fetchPublicHttps(new URL(endpoint), request);
 }
 
 export async function createProviderCompletion(

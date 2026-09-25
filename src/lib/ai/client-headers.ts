@@ -16,10 +16,10 @@ export function buildApiHeaders(
     [HEADER_API_MODE]: mode,
   };
 
-  if (mode === "byok" && apiKey?.trim()) {
-    headers[HEADER_OPENROUTER_KEY] = apiKey.trim();
+  if ((mode === "byok" && apiKey?.trim()) || provider === "ollama") {
+    if (apiKey?.trim()) headers[HEADER_OPENROUTER_KEY] = apiKey.trim();
     headers["x-ai-provider"] = provider;
-    if (provider === "custom" && baseUrl?.trim()) headers["x-ai-base-url"] = baseUrl.trim();
+    if ((provider === "custom" || provider === "ollama") && baseUrl?.trim()) headers["x-ai-base-url"] = baseUrl.trim();
     if (modelName?.trim()) headers["x-ai-model"] = modelName.trim();
   }
 

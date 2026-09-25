@@ -15,9 +15,9 @@ export interface RetrievedMemory {
 
 export type MemoryRecordKind = "fact" | "decision" | "preference" | "project";
 export type MemoryConfidence = "high" | "medium" | "low";
-export type MemoryRecordStatus = "active" | "forgotten";
+export type MemoryRecordStatus = "active" | "forgotten" | "superseded";
 
-/** A user-controlled memory. Forgotten records stay local but are excluded from replies. */
+/** A user-controlled memory. Forgotten and superseded records stay local but are excluded from ordinary replies. */
 export interface MemoryRecord {
   id: string;
   kind: MemoryRecordKind;
@@ -30,4 +30,6 @@ export interface MemoryRecord {
   status: MemoryRecordStatus;
   source: "extracted" | "user";
   updatedAt: string;
+  /** Set only when a later decision explicitly replaces this one. */
+  supersededBy?: string;
 }

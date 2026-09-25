@@ -2,7 +2,7 @@
 
 The MCP endpoint is `/api/mcp`. Every request must present a separately issued MCP token (`pmcp_` followed by 64 hex characters). Supabase session tokens and browser cookies are rejected. The server resolves the token hash with the service role, then reads only summaries the user marked `mcp_allowed`. It never uses the service role to read ciphertext, messages, or another user's data.
 
-The only tools are `list_allowed_summaries`, `get_allowed_summary`, and `search_allowed_summaries`. They return explicitly selected summary fields only. They do not read local data, full messages, ciphertext, or Arweave snapshots. There are no write, delete, upload, or restore tools.
+The tools are `list_allowed_summaries`, `get_allowed_summary`, `search_allowed_summaries`, `search_memory`, `get_memory`, and `list_decisions`. They return explicitly selected summary and decision fields only, including the date and source title. They do not read local data, full messages, ciphertext, or Arweave snapshots. `save_memory` is registered so a client can discover the boundary, but every call is rejected and audited. There are no working write, delete, upload, or restore tools.
 
 **Privacy warning:** data returned by MCP may reach Claude, Cursor, OpenAI Codex, or another connected MCP client. Enable sharing only for summaries you explicitly agree to disclose.
 

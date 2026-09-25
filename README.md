@@ -10,12 +10,15 @@ PermaMind is a privacy-focused AI memory workspace. Conversations stay in the br
 - Free mode with an automatic server-side fallback across OpenRouter, Groq, and Google AI Studio. Provider keys and internal routes stay on the server.
 - Local conversation storage with rename, delete, and cross-conversation search.
 - Automatic summaries, topics, tags, and entities, plus memory-aware context before each reply.
+- A decision ledger inside the Memory page. Active decisions come first, and a superseded decision stays visible underneath with its source and date. You can open the source conversation, pin a decision, correct it, or save a short note as a new decision beside the old one. A later extraction marks an old decision superseded only when the extraction says so. Pinned and manually corrected records are not overwritten.
+- Decision questions in English or Arabic, such as "what did we decide?" or "ماذا قررنا؟", retrieve more decision context and ask the model to cite the source title, date, and whether a decision was superseded. If the source is insufficient, the answer says so instead of inventing one.
+- Optional local Ollama in Settings, fixed to `http://127.0.0.1:11434/v1`, with no API key. Other HTTP addresses stay blocked. Web search is disabled in this mode, and cloud sync should stay off so decision context does not leave the device.
 - Local usage analytics and a memory-retrieval debug view.
 - Supabase authentication, protected API routes, and cloud summary synchronization.
 - AES-256-GCM snapshots compressed with gzip, queued durably, and uploaded to Arweave.
 - Snapshot restore by latest backup or a validated transaction ID, with size and content limits.
 - Optional Exa web search, Groq voice transcription, storage quotas, and multi-network storage purchases.
-- Read-only MCP access to summaries the user explicitly allows, using separate revocable tokens.
+- Read-only MCP access to summaries and decisions the user explicitly allows, including `search_memory`, `get_memory`, and `list_decisions`. `save_memory` is visible but every call is rejected and audited. See `mcp/README.md`.
 
 ## Stack
 
@@ -54,40 +57,7 @@ GOOGLE_AI_API_KEY=
 
 In production, `NEXT_PUBLIC_APP_URL` must be the real `https://` origin. OpenRouter requests fail closed without it.
 
-### Optional capabilities
 
-```bash
-# Server administration and background uploads
-SUPABASE_SERVICE_ROLE_KEY=
-ADMIN_USER_IDS=
-CRON_SECRET=
-ARWEAVE_APP_WALLET_JWK=
-
-# Web search and voice input
-EXA_API_KEY=
-SEARCH_MAX_RESULTS=5
-SEARCH_PER_USER_MONTHLY_REQUEST_LIMIT=12
-SEARCH_GLOBAL_MONTHLY_REQUEST_LIMIT=1200
-
-# Arweave storage purchases through an administrator wallet
-NEXT_PUBLIC_STORAGE_PAYMENT_ADDRESS=
-
-# Stablecoin purchases: Solana, Ethereum, and Base
-SOLANA_PAYMENT_ADDRESS=
-SOLANA_RPC_URL=
-SOLANA_USDC_MINT=
-SOLANA_USDT_MINT=
-ETH_PAYMENT_ADDRESS=
-ETHEREUM_RPC_URL=
-ETHEREUM_USDC_CONTRACT=
-ETHEREUM_USDT_CONTRACT=
-ETHEREUM_CONFIRMATIONS=6
-BASE_PAYMENT_ADDRESS=
-BASE_RPC_URL=
-BASE_USDC_CONTRACT=
-BASE_USDT_CONTRACT=
-BASE_CONFIRMATIONS=3
-```
 
 `GROQ_API_KEY` also enables transcription. Leave unused payment or provider values empty; their features return a configuration error instead of failing the whole app.
 
@@ -122,7 +92,7 @@ Managed storage defaults are 15 MB of free quota, a 50 MB maximum upload, 10 upl
 | --- | --- |
 | `/` | Landing page |
 | `/chat` | Streaming chat workspace |
-| `/memory` | Memory browser |
+| `/memory` | Memory browser and decision ledger |
 | `/backup` | Encrypted snapshot and storage management |
 | `/settings` | API mode, provider, and preferences |
 | `/admin/storage` | Purchase administration for configured admin IDs |
@@ -133,9 +103,11 @@ The API includes chat, summarization, key validation, sync, search, transcriptio
 
 ## BYOK and direct providers
 
-Free mode is the default. BYOK accepts OpenRouter plus direct OpenAI-compatible providers, including OpenAI, DeepSeek, Qwen, Kimi, Grok, NanoGPT, Eden AI, OrcaRouter, UnoRouter, LLM7, and Hugging Face. A custom HTTPS base URL is also supported.
+Free mode is the default. BYOK accepts OpenRouter plus direct OpenAI-compatible providers, including OpenAI, DeepSeek, Qwen, Kimi, Grok, NanoGPT, Eden AI, OrcaRouter, UnoRouter, LLM7, and Hugging Face. A custom public HTTPS base URL is also supported.
 
-The API key is kept only in `sessionStorage` under `permamind:api-key:v1` and disappears when the browser session ends. Provider, model, and base URL preferences remain in `localStorage` because they are not secrets.
+Local mode is optional and separate from BYOK. Choose **Ollama on this device** in Settings and enter the Ollama model name. PermaMind uses only `http://127.0.0.1:11434/v1`, sends no API key, and does not install Ollama for you. Any other non-HTTPS address is rejected. While this provider is selected, web search stays off. Keep cloud sync off as well if the decision context must remain on the device. Cloud and BYOK providers remain available when you switch back.
+
+The API key is kept only in `sessionStorage` under `permamind:api-key:v1` and disappears when the browser session ends. Provider, model, and base URL preferences remain in `localStorage` because they are not secrets. The local provider stores no API key.
 
 ## Project structure
 
@@ -170,7 +142,7 @@ npm start
 - Snapshot plaintext is compressed and encrypted in the browser. Arweave receives ciphertext, and the passphrase is not uploaded.
 - Restore checks metadata, hashes, dates, and payload limits, then requires explicit confirmation before replacing local data.
 - Queue status changes and purchase confirmation are reserved for trusted server code.
-- MCP tokens are stored as hashes, expire, can be revoked, and can only read summaries marked as allowed.
+- MCP tokens are stored as hashes, expire, can be revoked, and can only read summaries and decisions marked as allowed. Writes through MCP are rejected. Full messages, ciphertext, Arweave snapshots, and other users' data are never returned.
 - Put the deployment behind HTTPS and configure rate limits and monitoring before sharing server-side AI keys.
 
 ## Roadmap

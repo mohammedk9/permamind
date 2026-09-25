@@ -24,7 +24,7 @@ export function resolveRequestAuth(request: Request): ResolvedRequestAuth {
 
   const userKey = request.headers.get(HEADER_OPENROUTER_KEY)?.trim();
   const providerHeader = request.headers.get(HEADER_AI_PROVIDER)?.toLowerCase();
-  const providers: AiProvider[] = ["openrouter", "openai", "anthropic", "google", "deepseek", "qwen", "kimi", "meta", "grok", "nanogpt", "eden", "orcarouter", "unorouter", "llm7", "huggingface", "custom"];
+  const providers: AiProvider[] = ["openrouter", "openai", "anthropic", "google", "deepseek", "qwen", "kimi", "meta", "grok", "nanogpt", "eden", "orcarouter", "unorouter", "llm7", "huggingface", "custom", "ollama"];
   const provider = providers.includes(providerHeader as AiProvider) ? providerHeader as AiProvider : "openrouter";
   const baseUrl = request.headers.get("x-ai-base-url")?.trim();
   const modelName = request.headers.get("x-ai-model")?.trim();
@@ -34,6 +34,11 @@ export function resolveRequestAuth(request: Request): ResolvedRequestAuth {
   if (provider === "custom") {
     if (!baseUrl || !isSafeCustomUrl(baseUrl)) throw new Error("Custom AI URL must be a public HTTPS URL");
     if (!modelName) throw new Error("A valid custom model is required");
+  }
+  if (provider === "ollama") {
+    if (!isLocalOllamaUrl(baseUrl)) throw new Error("Local model URL must be the Ollama address on this device");
+    if (!modelName) throw new Error("A valid local model name is required");
+    return { apiKey: "", mode: "byok", isUserKey: true, provider, baseUrl, modelName };
   }
 
   if (mode === "byok") {
@@ -62,6 +67,17 @@ export function resolveRequestAuth(request: Request): ResolvedRequestAuth {
   throw new Error(
     "Free mode needs a configured server AI key or switch to BYOK in Settings with your own key."
   );
+}
+
+/** The only non-public model address permitted. Everything else stays blocked. */
+export function isLocalOllamaUrl(value: string | undefined): boolean {
+  if (!value) return false;
+  try {
+    const url = new URL(value);
+    return url.protocol === "http:" && (url.hostname === "127.0.0.1" || url.hostname === "localhost") && url.port === "11434" && !url.username && !url.password;
+  } catch {
+    return false;
+  }
 }
 
 /** Reject SSRF targets. Custom providers must be public HTTPS endpoints. */

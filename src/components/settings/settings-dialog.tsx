@@ -37,6 +37,7 @@ import {
 import { setSyncPassphrase } from "@/lib/storage/sync-encryption";
 import { loadChatData } from "@/lib/storage/chat-storage";
 import { buildConversationExport, conversationExportFileName } from "@/lib/storage/chat-export";
+import { loadStoragePolicy, saveStoragePolicy, type StoragePolicy } from "@/lib/arweave/storage-policy";
 
 interface SettingsDialogProps {
   mode: ApiKeyMode;
@@ -89,11 +90,17 @@ function StatusBadge({ status }: { status: ConnectionStatus }) {
 function StoragePreferencesPanel() {
   const [preferences, setPreferences] = useState<StoragePreferences>(loadStoragePreferences);
   const [syncPassphrase, setSyncPassphraseState] = useState("");
+  const [arweaveEnabled, setArweaveEnabled] = useState(false);
+  const [arweavePolicy, setArweavePolicy] = useState<StoragePolicy>(loadStoragePolicy);
 
   const update = (change: Partial<StoragePreferences>) => {
     const next = { ...preferences, ...change };
     setPreferences(next);
     saveStoragePreferences(next);
+  };
+  const updateArweavePolicy = (policy: StoragePolicy) => {
+    setArweavePolicy(policy);
+    saveStoragePolicy(policy);
   };
   const downloadConversations = () => {
     const { conversations } = loadChatData();
@@ -108,25 +115,17 @@ function StoragePreferencesPanel() {
   };
   return (
     <div className="space-y-3 text-xs">
-      <p className="text-muted-foreground">Choose where selected data may be used. Changing this setting never uploads anything automatically.</p>
-      <label className={cn("block cursor-pointer rounded-lg border p-3 transition-colors", preferences.syncMode === "local" ? "border-primary bg-primary/5" : "border-border hover:bg-muted/50")}>
-        <span className="flex items-start gap-2">
-          <input
-          type="radio"
-          name="storage-mode"
-          checked={preferences.syncMode === "local"}
-          onChange={() => update({ syncMode: "local" })}
-          />
-          <span><span className="flex items-center gap-1 font-medium"><HardDrive className="size-3.5" />Local storage <span className="text-muted-foreground">(default)</span></span><span className="mt-1 block text-muted-foreground">Your data stays on this device. Later, you can choose important conversations to send their summary to Supabase or save an encrypted backup on Arweave.</span></span>
-        </span>
-      </label>
+      <p className="text-muted-foreground">Local storage stays on. Cloud and Arweave are separate optional choices. Changing either one never uploads anything automatically.</p>
+      <div className="rounded-lg border border-primary bg-primary/5 p-3">
+        <span className="flex items-center gap-1 font-medium"><HardDrive className="size-3.5" />Local storage <span className="text-muted-foreground">(always on)</span></span>
+        <span className="mt-1 block text-muted-foreground">Conversations stay on this device and are not uploaded. This choice cannot be turned off.</span>
+        <a href="/storage" className="mt-2 inline-block font-medium text-primary underline-offset-4 hover:underline">How this works</a>
+      </div>
       <label className={cn("block cursor-pointer rounded-lg border p-3 transition-colors", preferences.syncMode === "supabase" ? "border-primary bg-primary/5" : "border-border hover:bg-muted/50")}>
-        <span className="flex items-start gap-2"><input
-          type="radio"
-          name="storage-mode"
-          checked={preferences.syncMode === "supabase"}
-          onChange={() => update({ syncMode: "supabase" })}
-        /> <span><span className="flex items-center gap-1 font-medium"><Cloud className="size-3.5" />Cloud storage</span><span className="mt-1 block text-muted-foreground">Use the data you choose from another device. Nothing is uploaded automatically.</span></span></span>
+        <span className="flex items-start justify-between gap-3">
+          <span><span className="flex items-center gap-1 font-medium"><Cloud className="size-3.5" />Cloud storage <span className="text-muted-foreground">(Supabase)</span></span><span className="mt-1 block text-muted-foreground">Optional and separate from Arweave. Nothing is uploaded automatically. <a href="/storage" className="font-medium text-primary underline-offset-4 hover:underline" onClick={(event) => event.stopPropagation()}>How this works</a></span></span>
+          <input type="checkbox" checked={preferences.syncMode === "supabase"} onChange={(event) => update({ syncMode: event.target.checked ? "supabase" : "local" })} aria-label="Use cloud storage" />
+        </span>
       </label>
       {preferences.syncMode === "supabase" && (
         <div className="ml-5 space-y-1 border-l pl-3">
@@ -147,7 +146,24 @@ function StoragePreferencesPanel() {
           </label>
         </div>
       )}
-      <p className="rounded-md border border-amber-500/30 bg-amber-500/5 p-2 text-muted-foreground">Arweave is separate from Supabase and is available in both modes. It remains controlled by the existing Backup storage policy. Arweave data is permanent and cannot be deleted.</p>
+      <label className={cn("block cursor-pointer rounded-lg border p-3 transition-colors", arweaveEnabled ? "border-primary bg-primary/5" : "border-border hover:bg-muted/50")}>
+        <span className="flex items-start justify-between gap-3">
+          <span><span className="font-medium">Arweave</span><span className="mt-1 block text-muted-foreground">Optional and separate from cloud storage. Turning this on does not create a backup. <a href="/storage" className="font-medium text-primary underline-offset-4 hover:underline" onClick={(event) => event.stopPropagation()}>How this works</a></span></span>
+          <input type="checkbox" checked={arweaveEnabled} onChange={(event) => setArweaveEnabled(event.target.checked)} aria-label="Use Arweave" />
+        </span>
+      </label>
+      {arweaveEnabled && (
+        <div className="ml-5 space-y-2 border-l pl-3">
+          <label htmlFor="settings-arweave-policy" className="font-medium">What may be included</label>
+          <select id="settings-arweave-policy" className="w-full rounded-md border bg-background p-2" value={arweavePolicy} onChange={(event) => updateArweavePolicy(event.target.value as StoragePolicy)}>
+            <option value="store_everything">All conversations</option>
+            <option value="starred_only">Starred conversations only</option>
+            <option value="manual_only">Manually selected conversations only</option>
+            <option value="manual_backups_only">Only when I press Back up now</option>
+          </select>
+          <p className="text-muted-foreground">After upload, an Arweave copy cannot be deleted. Creating one still needs confirmation on the backup page.</p>
+        </div>
+      )}
       <Button size="sm" variant="outline" onClick={downloadConversations}>
         <Download className="size-3.5" />
         Download conversations

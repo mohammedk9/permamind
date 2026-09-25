@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { getSupabaseAdminClient } from "@/lib/supabase/admin";
 
 const WINDOW_MS = 60_000;
-const LIMITS = { list_allowed_summaries: 30, get_allowed_summary: 60, search_allowed_summaries: 15 } as const;
+const LIMITS = { list_allowed_summaries: 30, get_allowed_summary: 60, search_allowed_summaries: 15, list_decisions: 30, search_memory: 15, get_memory: 60, save_memory: 10 } as const;
 const buckets = new Map<string, { startedAt: number; count: number }>();
 const TOKEN_PATTERN = /^pmcp_[0-9a-f]{64}$/;
 
@@ -34,6 +34,27 @@ export async function readAllowedSummaries(auth: McpAuth, options: { summaryId?:
   });
   if (error) throw error;
   return (data ?? []) as Array<Record<string, unknown>>;
+}
+
+const DECISION_KINDS = new Set(["decision", "fact", "preference", "project"]);
+
+function asText(value: unknown): string {
+  return typeof value === "string" ? value : "";
+}
+
+/** Decision-shaped rows from summaries the user explicitly shared. Never includes messages or ciphertext. */
+export async function readAllowedDecisions(auth: McpAuth, options: { memoryId?: string; query?: string; limit: number }) {
+  const rows = await readAllowedSummaries(auth, { query: options.query, limit: 50 });
+  const decisions = rows.flatMap((row) => {
+    const facts = Array.isArray(row.facts) ? row.facts : [];
+    const decisions = Array.isArray(row.decisions) ? row.decisions : [];
+    const source = { sourceTitle: asText(row.title), sourceUpdatedAt: asText(row.source_updated_at || row.updated_at), conversationId: asText(row.conversation_id) };
+    return [
+      ...decisions.map((item, index) => ({ id: `${asText(row.id)}:decision:${index}`, kind: "decision", ...source, ...(typeof item === "object" && item ? item as Record<string, unknown> : { text: String(item) }) })),
+      ...facts.map((item, index) => ({ id: `${asText(row.id)}:fact:${index}`, kind: "fact", ...source, ...(typeof item === "object" && item ? item as Record<string, unknown> : { text: String(item) }) })),
+    ].filter((item) => DECISION_KINDS.has(String(item.kind)));
+  }).filter((item) => !options.memoryId || item.id === options.memoryId);
+  return decisions.slice(0, options.limit);
 }
 
 export function consumeRateLimit(userId: string, tool: McpToolName): boolean {

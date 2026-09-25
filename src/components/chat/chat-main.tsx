@@ -19,7 +19,6 @@ import { ChatSidebar } from "@/components/chat/chat-sidebar";
 import type { ConnectionStatus } from "@/hooks/use-api-settings";
 import type { ApiKeyMode } from "@/lib/settings/api-key-storage";
 import { MemoriesUsed } from "@/components/chat/memories-used";
-import { EmptyState } from "@/components/ui/empty-state";
 import { PageHeader } from "@/components/ui/page-header";
 import type { AnalyticsSummary } from "@/types/analytics";
 import type { Conversation } from "@/types/chat";
@@ -37,8 +36,6 @@ interface ChatMainProps {
   onNewChat: () => void;
   onRename: (id: string, title: string) => void;
   onDelete: (id: string) => void;
-  onToggleCloudSync?: (id: string) => Promise<"uploaded" | "unchanged" | "pending-summary" | void>;
-  onDisableCloudSync?: (id: string) => Promise<void>;
   isSummarizing?: (id: string) => boolean;
   onSend: (content: string, displayContent?: string) => void;
   onQuickCommand: (command: QuickCommand) => void;
@@ -65,6 +62,7 @@ interface ChatMainProps {
   webSearchEnabled?: boolean;
   onWebSearchChange?: (enabled: boolean) => void;
   searchUsage?: { used: number; limit: number } | null;
+  onLinkedConversationsChange: (ids: string[]) => void;
 }
 
 export function ChatMain({
@@ -75,8 +73,6 @@ export function ChatMain({
   onNewChat,
   onRename,
   onDelete,
-  onToggleCloudSync,
-  onDisableCloudSync,
   isSummarizing,
   onSend,
   onQuickCommand,
@@ -103,6 +99,7 @@ export function ChatMain({
   webSearchEnabled = false,
   onWebSearchChange,
   searchUsage,
+  onLinkedConversationsChange,
 }: ChatMainProps) {
   const { locale } = useLocale();
   const online = useOnlineStatus();
@@ -122,9 +119,8 @@ export function ChatMain({
   return (
     <div className="flex h-full min-h-0 min-w-0 flex-1 flex-col bg-background">
       <PageHeader
-        className="min-h-16 shrink-0 gap-2 border-b bg-card/70 px-12 py-3 backdrop-blur sm:flex-row sm:items-center sm:px-4 sm:pb-3"
+        className="min-h-14 shrink-0 gap-2 border-b bg-card/50 px-12 py-2 backdrop-blur sm:flex-row sm:items-center sm:px-4 sm:pb-2"
         title={title}
-        eyebrow={ar ? "المحادثة" : "Chat"}
         actions={<div className="flex min-w-0 flex-wrap items-center justify-end gap-1.5 sm:gap-2">
         {!online && <span className="rounded-full border border-destructive/30 bg-destructive/10 px-2 py-1 text-xs text-destructive">{ar ? "غير متصل" : "Offline"}</span>}
         <Sheet>
@@ -149,8 +145,6 @@ export function ChatMain({
               onNewChat={onNewChat}
               onRename={onRename}
               onDelete={onDelete}
-              onToggleCloudSync={onToggleCloudSync}
-              onDisableCloudSync={onDisableCloudSync}
               isSummarizing={isSummarizing}
               className="min-h-0 w-full flex-1 border-0"
             />
@@ -174,9 +168,33 @@ export function ChatMain({
 
       <ScrollArea aria-label={ar ? "رسائل المحادثة" : "Conversation messages"} className="min-h-0 flex-1 overflow-hidden [scrollbar-gutter:stable]">
         {messages.length === 0 ? (
-          <EmptyState className="mx-auto mt-10 min-h-[38vh] max-w-xl border-0 bg-transparent" icon={Sparkles} title={ar ? "ماذا تريد أن تتذكر؟" : "What would you like to remember?"} description={ar ? "ابدأ محادثة. يتم حفظ محادثاتك محليًا وتبقى بعد تحديث الصفحة." : "Start a conversation. Your chats are saved locally and persist across page refreshes."} />
+          <div className="flex min-h-[46vh] items-center justify-center px-4 py-8">
+            <div className="w-full max-w-xl rounded-3xl border border-border/70 bg-card/80 p-6 text-center shadow-sm sm:p-8">
+              <div className="mx-auto mb-4 flex size-12 items-center justify-center rounded-2xl bg-primary/15 text-primary">
+                <Sparkles aria-hidden="true" className="size-5" />
+              </div>
+              <h2 className="text-xl font-semibold tracking-tight">{ar ? "ماذا تريد أن تتذكر؟" : "What would you like to remember?"}</h2>
+              <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-muted-foreground">{ar ? "ابدأ محادثة. يتم حفظ محادثاتك محليًا وتبقى بعد تحديث الصفحة." : "Start a conversation. Your chats are saved locally and persist across page refreshes."}</p>
+              <div className="mt-5 grid gap-2 sm:grid-cols-3">
+                {(ar
+                  ? [["weekly", "لخّص الأسبوع"], ["decisions", "ما القرارات المعلقة"], ["changes", "ماذا تغيّر منذ آخر نسخة"]]
+                  : [["weekly", "Summarize the week"], ["decisions", "Open decisions"], ["changes", "Changes since last snapshot"]]
+                ).map(([id, label]) => (
+                  <button
+                    key={id}
+                    type="button"
+                    disabled={isLoading}
+                    className="rounded-2xl border border-border bg-background/60 px-3 py-3 text-sm leading-5 transition-colors hover:border-primary/40 hover:bg-primary/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
+                    onClick={() => onQuickCommand(id as QuickCommand)}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
         ) : (
-            <div className="mx-auto max-w-3xl divide-y divide-border/60 px-2 sm:px-4" aria-live={isLoading ? "polite" : undefined} aria-busy={isLoading}>
+            <div className="mx-auto max-w-3xl space-y-3 px-2 py-4 sm:px-4" aria-live={isLoading ? "polite" : undefined} aria-busy={isLoading}>
             {messages.map((message) => (
               <ChatMessage key={message.id} message={message} />
             ))}
@@ -187,7 +205,7 @@ export function ChatMain({
 
       <div className="relative">
         {webSearchEnabled && searchUsage && <p className="absolute bottom-1 right-5 z-20 text-[10px] text-muted-foreground">{ar ? `بحث الويب: ${searchUsage.used}/${searchUsage.limit}` : `Web search: ${searchUsage.used}/${searchUsage.limit}`}</p>}
-        <ChatInput onSend={onSend} onQuickCommand={onQuickCommand} isLoading={isLoading} disabled={!canSend || !online} webSearchEnabled={webSearchEnabled} onWebSearchChange={onWebSearchChange} />
+        <ChatInput onSend={onSend} isLoading={isLoading} disabled={!canSend || !online} webSearchEnabled={webSearchEnabled} onWebSearchChange={onWebSearchChange} conversation={conversation} conversations={conversations} onLinkedConversationsChange={onLinkedConversationsChange} />
         {!online && <p className="mx-auto mt-2 max-w-3xl px-2 text-xs text-muted-foreground" role="status">{OFFLINE_MODEL_NOTICE}</p>}
       </div>
     </div>

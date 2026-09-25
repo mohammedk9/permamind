@@ -26,8 +26,6 @@ interface ChatSidebarProps {
   onRename: (id: string, title: string) => void;
   onDelete: (id: string) => void;
   onUpdateConversation?: (id: string, updater: (conversation: Conversation) => Conversation) => void;
-  onToggleCloudSync?: (id: string) => Promise<"uploaded" | "unchanged" | "pending-summary" | void>;
-  onDisableCloudSync?: (id: string) => Promise<void>;
   isSummarizing?: (id: string) => boolean;
   className?: string;
 }
@@ -44,8 +42,6 @@ export function ChatSidebar({
   onRename,
   onDelete,
   onUpdateConversation,
-  onToggleCloudSync,
-  onDisableCloudSync,
   isSummarizing,
   className,
 }: ChatSidebarProps) {
@@ -66,7 +62,7 @@ export function ChatSidebar({
         className
       )}
     >
-      <div className="shrink-0 space-y-2 px-1">
+      <div className="shrink-0 space-y-3 px-2 pt-2">
         <div className="grid grid-cols-2 gap-2">
           <Button
             className="h-10 w-full min-w-0 justify-start gap-1 overflow-hidden rounded-lg bg-primary px-1.5 py-2 text-xs font-semibold text-primary-foreground shadow-sm transition-colors hover:bg-primary/90 focus-visible:ring-2 focus-visible:ring-sidebar-ring/50"
@@ -129,7 +125,7 @@ export function ChatSidebar({
 
       <ScrollArea
         aria-label={ar ? "قائمة المحادثات" : "Conversation list"}
-        className="min-h-0 flex-1 overflow-hidden px-1"
+        className="min-h-0 flex-1 overflow-hidden px-2"
       >
         {isActive ? (
           <nav className="space-y-1 pb-4">
@@ -146,7 +142,7 @@ export function ChatSidebar({
             )}
           </nav>
         ) : (
-          <nav className="space-y-1 pb-4">
+          <nav className="space-y-1.5 pb-4">
             {conversations.length === 0 ? (
               <EmptyState className="min-h-40 border-0 bg-transparent p-4" title={ar ? "لا توجد محادثات بعد" : "No conversations yet"} description={ar ? "ابدأ محادثة جديدة وستظهر سجلاتك هنا." : "Start a new chat and your local history will appear here."} action={<Button size="sm" variant="outline" onClick={onNewChat}>{ar ? "ابدأ المحادثة" : "Start chatting"}</Button>} />
             ) : (
@@ -161,8 +157,6 @@ export function ChatSidebar({
                   onDelete={() => onDelete(conversation.id)}
                   onToggleStar={() => onUpdateConversation?.(conversation.id, (c) => ({ ...c, starred: !c.starred }))}
                   onTogglePermanentMemory={() => onUpdateConversation?.(conversation.id, (c) => ({ ...c, permanentMemory: !c.permanentMemory }))}
-                  onToggleCloudSync={() => onToggleCloudSync?.(conversation.id) ?? Promise.resolve()}
-                  onDisableCloudSync={() => onDisableCloudSync?.(conversation.id) ?? Promise.resolve()}
                 />
               ))
             )}

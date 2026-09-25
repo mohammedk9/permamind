@@ -42,13 +42,17 @@ function upsert(records: MemoryRecord[], next: MemoryRecord): MemoryRecord[] {
   const index = records.findIndex((record) => record.id === next.id);
   if (index === -1) return [next, ...records];
   const current = records[index];
-  if (current.source === "user" || current.pinned) return records;
+  if (current.source === "user" || current.pinned || current.status !== "active") return records;
   const copy = [...records];
   copy[index] = next;
   return copy;
 }
 
-/** Adds newly extracted facts without reviving a record the user forgot or edited. */
+/**
+ * Adds newly extracted facts and decisions. A later extraction never replaces
+ * an older decision: a new decision is stored beside it, and the older one is
+ * marked superseded only when the extraction explicitly says so.
+ */
 export function syncExtractedMemory(conversation: Conversation): MemoryRecord[] {
   const metadata = conversation.metadata;
   if (!metadata || typeof window === "undefined") return loadMemoryLedger();
@@ -59,8 +63,12 @@ export function syncExtractedMemory(conversation: Conversation): MemoryRecord[] 
     records = upsert(records, factRecord(conversation.id, fact, base));
   }
   for (const decision of metadata.decisions ?? []) {
-    if (decision.status === "superseded") continue;
-    records = upsert(records, decisionRecord(conversation.id, decision, base));
+    const next = decisionRecord(conversation.id, decision, base);
+    if (decision.status === "superseded") {
+      records = supersedeMatching(records, next);
+      continue;
+    }
+    records = upsert(records, next);
   }
   if (metadata.project?.name) {
     records = upsert(records, { ...base, id: `project:${conversation.id}`, kind: "project", category: "project", confidence: "medium", text: [metadata.project.name, metadata.project.goal, ...(metadata.project.tasks ?? [])].filter(Boolean).join(" — ") });
@@ -69,17 +77,37 @@ export function syncExtractedMemory(conversation: Conversation): MemoryRecord[] 
   return loadMemoryLedger();
 }
 
+/** Keeps the old decision and points it at the newer record instead of deleting it. */
+function supersedeMatching(records: MemoryRecord[], next: MemoryRecord): MemoryRecord[] {
+  const key = normalizeKey(next.text);
+  let changed = false;
+  const updated = records.map((record) => {
+    if (record.kind !== "decision" || record.status !== "active") return record;
+    if (normalizeKey(record.text) !== key && record.id !== next.id) return record;
+    changed = true;
+    return { ...record, status: "superseded" as const, supersededBy: next.id, pinned: false };
+  });
+  return changed ? updated : records;
+}
+
 function factRecord(conversationId: string, fact: MemoryFact, base: Omit<MemoryRecord, "id" | "kind" | "text" | "category" | "confidence">): MemoryRecord {
   const kind = fact.category === "preference" ? "preference" : "fact";
   return { ...base, id: `${kind}:${conversationId}:${normalizeKey(fact.category)}`, kind, category: fact.category, confidence: confidenceFor(false, fact.category), text: fact.value };
 }
 
 function decisionRecord(conversationId: string, decision: MemoryDecision, base: Omit<MemoryRecord, "id" | "kind" | "text" | "category" | "confidence">): MemoryRecord {
-  return { ...base, id: `decision:${conversationId}:${normalizeKey(decision.decision)}`, kind: "decision", category: "decision", confidence: decision.status === "uncertain" ? "low" : "medium", text: decision.reason ? `${decision.decision} — ${decision.reason}` : decision.decision };
+  const text = decision.reason ? `${decision.decision} — ${decision.reason}` : decision.decision;
+  return { ...base, id: `decision:${conversationId}:${normalizeKey(text)}`, kind: "decision", category: "decision", confidence: decision.status === "uncertain" ? "low" : "medium", text };
 }
 
 function normalizeKey(value: string): string {
   return value.trim().toLocaleLowerCase().replace(/\s+/g, " ").slice(0, 160);
+}
+
+export function addMemoryRecord(record: MemoryRecord): MemoryRecord[] {
+  const records = upsert(read(), { ...record, text: record.text.trim().slice(0, 500) });
+  write(records.filter((item) => item.text));
+  return loadMemoryLedger();
 }
 
 export function updateMemoryRecord(id: string, changes: Partial<Pick<MemoryRecord, "text" | "pinned" | "status">>): MemoryRecord[] {

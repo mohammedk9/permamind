@@ -75,4 +75,19 @@ describe("editable structured memory", () => {
     const stored = JSON.parse(localStorage.getItem("permamind:memory-ledger:v1")!).records;
     expect(stored.find((item: { id: string }) => item.id === record.id).text).toBe("Corrected preference");
   });
+
+  it("keeps an older decision when a newer extraction does not explicitly replace it", () => {
+    syncExtractedMemory(conversation);
+    const later = { ...conversation, metadata: { ...conversation.metadata!, generatedAt: new Date("2026-06-01T00:00:00Z"), decisions: [{ decision: "Use rolling releases", reason: "Faster recovery", status: "active" as const }] } };
+    const records = syncExtractedMemory(later);
+    expect(records.filter((record) => record.kind === "decision" && record.status === "active")).toHaveLength(2);
+  });
+
+  it("marks the old decision superseded only when the newer one says so", () => {
+    const [original] = syncExtractedMemory(conversation).filter((record) => record.kind === "decision");
+    const later = { ...conversation, metadata: { ...conversation.metadata!, decisions: [{ ...conversation.metadata!.decisions![0], status: "superseded" as const }] } };
+    const records = syncExtractedMemory(later);
+    expect(records.find((record) => record.id === original.id)?.status).toBe("superseded");
+    expect(records.find((record) => record.id === original.id)?.text).toContain("blue green");
+  });
 });

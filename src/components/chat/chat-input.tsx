@@ -5,24 +5,27 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
+import { ConversationLinkPicker, LinkedConversationBadges } from "@/components/chat/conversation-link-picker";
 import { useLocale } from "@/hooks/use-locale";
-import { QUICK_COMMANDS, type QuickCommand } from "@/lib/chat/quick-commands";
 import { extractAttachmentText } from "@/lib/documents/extract";
 import { attachmentKind, attachmentSizeLimit, composeMessageContent, MAX_ATTACHMENT_COUNT, prepareAttachments, type AttachmentInput } from "@/lib/documents/limits";
 import { cn } from "@/lib/utils";
+import type { Conversation } from "@/types/chat";
 
 interface ChatInputProps {
   onSend: (content: string, displayContent?: string) => void;
-  onQuickCommand?: (command: QuickCommand) => void;
   disabled?: boolean;
   isLoading?: boolean;
   webSearchEnabled?: boolean;
   onWebSearchChange?: (enabled: boolean) => void;
+  conversation?: Conversation | null;
+  conversations?: Conversation[];
+  onLinkedConversationsChange?: (ids: string[]) => void;
 }
 
 interface PendingAttachment extends AttachmentInput { id: string; status: "reading" | "ready" | "error"; }
 
-export function ChatInput({ onSend, onQuickCommand, disabled, isLoading, webSearchEnabled = false, onWebSearchChange }: ChatInputProps) {
+export function ChatInput({ onSend, disabled, isLoading, webSearchEnabled = false, onWebSearchChange, conversation = null, conversations = [], onLinkedConversationsChange }: ChatInputProps) {
   const { locale } = useLocale();
   const ar = locale === "ar";
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -152,18 +155,13 @@ export function ChatInput({ onSend, onQuickCommand, disabled, isLoading, webSear
   };
 
   return (
-    <div className="sticky bottom-0 z-10 border-t border-border bg-background/95 p-2 pb-[max(0.75rem,env(safe-area-inset-bottom))] backdrop-blur sm:p-4">
-      <div className="surface-elevated mx-auto max-w-3xl rounded-2xl border border-input bg-card p-2 sm:p-3">
+    <div className="sticky bottom-0 z-10 bg-gradient-to-t from-background from-75% to-transparent px-2 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3 sm:px-4">
+      <div className="surface-elevated mx-auto max-w-3xl rounded-3xl border border-border/80 bg-card p-2 shadow-lg sm:p-3">
         {files.length > 0 && <div className="mb-2 flex flex-wrap gap-2 px-1">{files.map((file) => <div key={file.id} className={cn("flex items-center gap-2 rounded-lg border bg-muted/60 px-2 py-1.5 text-xs", file.status === "error" && "border-destructive/40 text-destructive")}><span className="flex size-6 items-center justify-center rounded bg-background">{file.status === "reading" ? <Loader2 className="size-3.5 animate-spin" aria-label={ar ? "جارٍ قراءة الملفات" : "Reading files"} /> : file.type.startsWith("image/") ? <ImagePlus className="size-3.5" /> : <FileText className="size-3.5" />}</span><span className="max-w-40 truncate">{file.name}</span><span className="sr-only">{file.error ?? file.status}</span><button type="button" onClick={() => removeFile(file.id)} aria-label={ar ? `إزالة ${file.name}` : `Remove ${file.name}`}><X className="size-3.5 text-muted-foreground" /></button></div>)}</div>}
         {voiceError && <p className="mb-2 px-1 text-xs text-destructive" role="alert">{voiceError}</p>}
-        <div className="mb-2 flex gap-2 overflow-x-auto px-1">
-          {QUICK_COMMANDS.map((command) => (
-            <Button key={command.id} type="button" variant="outline" size="sm" className="shrink-0 rounded-full" onClick={() => onQuickCommand?.(command.id)} disabled={isLoading}>
-              {command.label}
-            </Button>
-          ))}
-        </div>
+        <LinkedConversationBadges conversation={conversation} conversations={conversations} onChange={(ids) => onLinkedConversationsChange?.(ids)} />
         <div className="flex items-end gap-2">
+        <ConversationLinkPicker conversation={conversation} conversations={conversations} disabled={disabled || isLoading} onChange={(ids) => onLinkedConversationsChange?.(ids)} />
         <input ref={fileRef} type="file" multiple accept="image/*,.pdf,.docx,.txt,.md,.csv" className="sr-only" onChange={(event) => { addFiles(event.target.files); event.currentTarget.value = ""; }} />
          <Button type="button" variant="ghost" size="icon" className="mb-0.5 rounded-xl" onClick={() => fileRef.current?.click()} disabled={disabled || isLoading || files.length >= MAX_ATTACHMENT_COUNT} aria-label={ar ? "إرفاق صور أو ملفات" : "Attach images or files"}><Paperclip className="size-4" /></Button>
          <Button type="button" variant={isRecording ? "secondary" : "ghost"} size="icon" className={`mb-0.5 rounded-xl ${isRecording ? "text-destructive ring-1 ring-destructive/30" : ""}`} onClick={() => void toggleRecording()} disabled={disabled || isLoading || isTranscribing} aria-label={isRecording ? (ar ? "إيقاف التسجيل" : "Stop recording") : (isTranscribing ? (ar ? "جارٍ تحويل الصوت إلى نص" : "Transcribing audio") : (ar ? "تسجيل رسالة صوتية" : "Record voice message"))} title={ar ? "تحويل الكلام إلى نص" : "Convert speech to text"}>{isTranscribing ? <Loader2 className="size-4 animate-spin" /> : isRecording ? <Square className="size-3.5 fill-current" /> : <Mic className="size-4" />}</Button>
@@ -189,9 +187,10 @@ export function ChatInput({ onSend, onQuickCommand, disabled, isLoading, webSear
           placeholder={
             isLoading ? (ar ? "بانتظار الرد..." : "Waiting for response...") : (ar ? "اكتب رسالتك إلى PermaMind..." : "Message PermaMind...")
           }
-          className="min-h-[44px] max-h-40 resize-none border-0 bg-transparent shadow-none focus-visible:ring-0"
+          className="mb-0.5 min-h-11 flex-1 resize-none rounded-2xl border-0 bg-background/40 px-3 py-2.5 shadow-none focus-visible:ring-1"
           rows={1}
           aria-label={ar ? "رسالة إلى PermaMind" : "Message PermaMind"}
+          data-chat-composer
           aria-describedby="composer-help"
           disabled={disabled || isLoading}
           onKeyDown={handleKeyDown}
@@ -204,7 +203,7 @@ export function ChatInput({ onSend, onQuickCommand, disabled, isLoading, webSear
         <span id="composer-help" className="sr-only">{ar ? "اضغط Enter للإرسال، وShift+Enter لسطر جديد." : "Press Enter to send. Press Shift+Enter for a new line."}</span>
         <Button
           size="icon"
-          className="shrink-0 rounded-xl"
+          className="mb-0.5 size-10 shrink-0 rounded-2xl"
           onClick={handleSubmit}
           disabled={disabled || isLoading || reading}
           aria-label={isLoading || reading ? (ar ? "جارٍ إنشاء الرد" : "Generating response") : (ar ? "إرسال الرسالة" : "Send message")}

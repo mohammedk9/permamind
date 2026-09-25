@@ -4,7 +4,9 @@ import { cosineSimilarity, embedText } from "./embeddings";
 import { graphConversationNeighbors, updateMemoryGraph } from "./graph";
 
 const MAX_MEMORIES = 3;
+const DECISION_MAX_MEMORIES = 6;
 export const MEMORY_TOKEN_BUDGET = 600;
+const DECISION_TOKEN_BUDGET = 1400;
 const MIN_QUERY_LENGTH = 3;
 const MIN_SCORE = 0.8;
 
@@ -32,6 +34,8 @@ const PREVIOUS_CONVERSATION_PATTERNS = [
   /\bwhat was my previous\b/i,
   /\bcontinue from last time\b/i,
   /\bremember when\b/i,
+  /\bwhat did we decide\b/i,
+  /\bwhy did we (?:decide|reject|choose)\b/i,
 ];
 
 const ARABIC_PREVIOUS_CONVERSATION_PATTERNS = [
@@ -50,6 +54,18 @@ function isArabicPreviousConversationQuery(query: string): boolean {
 export function isPreviousConversationQuery(query: string): boolean {
   return PREVIOUS_CONVERSATION_PATTERNS.some((pattern) => pattern.test(query)) ||
     isArabicPreviousConversationQuery(query);
+}
+
+const DECISION_QUERY_PATTERNS = [
+  /\bwhat did we decide\b/i,
+  /\bwhy did we (?:decide|reject|choose)\b/i,
+  /\b(?:our|the) decision\b/i,
+];
+
+/** True when the user is asking for a stored decision rather than general recall. */
+export function isDecisionQuery(query: string): boolean {
+  if (DECISION_QUERY_PATTERNS.some((pattern) => pattern.test(query))) return true;
+  return /(?:قرار|قررنا|رفضنا|اخترنا)/u.test(normalizeArabic(query));
 }
 
 const ARABIC_INTERROGATIVE_WORDS = [
@@ -327,19 +343,20 @@ export function estimateMemoryTokens(memory: RetrievedMemory): number {
 
 export function selectMemoriesByScore(
   memories: RetrievedMemory[],
-  tokenBudget = MEMORY_TOKEN_BUDGET
+  tokenBudget = MEMORY_TOKEN_BUDGET,
+  maxMemories = MAX_MEMORIES,
 ): RetrievedMemory[] {
   const selected: RetrievedMemory[] = [];
   const seen = new Set<string>();
   let used = 0;
   for (const memory of [...memories].sort((a, b) => b.score - a.score)) {
-    if (seen.has(memory.conversationId)) continue;
+    if (seen.has(memory.conversationId) && !memory.recordId) continue;
     const tokens = estimateMemoryTokens(memory);
     if (selected.length > 0 && used + tokens > tokenBudget) continue;
     selected.push(memory);
     seen.add(memory.conversationId);
     used += tokens;
-    if (selected.length >= MAX_MEMORIES) break;
+    if (selected.length >= maxMemories) break;
   }
   return selected;
 }
@@ -528,7 +545,7 @@ export function retrieveRelevantMemories(
     }
   }
 
-  return mergeSemanticMemories(selectMemoriesByScore(results), query, conversations, records, semanticDocuments);
+  return mergeSemanticMemories(selectMemoriesByScore(results), query, conversations, records, semanticDocuments, previousConversationQuery || isDecisionQuery(q));
 }
 
 const SEMANTIC_SCORE = 0.22;
@@ -539,6 +556,7 @@ function mergeSemanticMemories(
   conversations: Conversation[],
   records: MemoryRecord[],
   semanticDocuments: Array<{ id: string; vector: Float32Array }>,
+  decisionQuery = false,
 ): RetrievedMemory[] {
   const queryVector = embedText(query);
   if (![...queryVector].some(Boolean)) return lexical;
@@ -546,15 +564,17 @@ function mergeSemanticMemories(
   const additions: RetrievedMemory[] = [];
 
   for (const record of active) {
+    const durable = record.pinned || record.kind === "decision";
     const overlap = cosineSimilarity(queryVector, embedText(record.text));
-    if (!record.pinned && overlap < SEMANTIC_SCORE) continue;
+    if (!durable && overlap < SEMANTIC_SCORE) continue;
+    if (decisionQuery && record.kind !== "decision" && overlap < SEMANTIC_SCORE) continue;
     additions.push({
       conversationId: record.conversationId,
       conversationTitle: record.conversationTitle,
       source: record.kind === "decision" ? "decision" : record.kind === "project" ? "project" : "fact",
       excerpt: record.text,
       recordId: record.id,
-      score: record.pinned ? Math.max(overlap, SEMANTIC_SCORE) + 1.4 : overlap * 3,
+      score: (record.pinned ? Math.max(overlap, SEMANTIC_SCORE) + 1.4 : overlap * 3) + (decisionQuery && record.kind === "decision" ? 2 : 0),
       confidence: record.confidence,
       reason: record.pinned ? "pinned memory" : "meaning match",
       updatedAt: new Date(record.updatedAt),
@@ -588,5 +608,9 @@ function mergeSemanticMemories(
     }
     merged.push(addition);
   }
-  return selectMemoriesByScore(merged, MEMORY_TOKEN_BUDGET);
+  return selectMemoriesByScore(
+    merged,
+    decisionQuery ? DECISION_TOKEN_BUDGET : MEMORY_TOKEN_BUDGET,
+    decisionQuery ? DECISION_MAX_MEMORIES : MAX_MEMORIES,
+  );
 }

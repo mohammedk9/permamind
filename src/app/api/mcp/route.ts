@@ -1,7 +1,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { z } from "zod";
-import { audit, consumeRateLimit, getMcpAuth, readAllowedSummaries, type McpAuth, type McpToolName } from "@/lib/mcp/security";
+import { audit, consumeRateLimit, getMcpAuth, readAllowedDecisions, readAllowedSummaries, type McpAuth, type McpToolName } from "@/lib/mcp/security";
 
 export const runtime = "nodejs";
 
@@ -17,7 +17,7 @@ function createMcpServer(auth: McpAuth, request: Request) {
       return error("Rate limit exceeded. Please try again later.");
     }
     try { const result = await action(); await audit(auth.userId, tool, "success", requestId); return text(result); }
-    catch { await audit(auth.userId, tool, "error", requestId); return error("The allowed summary could not be read."); }
+    catch { await audit(auth.userId, tool, "error", requestId); return error("The allowed memory could not be read."); }
   };
   const warning = "Only user-selected summaries are returned. This data may be sent to Claude, Cursor, or another connected MCP client.";
 
@@ -33,6 +33,16 @@ function createMcpServer(auth: McpAuth, request: Request) {
   server.registerTool("search_allowed_summaries", { title: "Search allowed summaries", description: warning, inputSchema: { query: z.string().trim().min(1).max(100), limit: z.number().int().min(1).max(25).default(10) } }, ({ query, limit }) => run("search_allowed_summaries", async () => {
     const summaries = await readAllowedSummaries(auth, { query, limit });
     return { readOnly: true, warning, query, summaries };
+  }));
+  server.registerTool("search_memory", { title: "Search allowed decisions", description: warning, inputSchema: { query: z.string().trim().min(1).max(100), limit: z.number().int().min(1).max(25).default(10) } }, ({ query, limit }) => run("search_memory", async () => ({ readOnly: true, warning, memories: await readAllowedDecisions(auth, { query, limit }) })));
+  server.registerTool("get_memory", { title: "Get an allowed decision", description: warning, inputSchema: { memoryId: z.string().trim().min(1).max(120) } }, ({ memoryId }) => run("get_memory", async () => {
+    const memories = await readAllowedDecisions(auth, { memoryId, limit: 1 });
+    return memories[0] ? { readOnly: true, warning, memory: memories[0] } : error("Memory not found or not allowed.");
+  }));
+  server.registerTool("list_decisions", { title: "List allowed decisions", description: warning, inputSchema: { limit: z.number().int().min(1).max(50).default(20) } }, ({ limit }) => run("list_decisions", async () => ({ readOnly: true, warning, decisions: (await readAllowedDecisions(auth, { limit })).filter((item) => item.kind === "decision") })));
+  server.registerTool("save_memory", { title: "Save memory", description: "Disabled. PermaMind MCP is read-only.", inputSchema: { text: z.string().max(500) } }, () => run("save_memory", async () => {
+    await audit(auth.userId, "save_memory", "rejected_write");
+    return error("MCP is read-only. Saving memory is not available.");
   }));
   return server;
 }

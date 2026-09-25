@@ -85,6 +85,18 @@ export const translations = {
           "Encrypted on your device before upload. After it is confirmed on Arweave, it is permanent and cannot be deleted.",
         icon: "shield",
       },
+      {
+        title: "A decision ledger inside memory",
+        description:
+          "Open Memory to review decisions. A newer one stays beside the older one, with its source and date. Pin it, correct it, or write a short note without replacing the old decision.",
+        icon: "search",
+      },
+      {
+        title: "A model that stays on this device",
+        description:
+          "Optional Ollama at 127.0.0.1 port 11434, with no API key. Web search stays off. If a decision must remain on this device, keep cloud sync off too.",
+        icon: "globe",
+      },
     ],
 
     // MCP
@@ -92,9 +104,9 @@ export const translations = {
     mcpDescription:
       "Connect PermaMind to Cursor, Claude, OpenAI Codex, or another MCP client through a read-only interface. You choose which summaries can be shared; full conversations, encrypted backups, and private keys stay out of reach.",
     mcpPoints: [
-      "Read-only access to approved summaries",
-      "Works with Cursor, Claude, and OpenAI Codex",
-      "You control what is shared",
+      "Read-only access to approved summaries and decisions",
+      "Search a memory, open one item, or list decisions with their date and source",
+      "Saving through the agent is rejected and recorded",
       "Privacy warning before every export or connection",
     ],
     mcpCta: "Learn about MCP in Settings",
@@ -189,6 +201,23 @@ export const translations = {
     ],
     legalBack: "Back to home",
     legalUpdated: "Last updated",
+    storageGuideTitle: "Choose how your data is stored",
+    storageGuideDescription: "Local, cloud, and Arweave are separate. Turning one on does not change the others, and nothing is uploaded just because you choose it.",
+    storageGuideBack: "Back to backup",
+    storageGuideSections: [
+      {
+        title: "Local",
+        body: "This is always on. Conversations stay on this device and are not uploaded. Clearing this browser can remove them, so export a copy if you need one.",
+      },
+      {
+        title: "Cloud (Supabase)",
+        body: "Optional and separate from Arweave. After you turn it on, choose conversations, memories, or projects. Only a selected encrypted summary is sent, and only after a separate warning and your confirmation. You can delete this cloud data later. The sync passphrase stays in memory and must be entered again on another device.",
+      },
+      {
+        title: "Arweave",
+        body: "Optional and separate from cloud storage. After you turn it on, choose which conversations a permanent backup may include. The copy is encrypted in this browser before upload. After upload it cannot be deleted. Losing the passphrase means that copy cannot be decrypted.",
+      },
+    ],
   },
 
   ar: {
@@ -275,6 +304,18 @@ export const translations = {
           "تُشفّر على جهازك قبل الرفع. وبعد تأكيدها على Arweave تصبح دائمة ولا يمكن حذفها.",
         icon: "shield",
       },
+      {
+        title: "دفتر قرارات داخل الذاكرة",
+        description:
+          "افتح الذاكرة لمراجعة القرارات. القرار الأحدث يبقى بجانب الأقدم مع مصدره وتاريخه. يمكنك تثبيته أو تصحيحه أو كتابة ملاحظة قصيرة دون استبدال القرار القديم.",
+        icon: "search",
+      },
+      {
+        title: "نموذج يبقى على هذا الجهاز",
+        description:
+          "Ollama اختياري على العنوان المحلي 127.0.0.1 والمنفذ 11434، بلا مفتاح. بحث الويب يبقى متوقفاً. إذا كان يجب أن يبقى القرار على هذا الجهاز، أبقِ المزامنة السحابية مغلقة أيضاً.",
+        icon: "globe",
+      },
     ],
 
     // MCP
@@ -282,9 +323,9 @@ export const translations = {
     mcpDescription:
       "اربط PermaMind مع Cursor أو Claude أو OpenAI Codex أو أي عميل MCP عبر واجهة للقراءة فقط. أنت تحدد الملخصات التي يمكن مشاركتها، وتبقى المحادثات الكاملة والنسخ المشفرة والمفاتيح الخاصة بعيدة عن الوصول.",
     mcpPoints: [
-      "وصول للقراءة فقط إلى الملخصات التي توافق عليها",
-      "يعمل مع Cursor وClaude وOpenAI Codex",
-      "أنت تتحكم فيما تتم مشاركته",
+      "وصول للقراءة فقط إلى الملخصات والقرارات التي توافق عليها",
+      "ابحث في الذاكرة، أو افتح عنصراً واحداً، أو اعرض القرارات مع تاريخها ومصدرها",
+      "حفظ الذاكرة عبر الوكيل مرفوض ويُسجَّل",
       "تحذير خصوصية قبل كل تصدير أو اتصال",
     ],
     mcpCta: "تعرّف على MCP في الإعدادات",
@@ -379,6 +420,23 @@ export const translations = {
     ],
     legalBack: "العودة للرئيسية",
     legalUpdated: "آخر تحديث",
+    storageGuideTitle: "اختر كيف تُخزَّن بياناتك",
+    storageGuideDescription: "المحلي والسحابي وArweave طرق منفصلة. تشغيل واحدة لا يغيّر الأخريين، واختيار المحتوى لا يرفع شيئاً وحده.",
+    storageGuideBack: "العودة للنسخ الاحتياطي",
+    storageGuideSections: [
+      {
+        title: "محلي",
+        body: "يعمل دائماً. تبقى المحادثات على هذا الجهاز ولا تُرفع. مسح هذا المتصفح قد يحذفها، لذا صدّر نسخة إذا احتجت إليها.",
+      },
+      {
+        title: "سحابي (Supabase)",
+        body: "اختياري ومنفصل عن Arweave. بعد تشغيله تختار المحادثات أو الذكريات أو المشاريع. يُرسل الملخص المشفّر الذي اخترته فقط، وبعد تحذير منفصل وتأكيدك. يمكن حذف بيانات السحابة لاحقاً. عبارة مرور المزامنة تبقى في الذاكرة ويجب إدخالها مرة أخرى على جهاز آخر.",
+      },
+      {
+        title: "Arweave",
+        body: "اختياري ومنفصل عن التخزين السحابي. بعد تشغيله تختار المحادثات التي قد تدخل النسخة الدائمة. تُشفَّر النسخة داخل هذا المتصفح قبل الرفع. بعد الرفع لا يمكن حذفها. فقدان عبارة المرور يعني عدم القدرة على فك تلك النسخة.",
+      },
+    ],
   },
 } as const;
 

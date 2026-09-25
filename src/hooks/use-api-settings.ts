@@ -45,7 +45,9 @@ export function useApiSettings() {
     // new browser session even though BYOK settings persist. Only report
     // "connected" when a usable key is actually present.
     setConnectionStatus(
-      stored.mode === "byok"
+      stored.provider === "ollama"
+        ? "connected"
+        : stored.mode === "byok"
         ? stored.apiKey && stored.validatedAt
           ? "connected"
           : stored.apiKey
@@ -143,10 +145,11 @@ export function useApiSettings() {
 
   const setProvider = useCallback((next: AiProvider) => {
     setProviderState(next);
-    setValidatedAt(undefined);
-    setConnectionStatus(apiKey ? "unknown" : "not_set");
-    persist({ provider: next, validatedAt: undefined });
-  }, [apiKey, persist]);
+    const local = next === "ollama";
+    if (local) { setBaseUrlState("http://127.0.0.1:11434/v1"); setModeState("byok"); setConnectionStatus("connected"); }
+    else { setValidatedAt(undefined); setConnectionStatus(apiKey ? "unknown" : "not_set"); }
+    persist({ provider: next, mode: local ? "byok" : mode, baseUrl: local ? "http://127.0.0.1:11434/v1" : baseUrl, validatedAt: local ? new Date().toISOString() : undefined });
+  }, [apiKey, baseUrl, mode, persist]);
   const setBaseUrl = useCallback((value: string) => { setBaseUrlState(value); persist({ baseUrl: value, validatedAt: undefined }); }, [persist]);
   const setModelName = useCallback((value: string) => { setModelNameState(value); persist({ modelName: value }); }, [persist]);
 
@@ -156,6 +159,7 @@ export function useApiSettings() {
   }, []);
 
   const getRequestHeaders = useCallback(() => {
+    if (provider === "ollama") return buildApiHeaders("byok", "", provider, baseUrl || "http://127.0.0.1:11434/v1", modelName);
     if (mode === "byok" && apiKey.trim() && validatedAt) {
       return buildApiHeaders("byok", apiKey, provider, baseUrl, modelName);
     }
@@ -163,6 +167,7 @@ export function useApiSettings() {
   }, [apiKey, baseUrl, mode, modelName, provider, validatedAt]);
 
   const canSendRequests =
+    provider === "ollama" ||
     mode === "free" ||
     (mode === "byok" &&
       apiKey.trim().length > 0 &&

@@ -54,6 +54,8 @@ export interface Conversation {
   projectId?: string;
   /** Explicit user choice to share this conversation summary with Supabase. */
   syncToCloud?: boolean;
+  /** Previous conversations explicitly chosen as the foundation of this chat. */
+  linkedConversationIds?: string[];
 }
 
 export interface Project {

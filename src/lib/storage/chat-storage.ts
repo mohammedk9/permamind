@@ -33,6 +33,7 @@ interface StoredConversation {
   starred?: boolean;
   projectId?: string;
   syncToCloud?: boolean;
+  linkedConversationIds?: string[];
 }
 
 interface StoredProject extends Omit<Project, "createdAt" | "updatedAt"> { createdAt: string; updatedAt: string; }
@@ -106,6 +107,9 @@ function serializeConversation(conversation: Conversation): StoredConversation {
     starred: conversation.starred,
     projectId: conversation.projectId,
     syncToCloud: conversation.syncToCloud,
+    linkedConversationIds: conversation.linkedConversationIds?.length
+      ? conversation.linkedConversationIds
+      : undefined,
   };
 }
 
@@ -134,6 +138,9 @@ function deserializeConversation(stored: StoredConversation): Conversation {
     starred: stored.starred,
     projectId: stored.projectId,
     syncToCloud: stored.syncToCloud,
+    linkedConversationIds: stored.linkedConversationIds?.filter(
+      (id): id is string => typeof id === "string" && id.length > 0 && id !== stored.id,
+    ),
   };
 }
 

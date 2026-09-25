@@ -21,7 +21,7 @@ const navigation = [
 function Navigation({ activeArea, onNavigate, compact = false }: { activeArea: ProductArea; onNavigate: (area: ProductArea) => void; compact?: boolean }) {
   const { locale } = useLocale();
   const labels = locale === "ar" ? { chat: "المحادثة", memory: "الذاكرة", backup: "النسخ الاحتياطي", settings: "الإعدادات" } : { chat: "Chat", memory: "Memory", backup: "Backup", settings: "Settings" };
-  return <nav aria-label="Primary navigation" className="space-y-1">
+  return <nav aria-label="Primary navigation" className="shrink-0 space-y-1">
     {navigation.map(({ id, icon: Icon }) => <Button key={id} variant={activeArea === id ? "secondary" : "ghost"} className={cn("w-full justify-start gap-3 rounded-lg px-3 py-2 text-sm font-medium shadow-sm transition-colors", compact && "justify-center px-2", activeArea === id && "bg-sidebar-accent text-sidebar-accent-foreground")} onClick={() => onNavigate(id)} aria-current={activeArea === id ? "page" : undefined}>
       <Icon className="size-4" /><span className={cn(compact && "sr-only")}>{labels[id]}</span>
     </Button>)}
@@ -54,10 +54,12 @@ export function AppShell({ activeArea, onNavigate, children, utility, sidebar }:
   </Button>;
 
   return <div dir={isRTL ? "rtl" : "ltr"} className="flex h-dvh overflow-hidden bg-background">
-    <aside className="hidden w-52 shrink-0 flex-col border-r bg-sidebar p-3 md:flex lg:w-56">
-      <div className="mb-6 flex items-center gap-2 px-2 font-semibold"><Logo size="xs" withWordmark /></div>
-      <Navigation activeArea={activeArea} onNavigate={onNavigate} />
-      {sidebar}
+    <aside className="hidden h-full min-h-0 w-52 shrink-0 flex-col overflow-hidden border-r bg-sidebar p-3 md:flex lg:w-56">
+      <div className="mb-6 flex shrink-0 items-center gap-2 px-2 font-semibold"><Logo size="xs" withWordmark /></div>
+      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
+        <Navigation activeArea={activeArea} onNavigate={onNavigate} />
+        {sidebar}
+      </div>
       <div className="mt-auto shrink-0 space-y-1.5 border-t border-sidebar-border pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
         <Button type="button" variant="ghost" className="w-full justify-start gap-3 rounded-lg px-3 py-2 text-xs font-medium text-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-2 focus-visible:ring-sidebar-ring/50" onClick={toggleLocale}>{locale === "ar" ? "English" : "العربية"}</Button>
         {utility}
@@ -66,7 +68,7 @@ export function AppShell({ activeArea, onNavigate, children, utility, sidebar }:
     </aside>
     <Sheet>
       <SheetTrigger render={<Button variant="ghost" size="icon" className="fixed left-2 top-2 z-30 md:hidden" aria-label="Open navigation"><Menu className="size-5" /></Button>} />
-      <SheetContent side="left" className="flex w-[min(18rem,calc(100vw-2rem))] flex-col p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]"><div className="mb-5 shrink-0"><Logo size="xs" withWordmark /></div><div className="shrink-0"><Navigation activeArea={activeArea} onNavigate={onNavigate} /></div><div className="mt-auto shrink-0 space-y-1.5 border-t border-border pt-3"><Button type="button" variant="ghost" className="w-full justify-start gap-3 rounded-lg px-3 py-2 text-xs font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:ring-2 focus-visible:ring-ring/50" onClick={toggleLocale}>{locale === "ar" ? "English" : "العربية"}</Button>{utility}<div>{logoutButton}</div></div></SheetContent>
+      <SheetContent side="left" className="flex h-full min-h-0 w-[min(18rem,calc(100vw-2rem))] flex-col overflow-hidden p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]"><div className="mb-5 shrink-0"><Logo size="xs" withWordmark /></div><div className="min-h-0 flex-1 overflow-y-auto"><Navigation activeArea={activeArea} onNavigate={onNavigate} /></div><div className="mt-auto shrink-0 space-y-1.5 border-t border-border pt-3"><Button type="button" variant="ghost" className="w-full justify-start gap-3 rounded-lg px-3 py-2 text-xs font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:ring-2 focus-visible:ring-ring/50" onClick={toggleLocale}>{locale === "ar" ? "English" : "العربية"}</Button>{utility}<div>{logoutButton}</div></div></SheetContent>
     </Sheet>
     <main id="main-content" className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">{children}</main>
   </div>;

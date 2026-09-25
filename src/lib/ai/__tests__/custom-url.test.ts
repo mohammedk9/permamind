@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { assertPublicHttpsUrl, fetchPublicHttps, isSafeCustomUrl, type DnsLookup } from "../request-auth";
+import { assertPublicHttpsUrl, fetchPublicHttps, isLocalOllamaUrl, isSafeCustomUrl, resolveRequestAuth, type DnsLookup } from "../request-auth";
 
 const publicLookup: DnsLookup = async () => [{ address: "8.8.8.8" }];
 
@@ -49,5 +49,15 @@ describe("custom provider URL protection", () => {
     })));
     const response = await fetchPublicHttps(new URL("https://first.example/v1"), { method: "POST" }, publicLookup);
     expect(response.status).toBe(200);
+  });
+
+  it("allows only the local Ollama address and sends no key", () => {
+    expect(isLocalOllamaUrl("http://127.0.0.1:11434/v1")).toBe(true);
+    expect(isLocalOllamaUrl("http://10.0.0.8:11434/v1")).toBe(false);
+    expect(isLocalOllamaUrl("https://127.0.0.1:11434/v1")).toBe(false);
+    const request = new Request("https://app.example/api/chat", { headers: { "x-ai-provider": "ollama", "x-ai-base-url": "http://127.0.0.1:11434/v1", "x-ai-model": "llama3.1" } });
+    expect(resolveRequestAuth(request)).toMatchObject({ provider: "ollama", apiKey: "", baseUrl: "http://127.0.0.1:11434/v1" });
+    const remote = new Request("https://app.example/api/chat", { headers: { "x-ai-provider": "ollama", "x-ai-base-url": "http://10.0.0.8:11434/v1", "x-ai-model": "llama3.1" } });
+    expect(() => resolveRequestAuth(remote)).toThrow(/this device/);
   });
 });
