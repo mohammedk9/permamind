@@ -6,7 +6,6 @@ import {
 import {
   createCustomCompletion,
   createFreeProviderCompletion,
-  createOpenRouterCompletion,
   createProviderCompletion,
   getFreeRoute,
   parseOpenRouterError,
@@ -21,7 +20,7 @@ import type { ChatCompletionMessage } from "@/lib/ai/types";
 import type { Message } from "@/types/chat";
 import { sanitizeUpstreamError } from "@/lib/ai/openrouter";
 import { checkRateLimit } from "@/lib/ai/rate-limit";
-import { reserveAiQuota } from "@/lib/ai/usage-quota";
+import { finalizeAiQuota, releaseAiQuota, reserveAiQuota } from "@/lib/ai/usage-quota";
 
 export const runtime = "nodejs";
 const MAX_MESSAGES = 100;
@@ -60,23 +59,6 @@ export async function POST(request: Request) {
 
   const { messages } = body;
 
-  const quota = await reserveAiQuota("summary", auth.mode === "free");
-  if (!quota.ok) {
-    return Response.json(
-      { error: quota.error },
-      { status: quota.status, headers: quota.retryAfterSeconds ? { "Retry-After": String(quota.retryAfterSeconds) } : undefined }
-    );
-  }
-  if (auth.mode !== "free") {
-    const limiter = checkRateLimit(`byok:summary:${auth.apiKey.slice(-12)}`, BYOK_SUMMARY_REQUESTS_PER_MINUTE);
-    if (!limiter.allowed) {
-      return Response.json(
-        { error: "Too many summary requests. Please slow down." },
-        { status: 429, headers: { "Retry-After": String(limiter.retryAfterSeconds) } }
-      );
-    }
-  }
-
   if (!Array.isArray(messages) || messages.length < 2 || messages.length > MAX_MESSAGES) {
     return Response.json(
       { error: "At least 2 messages required" },
@@ -100,6 +82,25 @@ export async function POST(request: Request) {
     return Response.json({ error: "No content to summarize" }, { status: 400 });
   }
 
+  if (auth.mode !== "free") {
+    const limiter = checkRateLimit(`byok:summary:${auth.apiKey.slice(-12)}`, BYOK_SUMMARY_REQUESTS_PER_MINUTE);
+    if (!limiter.allowed) {
+      return Response.json(
+        { error: "Too many summary requests. Please slow down." },
+        { status: 429, headers: { "Retry-After": String(limiter.retryAfterSeconds) } }
+      );
+    }
+  }
+
+  const quota = await reserveAiQuota("summary", auth.mode === "free");
+  if (!quota.ok) {
+    return Response.json(
+      { error: quota.error },
+      { status: quota.status, headers: quota.retryAfterSeconds ? { "Retry-After": String(quota.retryAfterSeconds) } : undefined }
+    );
+  }
+  const reservationId = quota.reservationId;
+
   const summaryModel = getSummaryModel(auth.mode);
   const modelChain = resolveModelChain(summaryModel, auth.mode);
   const prompt = buildSummaryPrompt(formatted);
@@ -122,6 +123,7 @@ export async function POST(request: Request) {
           }
           continue;
         }
+        await releaseAiQuota(reservationId);
         return Response.json({ error: sanitizeUpstreamError(lastError) }, { status: upstream.status });
       }
 
@@ -138,12 +140,14 @@ export async function POST(request: Request) {
       const parsed = parseSummaryResponse(content);
 
       if (!parsed) {
+        await releaseAiQuota(reservationId);
         return Response.json(
           { error: "Failed to parse summary response" },
           { status: 502 }
         );
       }
 
+      await finalizeAiQuota(reservationId);
       return Response.json({
         ...parsed,
         usage: data.usage ?? null,
@@ -151,8 +155,10 @@ export async function POST(request: Request) {
       });
     }
 
+    await releaseAiQuota(reservationId);
     return Response.json({ error: sanitizeUpstreamError(lastError) }, { status: 502 });
   } catch (err) {
+    await releaseAiQuota(reservationId);
     const message =
       err instanceof Error ? err.message : "Failed to generate summary";
     return Response.json({ error: sanitizeUpstreamError(message) }, { status: 500 });

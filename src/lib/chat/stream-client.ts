@@ -13,7 +13,7 @@ interface StreamChatOptions {
   signal?: AbortSignal;
   onChunk: (text: string) => void;
   onComplete: (usage: TokenUsage) => void;
-  onError: (error: string) => void;
+  onError: (error: string, retryable: boolean) => void;
 }
 
 interface SsePayload {
@@ -74,20 +74,26 @@ export async function streamChatCompletion({
       signal,
     });
   } catch (err) {
-    if (err instanceof Error && err.name === "AbortError") return;
-    onError("Network error. Check your connection and try again.");
+    if (err instanceof Error && err.name === "AbortError") {
+      onError("Generation cancelled", false);
+      return;
+    }
+    onError("Network error. Check your connection and try again.", true);
     return;
   }
 
   if (!response.ok) {
     const data = (await response.json().catch(() => ({}))) as ChatErrorResponse;
-    onError(data.error ?? `Request failed (${response.status})`);
+    onError(
+      data.error ?? `Request failed (${response.status})`,
+      response.status !== 400 && response.status !== 401 && response.status !== 403 && response.status !== 429,
+    );
     return;
   }
 
   const reader = response.body?.getReader();
   if (!reader) {
-    onError("No response stream received");
+    onError("No response stream received", true);
     return;
   }
 
@@ -95,6 +101,7 @@ export async function streamChatCompletion({
   let buffer = "";
   let lastUsage: TokenUsage | null = null;
   let completionText = "";
+  let sawDone = false;
 
   try {
     while (true) {
@@ -108,6 +115,7 @@ export async function streamChatCompletion({
       for (const line of lines) {
         const trimmed = line.trim();
         if (!trimmed) continue;
+        if (trimmed === "data: [DONE]") sawDone = true;
         const { content, usage } = parseSseLine(trimmed, lastUsage);
         if (usage) lastUsage = usage;
         if (content) {
@@ -115,6 +123,11 @@ export async function streamChatCompletion({
           onChunk(content);
         }
       }
+    }
+
+    if (!sawDone) {
+      onError("Stream interrupted", true);
+      return;
     }
 
     const finalUsage =
@@ -132,7 +145,10 @@ export async function streamChatCompletion({
 
     onComplete(finalUsage);
   } catch (err) {
-    if (err instanceof Error && err.name === "AbortError") return;
-    onError(err instanceof Error ? err.message : "Stream interrupted");
+    if (err instanceof Error && err.name === "AbortError") {
+      onError("Generation cancelled", false);
+      return;
+    }
+    onError(err instanceof Error ? err.message : "Stream interrupted", true);
   }
 }

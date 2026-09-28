@@ -186,7 +186,7 @@ export function ChatApp() {
     clearAll: clearAnalytics,
   } = useAnalytics();
 
-  const { model, setModel, isLoading, error, clearError, sendMessage } =
+  const { model, setModel, isLoading, error, canRetry, clearError, sendMessage } =
     useChatCompletion({
       mode,
       defaultModelId,
@@ -210,6 +210,15 @@ export function ChatApp() {
     conversations,
     updateProject,
   );
+
+  const failedRequestRef = useRef<{
+    conversationId: string;
+    messagesForRequest: ChatCompletionMessage[];
+    sources?: Message["sources"];
+    memories: RetrievedMemory[];
+    conversationTitle: string;
+    model: string;
+  } | null>(null);
 
   const backfillDone = useRef(false);
 
@@ -268,14 +277,18 @@ export function ChatApp() {
   );
 
   const handleSend = useCallback(
-    async (content: string, displayContent?: string) => {
+    async (
+      content: string,
+      displayContent?: string,
+      options?: { conversationId?: string; baseMessages?: Message[] },
+    ) => {
       if (!canSendRequests) {
         clearError();
         return;
       }
       clearError();
 
-      let conversationId = activeId;
+      let conversationId = options?.conversationId ?? activeId;
 
       if (!conversationId) {
         const conversation = createAndSelect(truncateTitle(content));
@@ -304,11 +317,9 @@ export function ChatApp() {
         isStreaming: true,
       };
 
-      const priorMessages =
+      const priorMessages = options?.baseMessages ??
         conversations.find((c) => c.id === conversationId)?.messages ??
-        (activeConversation?.id === conversationId
-          ? activeConversation.messages
-          : []);
+        (activeConversation?.id === conversationId ? activeConversation.messages : []);
 
       const previousConversationQuery = isPreviousConversationQuery(visibleContent);
       const records = activeMemoryRecords();
@@ -361,7 +372,7 @@ export function ChatApp() {
         return {
           ...c,
           title,
-          messages: [...c.messages, userMessage, assistantMessage],
+          messages: [...(options?.baseMessages ?? c.messages), userMessage, assistantMessage],
           updatedAt: new Date(),
         };
       });
@@ -378,18 +389,26 @@ export function ChatApp() {
         }));
       });
 
+      if (!result.success) {
+        // Keep the user's original message for retry, but never persist a
+        // placeholder/partial assistant message as if generation succeeded.
+        updateConversation(conversationId, (c) => ({
+          ...c,
+          messages: c.messages.filter((m) => m.id !== assistantMessage.id),
+          updatedAt: new Date(),
+        }));
+        failedRequestRef.current = result.retryable
+          ? { conversationId, messagesForRequest, sources, memories, conversationTitle, model }
+          : null;
+        return;
+      }
+
+      failedRequestRef.current = null;
       updateConversation(conversationId, (c) => ({
         ...c,
         messages: c.messages.map((m) =>
           m.id === assistantMessage.id
-            ? {
-                ...m,
-                isStreaming: false,
-                content: result.success
-                  ? m.content
-                  : m.content || "No response received.",
-                sources,
-              }
+            ? { ...m, isStreaming: false, sources }
             : m
         ),
         updatedAt: new Date(),
@@ -436,8 +455,86 @@ export function ChatApp() {
       projects,
       activeProjectId,
       semanticVectors,
+      provider,
     ]
   );
+
+  const handleResend = useCallback(
+    (message: Message) => {
+      if (isLoading || message.role !== "user" || !activeId) return;
+      const conversation = getConversation(activeId);
+      if (!conversation) return;
+      const messageIndex = conversation.messages.findIndex((item) => item.id === message.id);
+      if (messageIndex < 0) return;
+
+      void handleSend(message.content, message.content, {
+        conversationId: activeId,
+        baseMessages: conversation.messages.slice(0, messageIndex),
+      });
+    },
+    [activeId, getConversation, handleSend, isLoading],
+  );
+
+  const handleRetry = useCallback(async () => {
+    const failed = failedRequestRef.current;
+    if (!failed || isLoading) return;
+
+    clearError();
+    const assistantMessage: Message = {
+      id: createId(),
+      role: "assistant",
+      content: "",
+      createdAt: new Date(),
+      isStreaming: true,
+    };
+    updateConversation(failed.conversationId, (conversation) => ({
+      ...conversation,
+      messages: [...conversation.messages, assistantMessage],
+      updatedAt: new Date(),
+    }));
+
+    const result = await sendMessage(failed.messagesForRequest, (chunk) => {
+      updateConversation(failed.conversationId, (conversation) => ({
+        ...conversation,
+        messages: conversation.messages.map((message) => message.id === assistantMessage.id
+          ? { ...message, content: message.content + chunk }
+          : message),
+        updatedAt: new Date(),
+      }));
+    });
+
+    if (!result.success) {
+      updateConversation(failed.conversationId, (conversation) => ({
+        ...conversation,
+        messages: conversation.messages.filter((message) => message.id !== assistantMessage.id),
+        updatedAt: new Date(),
+      }));
+      failedRequestRef.current = result.retryable ? failed : null;
+      return;
+    }
+
+    failedRequestRef.current = null;
+    updateConversation(failed.conversationId, (conversation) => ({
+      ...conversation,
+      messages: conversation.messages.map((message) => message.id === assistantMessage.id
+        ? { ...message, isStreaming: false, sources: failed.sources }
+        : message),
+      updatedAt: new Date(),
+    }));
+    if (result.usage) {
+      recordChat({
+        model: failed.model,
+        conversationId: failed.conversationId,
+        conversationTitle: failed.conversationTitle,
+        usage: result.usage,
+        memories: failed.memories,
+      });
+      queueSummary(failed.conversationId);
+    }
+    window.setTimeout(() => {
+      void snapshot.triggerSnapshot();
+    }, SNAPSHOT_AFTER_RESPONSE_DELAY_MS);
+  }, [clearError, isLoading, queueSummary, recordChat, sendMessage, snapshot, updateConversation]);
 
   const apiBlockedMessage = !canSendRequests
     ? "Connect an AI provider in Settings to send messages."
@@ -493,6 +590,8 @@ export function ChatApp() {
           isLoading={isLoading}
           error={error ?? apiBlockedMessage}
           onDismissError={clearError}
+          onRetry={canRetry ? handleRetry : undefined}
+          onResend={handleResend}
           memoriesUsed={memoriesUsed}
           onOpenMemory={handleSelect}
           analyticsSummary={analyticsSummary}

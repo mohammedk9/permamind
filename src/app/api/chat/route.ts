@@ -14,7 +14,8 @@ import {
 } from "@/lib/ai/route-models";
 import type { ChatCompletionMessage, ChatRequestBody } from "@/lib/ai/types";
 import { checkRateLimit } from "@/lib/ai/rate-limit";
-import { reserveAiQuota } from "@/lib/ai/usage-quota";
+import { createQuotaStream } from "@/lib/ai/quota-stream";
+import { releaseAiQuota, reserveAiQuota } from "@/lib/ai/usage-quota";
 
 export const runtime = "nodejs";
 const MAX_MESSAGES = 100;
@@ -49,29 +50,12 @@ export async function POST(request: Request) {
 
   const { model, messages } = body;
 
-    let auth;
+  let auth;
   try {
     auth = resolveRequestAuth(request);
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unauthorized";
     return Response.json({ error: message }, { status: 401 });
-  }
-
-  const quota = await reserveAiQuota("chat", auth.mode === "free");
-  if (!quota.ok) {
-    return Response.json(
-      { error: quota.error },
-      { status: quota.status, headers: quota.retryAfterSeconds ? { "Retry-After": String(quota.retryAfterSeconds) } : undefined }
-    );
-  }
-  if (auth.mode !== "free") {
-    const limiter = checkRateLimit(`byok:${auth.apiKey.slice(-12)}`, BYOK_CHAT_REQUESTS_PER_MINUTE);
-    if (!limiter.allowed) {
-      return Response.json(
-        { error: "Too many requests. Please slow down." },
-        { status: 429, headers: { "Retry-After": String(limiter.retryAfterSeconds) } }
-      );
-    }
   }
 
   const customByokModel = auth.mode === "byok" && auth.provider !== "custom" ? auth.modelName?.trim() : undefined;
@@ -95,6 +79,25 @@ export async function POST(request: Request) {
   if (!messages.every(isValidMessage)) {
     return Response.json({ error: "Invalid message format" }, { status: 400 });
   }
+
+  if (auth.mode !== "free") {
+    const limiter = checkRateLimit(`byok:${auth.apiKey.slice(-12)}`, BYOK_CHAT_REQUESTS_PER_MINUTE);
+    if (!limiter.allowed) {
+      return Response.json(
+        { error: "Too many requests. Please slow down." },
+        { status: 429, headers: { "Retry-After": String(limiter.retryAfterSeconds) } }
+      );
+    }
+  }
+
+  const quota = await reserveAiQuota("chat", auth.mode === "free");
+  if (!quota.ok) {
+    return Response.json(
+      { error: quota.error },
+      { status: quota.status, headers: quota.retryAfterSeconds ? { "Retry-After": String(quota.retryAfterSeconds) } : undefined }
+    );
+  }
+  const reservationId = quota.reservationId;
 
   const modelChain = customByokModel ? [customByokModel] : resolveModelChain(model, auth.mode);
   let lastError = "All models unavailable";
@@ -121,12 +124,13 @@ export async function POST(request: Request) {
         if (tryModel !== model) {
           headers["X-Resolved-Model"] = tryModel;
         }
-        return new Response(upstream.body, { headers });
+        return new Response(createQuotaStream(upstream.body, reservationId), { headers });
       }
 
       lastError = await parseOpenRouterError(upstream);
 
       if (auth.mode === "byok" || (!isModelUnavailableError(upstream.status, lastError) && tryModel === modelChain.at(-1))) {
+        await releaseAiQuota(reservationId);
         return Response.json({ error: sanitizeUpstreamError(lastError) }, { status: upstream.status });
       }
       if (shouldDelayBeforeFallback(upstream.status)) {
@@ -134,8 +138,10 @@ export async function POST(request: Request) {
       }
     }
 
+    await releaseAiQuota(reservationId);
     return Response.json({ error: sanitizeUpstreamError(lastError) }, { status: 502 });
   } catch (err) {
+    await releaseAiQuota(reservationId);
     const message =
       err instanceof Error ? err.message : "Failed to reach OpenRouter";
     return Response.json({ error: sanitizeUpstreamError(message) }, { status: 500 });

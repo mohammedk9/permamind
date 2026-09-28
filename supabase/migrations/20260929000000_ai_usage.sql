@@ -1,9 +1,7 @@
--- Durable daily quotas for the shared free AI key. Apply in the Supabase SQL editor.
--- The in-process limiter remains only a burst guard and is not the daily quota.
---
--- A request is first recorded as a pending reservation. The daily counter is
--- incremented only by finalize_ai_request, so provider failures and cancelled
--- streams do not spend the user's allowance.
+-- Additive, idempotent migration for the shared free AI allowance.
+-- This migration intentionally touches only the AI usage tables and RPCs.
+-- It does not alter profiles, search_usage_monthly, storage_purchases, or any
+-- other legacy user-data table.
 
 create table if not exists public.ai_usage_daily (
   day_key date not null,
@@ -39,7 +37,6 @@ grant select on public.ai_usage_daily to authenticated;
 alter table public.ai_usage_reservations enable row level security;
 revoke all on public.ai_usage_reservations from anon, authenticated;
 
-drop function if exists public.reserve_ai_request(uuid, text, integer);
 create or replace function public.reserve_ai_request(
   p_user_id uuid,
   p_kind text,
@@ -55,33 +52,32 @@ begin
   if auth.uid() is null or auth.uid() <> p_user_id then
     raise exception 'not authorized';
   end if;
-  -- Keep the policy in the database as well as in the server code. The RPC is
-  -- executable by authenticated users, so accepting an arbitrary client limit
-  -- would let a caller bypass the ten-request allowance.
+
+  -- Both free allowance kinds are ten per UTC day. Keep this invariant in the
+  -- database because authenticated clients can call an exposed RPC directly.
   if p_kind not in ('chat', 'summary') or p_limit <> 10 then
     raise exception 'invalid quota request';
   end if;
 
-  insert into ai_usage_daily(day_key, user_id)
+  insert into public.ai_usage_daily(day_key, user_id)
     values (v_day, p_user_id)
     on conflict (day_key, user_id) do nothing;
 
   if p_kind = 'chat' then
     select chat_count into v_used
-      from ai_usage_daily
-      where day_key = v_day and user_id = p_user_id
-      for update;
+      from public.ai_usage_daily
+     where day_key = v_day and user_id = p_user_id
+     for update;
   else
     select summary_count into v_used
-      from ai_usage_daily
-      where day_key = v_day and user_id = p_user_id
-      for update;
+      from public.ai_usage_daily
+     where day_key = v_day and user_id = p_user_id
+     for update;
   end if;
 
-  -- A crashed request cannot call release. Expired pending rows are therefore
-  -- returned to the available pool before checking the limit again. The daily
-  -- row is already locked above, matching finalize/release lock ordering.
-  update ai_usage_reservations
+  -- A crashed request cannot call release. Expired reservations are returned
+  -- to the available pool while the daily row is locked.
+  update public.ai_usage_reservations
      set status = 'released', completed_at = now()
    where user_id = p_user_id
      and day_key = v_day
@@ -89,7 +85,7 @@ begin
      and expires_at <= now();
 
   select count(*)::integer into v_pending
-    from ai_usage_reservations
+    from public.ai_usage_reservations
    where day_key = v_day
      and user_id = p_user_id
      and kind = p_kind
@@ -101,7 +97,7 @@ begin
     return;
   end if;
 
-  insert into ai_usage_reservations(day_key, user_id, kind)
+  insert into public.ai_usage_reservations(day_key, user_id, kind)
     values (v_day, p_user_id, p_kind)
     returning reservation_id into v_reservation_id;
 
@@ -124,7 +120,7 @@ declare
 begin
   select user_id, day_key, kind, status, expires_at
     into v_user_id, v_day, v_kind, v_status, v_expires_at
-    from ai_usage_reservations
+    from public.ai_usage_reservations
    where reservation_id = p_reservation_id;
 
   if not found then return false; end if;
@@ -133,32 +129,35 @@ begin
   end if;
   if v_status <> 'pending' then return false; end if;
 
-  -- Keep the lock order identical to reserve/release: daily row first, then
-  -- reservation row. This preserves atomicity without deadlocking concurrent
-  -- requests for the same user and UTC day.
-  perform 1 from ai_usage_daily where day_key = v_day and user_id = v_user_id for update;
+  -- Reserve, finalize, and release all lock the daily row before the
+  -- reservation row. This prevents concurrent finalization from double count.
+  perform 1 from public.ai_usage_daily
+   where day_key = v_day and user_id = v_user_id
+   for update;
   select status, expires_at into v_status, v_expires_at
-    from ai_usage_reservations where reservation_id = p_reservation_id for update;
+    from public.ai_usage_reservations
+   where reservation_id = p_reservation_id
+   for update;
   if v_status <> 'pending' then return false; end if;
 
   if v_expires_at <= now() then
-    update ai_usage_reservations
+    update public.ai_usage_reservations
        set status = 'released', completed_at = now()
      where reservation_id = p_reservation_id;
     return false;
   end if;
 
   if v_kind = 'chat' then
-    update ai_usage_daily
+    update public.ai_usage_daily
        set chat_count = chat_count + 1, updated_at = now()
      where day_key = v_day and user_id = v_user_id;
   else
-    update ai_usage_daily
+    update public.ai_usage_daily
        set summary_count = summary_count + 1, updated_at = now()
      where day_key = v_day and user_id = v_user_id;
   end if;
 
-  update ai_usage_reservations
+  update public.ai_usage_reservations
      set status = 'finalized', completed_at = now()
    where reservation_id = p_reservation_id;
   return true;
@@ -178,7 +177,7 @@ declare
 begin
   select user_id, day_key, status
     into v_user_id, v_day, v_status
-    from ai_usage_reservations
+    from public.ai_usage_reservations
    where reservation_id = p_reservation_id;
 
   if not found then return false; end if;
@@ -187,10 +186,13 @@ begin
   end if;
   if v_status <> 'pending' then return false; end if;
 
-  perform 1 from ai_usage_daily where day_key = v_day and user_id = v_user_id for update;
-  update ai_usage_reservations
+  perform 1 from public.ai_usage_daily
+   where day_key = v_day and user_id = v_user_id
+   for update;
+  update public.ai_usage_reservations
      set status = 'released', completed_at = now()
-   where reservation_id = p_reservation_id and status = 'pending';
+   where reservation_id = p_reservation_id
+     and status = 'pending';
   return found;
 end; $$;
 

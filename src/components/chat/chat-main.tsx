@@ -45,6 +45,8 @@ interface ChatMainProps {
   isLoading: boolean;
   error: string | null;
   onDismissError: () => void;
+  onRetry?: () => void;
+  onResend?: (message: import("@/types/chat").Message) => void;
   canSend?: boolean;
   apiKey?: string;
   connectionStatus?: ConnectionStatus;
@@ -82,6 +84,8 @@ export function ChatMain({
   isLoading,
   error,
   onDismissError,
+  onRetry,
+  onResend,
   canSend = true,
   apiKey = "",
   connectionStatus = "unknown",
@@ -163,7 +167,7 @@ export function ChatMain({
       />
 
       {error && (
-        <ChatErrorBanner message={error} onDismiss={onDismissError} />
+        <ChatErrorBanner message={error} onDismiss={onDismissError} onRetry={onRetry} />
       )}
 
       <ScrollArea aria-label={ar ? "رسائل المحادثة" : "Conversation messages"} className="min-h-0 flex-1 overflow-hidden [scrollbar-gutter:stable]">
@@ -196,7 +200,7 @@ export function ChatMain({
         ) : (
             <div className="mx-auto max-w-3xl space-y-3 px-2 py-4 sm:px-4" aria-live={isLoading ? "polite" : undefined} aria-busy={isLoading}>
             {messages.map((message) => (
-              <ChatMessage key={message.id} message={message} />
+              <ChatMessage key={message.id} message={message} isLoading={isLoading} onResend={onResend} />
             ))}
             <div ref={bottomRef} />
           </div>

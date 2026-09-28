@@ -11,6 +11,7 @@ import type { TokenUsage } from "@/types/analytics";
 export interface SendMessageResult {
   success: boolean;
   usage: TokenUsage | null;
+  retryable: boolean;
 }
 
 interface UseChatCompletionOptions {
@@ -27,7 +28,9 @@ export function useChatCompletion({
   const [model, setModel] = useState(defaultModelId);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [canRetry, setCanRetry] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
+  const requestIdRef = useRef(0);
 
   useEffect(() => {
     setModel((current) =>
@@ -43,9 +46,11 @@ export function useChatCompletion({
       abortRef.current?.abort();
       const controller = new AbortController();
       abortRef.current = controller;
+      const requestId = ++requestIdRef.current;
 
       setIsLoading(true);
       setError(null);
+      setCanRetry(false);
 
       return new Promise((resolve) => {
         let usage: TokenUsage | null = null;
@@ -58,15 +63,25 @@ export function useChatCompletion({
           onChunk,
           onComplete: (u) => {
             usage = u;
+            if (requestId !== requestIdRef.current) {
+              resolve({ success: false, usage: null, retryable: false });
+              return;
+            }
             setIsLoading(false);
             abortRef.current = null;
-            resolve({ success: true, usage });
+            setCanRetry(false);
+            resolve({ success: true, usage, retryable: false });
           },
-          onError: (message) => {
+          onError: (message, retryable) => {
+            if (requestId !== requestIdRef.current) {
+              resolve({ success: false, usage: null, retryable: false });
+              return;
+            }
             setIsLoading(false);
-            setError(message);
+            if (!controller.signal.aborted) setError(message);
+            setCanRetry(retryable && !controller.signal.aborted);
             abortRef.current = null;
-            resolve({ success: false, usage: null });
+            resolve({ success: false, usage: null, retryable });
           },
         });
       });
@@ -74,13 +89,17 @@ export function useChatCompletion({
     [getRequestHeaders, model]
   );
 
-  const clearError = useCallback(() => setError(null), []);
+  const clearError = useCallback(() => {
+    setError(null);
+    setCanRetry(false);
+  }, []);
 
   return {
     model,
     setModel,
     isLoading,
     error,
+    canRetry,
     clearError,
     sendMessage,
   };

@@ -1,6 +1,7 @@
 "use client";
 
-import { Bot, Loader2 } from "lucide-react";
+import { Bot, Check, Copy, Loader2, RotateCcw } from "lucide-react";
+import { useState } from "react";
 
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { formatMessageTime } from "@/lib/format/date";
@@ -9,11 +10,52 @@ import type { Message } from "@/types/chat";
 
 interface ChatMessageProps {
   message: Message;
+  isLoading?: boolean;
+  onResend?: (message: Message) => void;
 }
 
-export function ChatMessage({ message }: ChatMessageProps) {
+async function copyMessageText(text: string): Promise<boolean> {
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text);
+      return true;
+    }
+  } catch {
+    // Fall through to the legacy copy path for browsers without permission
+    // for the asynchronous Clipboard API.
+  }
+
+  const textarea = document.createElement("textarea");
+  textarea.value = text;
+  textarea.setAttribute("readonly", "true");
+  textarea.style.position = "fixed";
+  textarea.style.opacity = "0";
+  document.body.appendChild(textarea);
+  textarea.select();
+  let copied = false;
+  try {
+    copied = document.execCommand("copy");
+  } catch {
+    copied = false;
+  } finally {
+    textarea.remove();
+  }
+  return copied;
+}
+
+export function ChatMessage({ message, isLoading = false, onResend }: ChatMessageProps) {
   const isUser = message.role === "user";
   const isThinking = message.isStreaming && !message.content;
+  const [copied, setCopied] = useState(false);
+  const canAct = !message.isStreaming && Boolean(message.content.trim());
+
+  const handleCopy = async () => {
+    if (!canAct) return;
+    const didCopy = await copyMessageText(message.content);
+    if (!didCopy) return;
+    setCopied(true);
+    window.setTimeout(() => setCopied(false), 1600);
+  };
 
   return (
     <div
@@ -70,6 +112,31 @@ export function ChatMessage({ message }: ChatMessageProps) {
             </div>
           )}
         </div>
+        {canAct && (
+          <div className={cn("flex items-center gap-1 px-1", isUser ? "justify-end" : "justify-start")}>
+            <button
+              type="button"
+              onClick={() => void handleCopy()}
+              className="inline-flex items-center gap-1 rounded-md px-1.5 py-1 text-[11px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              aria-label={copied ? "Message copied" : "Copy message"}
+            >
+              {copied ? <Check className="size-3" /> : <Copy className="size-3" />}
+              <span>{copied ? "Copied" : "Copy"}</span>
+            </button>
+            {isUser && onResend && (
+              <button
+                type="button"
+                onClick={() => onResend(message)}
+                disabled={isLoading}
+                className="inline-flex items-center gap-1 rounded-md px-1.5 py-1 text-[11px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
+                aria-label="Resend message"
+              >
+                <RotateCcw className="size-3" />
+                <span>Resend</span>
+              </button>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );
