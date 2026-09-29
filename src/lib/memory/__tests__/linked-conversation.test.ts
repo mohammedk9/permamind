@@ -33,6 +33,55 @@ describe("optional linked conversations", () => {
 
   it("sends normally when no conversation is linked", () => {
     const messages = buildMessagesWithMemory([{ role: "user", content: "hello" }], [], false, "", [], "");
-    expect(messages).toEqual([{ role: "user", content: "hello" }]);
+    // The only system message is the reply-language rule, which is required
+    // even with no memory so the first message of a new conversation still
+    // answers in the user's language. No linked-conversation context may leak
+    // in, and the user's own message must be passed through untouched.
+    expect(messages).toHaveLength(2);
+    expect(messages[0].role).toBe("system");
+    expect(messages[0].content).not.toContain("Linked conversation");
+    expect(messages[0].content).not.toContain("Retrieved memories");
+    expect(messages[1]).toEqual({ role: "user", content: "hello" });
+  });
+
+  it("keeps the user's original message and never duplicates it", () => {
+    const messages = buildMessagesWithMemory(
+      [{ role: "system", content: "stale" }, { role: "user", content: "مرحبا" }],
+      [],
+      false,
+      "",
+      [],
+      ""
+    );
+    expect(messages.filter((message) => message.role === "user")).toEqual([
+      { role: "user", content: "مرحبا" },
+    ]);
+    expect(messages[0].role).toBe("system");
+    expect(messages[0].content).not.toContain("stale");
+  });
+
+  it("asks for an Arabic reply when the latest user message is Arabic", () => {
+    const messages = buildMessagesWithMemory([{ role: "user", content: "ما رأيك في البيتكوين؟" }], [], false, "", [], "");
+    // The rule names the required language first, then names the forbidden one.
+    expect(messages[0].content).toMatch(/^Always write your reply in Arabic/);
+    expect(messages[0].content).toContain("Never switch to English");
+  });
+
+  it("asks for an English reply when the latest user message is English", () => {
+    const messages = buildMessagesWithMemory([{ role: "user", content: "what do you think of bitcoin?" }], [], false, "", [], "");
+    expect(messages[0].content).toMatch(/^Always write your reply in English/);
+    expect(messages[0].content).toContain("Never switch to Arabic");
+  });
+
+  it("keeps Arabic as the reply language when a few English words are mixed in", () => {
+    const messages = buildMessagesWithMemory(
+      [{ role: "user", content: "ما رأيك في مشروع Atlas الجديد؟" }],
+      [],
+      false,
+      "",
+      [],
+      ""
+    );
+    expect(messages[0].content).toMatch(/^Always write your reply in Arabic/);
   });
 });

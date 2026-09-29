@@ -7,6 +7,33 @@ const MAX_CONTEXT_CHARS = 1600;
 const MAX_MEMORY_EXCERPT_CHARS = 420;
 const MAX_STRUCTURED_CHARS = 1400;
 
+/**
+ * Every system prompt in this project is written in English. Without an
+ * explicit instruction the model follows the language of the instructions
+ * rather than the language of the user's message, so an Arabic question
+ * receives an English answer. Detect the script of the latest user message and
+ * state the required reply language explicitly.
+ */
+export function detectReplyLanguage(messages: ChatCompletionMessage[]): "ar" | "en" {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const message = messages[i];
+    if (message.role !== "user" || !message.content.trim()) continue;
+    const arabic = message.content.match(/[\u0600-\u06FF\u0750-\u077F\uFB50-\uFDFF\uFE70-\uFEFF]/g);
+    const latin = message.content.match(/[A-Za-z]/g);
+    // Mixed input (Arabic plus a technical term) is decided by which script
+    // actually dominates, so a single English word does not flip the answer.
+    if (arabic && arabic.length >= (latin?.length ?? 0)) return "ar";
+    return "en";
+  }
+  return "en";
+}
+
+export function replyLanguageInstruction(messages: ChatCompletionMessage[]): string {
+  return detectReplyLanguage(messages) === "ar"
+    ? "Always write your reply in Arabic, matching the language the user is writing in. Never switch to English, even though these instructions and the stored memories may be in English."
+    : "Always write your reply in English, matching the language the user is writing in. Never switch to Arabic, even though these instructions and the stored memories may be in Arabic.";
+}
+
 function formatMemoryBlock(memory: RetrievedMemory, index: number): string {
   const when = formatConversationTime(memory.updatedAt);
   const source =
@@ -107,9 +134,14 @@ export function buildMessagesWithMemory(
     ? `The user explicitly linked these previous conversations as the foundation of this chat. Treat them as primary context, then use the automatic memory below for anything else relevant:\n${linkedContext.trim()}`
     : "";
   const systemPrompt = [projectContext, linkedPrompt, structuredPrompt, memoryPrompt].filter(Boolean).join("\n\n");
-  if (!systemPrompt) return messages;
-
   const withoutSystem = messages.filter((m) => m.role !== "system");
 
-  return [{ role: "system", content: systemPrompt }, ...withoutSystem];
+  // The language rule is always present, even with no memory: without it the
+  // model answers in the language of these English instructions.
+  const languageRule = replyLanguageInstruction(withoutSystem);
+  if (!systemPrompt) {
+    return [{ role: "system", content: languageRule }, ...withoutSystem];
+  }
+
+  return [{ role: "system", content: `${languageRule}\n\n${systemPrompt}` }, ...withoutSystem];
 }

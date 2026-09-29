@@ -95,7 +95,7 @@ export async function POST(request: Request) {
   const quota = await reserveAiQuota("summary", auth.mode === "free");
   if (!quota.ok) {
     return Response.json(
-      { error: quota.error },
+      { error: quota.error, code: quota.code, limit: quota.limit },
       { status: quota.status, headers: quota.retryAfterSeconds ? { "Retry-After": String(quota.retryAfterSeconds) } : undefined }
     );
   }

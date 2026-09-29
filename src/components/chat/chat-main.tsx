@@ -5,6 +5,7 @@ import { useEffect, useRef } from "react";
 
 import { ConversationMetadataBar } from "@/components/chat/conversation-metadata";
 import { ChatErrorBanner } from "@/components/chat/chat-error-banner";
+import type { ChatError } from "@/hooks/use-chat-completion";
 import { ChatInput } from "@/components/chat/chat-input";
 import { ChatMessage } from "@/components/chat/chat-message";
 import { Button } from "@/components/ui/button";
@@ -43,7 +44,7 @@ interface ChatMainProps {
   onModelChange: (model: string) => void;
   mode: ApiKeyMode;
   isLoading: boolean;
-  error: string | null;
+  error: ChatError | null;
   onDismissError: () => void;
   onRetry?: () => void;
   onResend?: (message: import("@/types/chat").Message) => void;
@@ -167,7 +168,13 @@ export function ChatMain({
       />
 
       {error && (
-        <ChatErrorBanner message={error} onDismiss={onDismissError} onRetry={onRetry} />
+        <ChatErrorBanner
+          message={error.message}
+          code={error.code}
+          limit={error.limit}
+          onDismiss={onDismissError}
+          onRetry={onRetry}
+        />
       )}
 
       <ScrollArea aria-label={ar ? "رسائل المحادثة" : "Conversation messages"} className="min-h-0 flex-1 overflow-hidden [scrollbar-gutter:stable]">

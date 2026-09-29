@@ -69,8 +69,10 @@ export function createQuotaStream(
         if (cancelled || sawProviderError || !sawDone) {
           await release();
           if (!cancelled && !sawProviderError) {
+            // Include the code so the client can render a localized message
+            // instead of showing this English sentence verbatim.
             const errorEvent = new TextEncoder().encode(
-              'data: {"error":{"message":"Stream interrupted"}}\n\n',
+              'data: {"error":{"message":"Stream interrupted","code":"STREAM_INTERRUPTED"}}\n\n',
             );
             controller.enqueue(errorEvent);
           }

@@ -1,4 +1,5 @@
 import type { ChatCompletionMessage, ChatErrorResponse } from "@/lib/ai/types";
+import { isErrorCode, type ErrorCode } from "@/lib/i18n/error-messages";
 import {
   estimateTokensFromMessages,
   estimateTokensFromText,
@@ -13,7 +14,7 @@ interface StreamChatOptions {
   signal?: AbortSignal;
   onChunk: (text: string) => void;
   onComplete: (usage: TokenUsage) => void;
-  onError: (error: string, retryable: boolean) => void;
+  onError: (error: string, retryable: boolean, code?: ErrorCode, limit?: number) => void;
 }
 
 interface SsePayload {
@@ -23,7 +24,15 @@ interface SsePayload {
     completion_tokens?: number;
     total_tokens?: number;
   };
-  error?: { message?: string };
+  error?: { message?: string; code?: string };
+}
+
+/** Carries the provider/quota code out of the SSE payload for translation. */
+class SseProviderError extends Error {
+  constructor(message: string, readonly code?: ErrorCode) {
+    super(message);
+    this.name = "SseProviderError";
+  }
 }
 
 function parseSseLine(
@@ -41,7 +50,10 @@ function parseSseLine(
   try {
     const parsed = JSON.parse(data) as SsePayload;
     if (parsed.error?.message) {
-      throw new Error(parsed.error.message);
+      throw new SseProviderError(
+        parsed.error.message,
+        isErrorCode(parsed.error.code) ? parsed.error.code : "PROVIDER_ERROR",
+      );
     }
 
     const usage = usageFromOpenRouter(parsed.usage) ?? lastUsage;
@@ -75,10 +87,10 @@ export async function streamChatCompletion({
     });
   } catch (err) {
     if (err instanceof Error && err.name === "AbortError") {
-      onError("Generation cancelled", false);
+      onError("Generation cancelled", false, "CANCELLED");
       return;
     }
-    onError("Network error. Check your connection and try again.", true);
+    onError("Network error. Check your connection and try again.", true, "NETWORK_ERROR");
     return;
   }
 
@@ -87,13 +99,17 @@ export async function streamChatCompletion({
     onError(
       data.error ?? `Request failed (${response.status})`,
       response.status !== 400 && response.status !== 401 && response.status !== 403 && response.status !== 429,
+      // A 4xx from our own quota/auth layer carries a code we can translate. A
+      // provider failure does not, so it falls back to the upstream text.
+      data.code ?? "PROVIDER_ERROR",
+      data.limit,
     );
     return;
   }
 
   const reader = response.body?.getReader();
   if (!reader) {
-    onError("No response stream received", true);
+    onError("No response stream received", true, "STREAM_UNAVAILABLE");
     return;
   }
 
@@ -126,7 +142,7 @@ export async function streamChatCompletion({
     }
 
     if (!sawDone) {
-      onError("Stream interrupted", true);
+      onError("Stream interrupted", true, "STREAM_INTERRUPTED");
       return;
     }
 
@@ -146,9 +162,13 @@ export async function streamChatCompletion({
     onComplete(finalUsage);
   } catch (err) {
     if (err instanceof Error && err.name === "AbortError") {
-      onError("Generation cancelled", false);
+      onError("Generation cancelled", false, "CANCELLED");
       return;
     }
-    onError(err instanceof Error ? err.message : "Stream interrupted", true);
+    if (err instanceof SseProviderError) {
+      onError(err.message, true, err.code);
+      return;
+    }
+    onError(err instanceof Error ? err.message : "Stream interrupted", true, "STREAM_INTERRUPTED");
   }
 }

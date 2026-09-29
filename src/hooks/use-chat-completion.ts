@@ -6,12 +6,23 @@ import { streamChatCompletion } from "@/lib/chat/stream-client";
 import { isValidModelId } from "@/lib/ai/models";
 import type { ChatCompletionMessage } from "@/lib/ai/types";
 import type { ApiKeyMode } from "@/lib/settings/api-key-storage";
+import type { ErrorCode } from "@/lib/i18n/error-messages";
 import type { TokenUsage } from "@/types/analytics";
 
 export interface SendMessageResult {
   success: boolean;
   usage: TokenUsage | null;
   retryable: boolean;
+}
+
+/**
+ * A failure plus the language-neutral code needed to render it. The message is
+ * the English fallback shown only when the code cannot be resolved.
+ */
+export interface ChatError {
+  message: string;
+  code?: ErrorCode;
+  limit?: number;
 }
 
 interface UseChatCompletionOptions {
@@ -27,7 +38,7 @@ export function useChatCompletion({
 }: UseChatCompletionOptions) {
   const [model, setModel] = useState(defaultModelId);
   const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<ChatError | null>(null);
   const [canRetry, setCanRetry] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
   const requestIdRef = useRef(0);
@@ -72,13 +83,13 @@ export function useChatCompletion({
             setCanRetry(false);
             resolve({ success: true, usage, retryable: false });
           },
-          onError: (message, retryable) => {
+          onError: (message, retryable, code, limit) => {
             if (requestId !== requestIdRef.current) {
               resolve({ success: false, usage: null, retryable: false });
               return;
             }
             setIsLoading(false);
-            if (!controller.signal.aborted) setError(message);
+            if (!controller.signal.aborted) setError({ message, code, limit });
             setCanRetry(retryable && !controller.signal.aborted);
             abortRef.current = null;
             resolve({ success: false, usage: null, retryable });

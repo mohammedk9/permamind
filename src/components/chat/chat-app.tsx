@@ -536,8 +536,12 @@ export function ChatApp() {
     }, SNAPSHOT_AFTER_RESPONSE_DELAY_MS);
   }, [clearError, isLoading, queueSummary, recordChat, sendMessage, snapshot, updateConversation]);
 
-  const apiBlockedMessage = !canSendRequests
-    ? "Connect an AI provider in Settings to send messages."
+  const apiBlockedError = !canSendRequests
+    ? {
+        // English fallback; PROVIDER_ERROR carries the localized copy.
+        message: "Connect an AI provider in Settings to send messages.",
+        code: "PROVIDER_ERROR" as const,
+      }
     : null;
 
   if (!isHydrated || !apiHydrated) {
@@ -588,7 +592,7 @@ export function ChatApp() {
           onModelChange={setModel}
           mode={mode}
           isLoading={isLoading}
-          error={error ?? apiBlockedMessage}
+          error={error ?? apiBlockedError}
           onDismissError={clearError}
           onRetry={canRetry ? handleRetry : undefined}
           onResend={handleResend}

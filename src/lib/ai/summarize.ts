@@ -37,13 +37,28 @@ export function formatConversationForSummary(messages: Message[]): string {
   return text.trim();
 }
 
+/**
+ * Arabic-script detection used to keep extracted memory in the language the
+ * user actually wrote in. Without this the model follows the language of these
+ * English instructions and returns English summaries, which then surface as
+ * foreign text inside Arabic conversations.
+ */
+function containsArabic(text: string): boolean {
+  return /[\u0600-\u06FF\u0750-\u077F\uFB50-\uFDFF\uFE70-\uFEFF]/.test(text);
+}
+
 export function buildSummaryPrompt(conversationText: string): ChatCompletionMessage[] {
+  const languageRule = containsArabic(conversationText)
+    ? "Write the summary, topics, tags, entities, facts, decisions, and project fields in Arabic, because the conversation is in Arabic. Do not translate them into English."
+    : "Write the summary, topics, tags, entities, facts, decisions, and project fields in English, because the conversation is in English. Do not translate them into Arabic.";
+
   return [
     {
       role: "system",
       content: `Extract structured memory from a chat. Respond with ONLY valid JSON, no markdown:
 {"summary":"1-2 concise sentences","topics":["main themes, max 4"],"tags":["short keywords, max 6"],"entities":["people, places, products, max 8],"facts":[{"value":"stable fact","category":"project|preference|technology|person|goal|constraint|other"}],"decisions":[{"decision":"decision made","reason":"why","alternatives":["alternative"],"status":"active|superseded|uncertain"}],"project":{"name":"project name","goal":"goal","tasks":["task"]}}
-Extract only information explicitly supported by the conversation. Use empty arrays and omit project when unknown. Keep items short.`,
+Extract only information explicitly supported by the conversation. Use empty arrays and omit project when unknown. Keep items short. Keep the literal enum values for "category" and "status" exactly as written, in English.
+${languageRule}`,
     },
     {
       role: "user",

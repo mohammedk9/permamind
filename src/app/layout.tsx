@@ -20,6 +20,14 @@ const geistMono = Geist_Mono({
 const APP_URL =
   process.env.NEXT_PUBLIC_APP_URL ?? "https://permamind.app";
 
+/**
+ * The chosen locale lives in localStorage, which the server cannot read. The
+ * document therefore renders with English and corrects `lang`/`dir` on the
+ * client in useLocale. A hardcoded `lang="ar"` here would fight that, so keep
+ * the server default at English and let the client own the direction.
+ */
+const SSR_LOCALE = "en";
+
 export const metadata: Metadata = {
   metadataBase: new URL(APP_URL),
   title: {
@@ -80,7 +88,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className="dark">
+    <html lang={SSR_LOCALE} dir="ltr" className="dark" suppressHydrationWarning>
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >

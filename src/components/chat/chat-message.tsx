@@ -4,6 +4,7 @@ import { Bot, Check, Copy, Loader2, RotateCcw } from "lucide-react";
 import { useState } from "react";
 
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { useLocale } from "@/hooks/use-locale";
 import { formatMessageTime } from "@/lib/format/date";
 import { cn } from "@/lib/utils";
 import type { Message } from "@/types/chat";
@@ -44,6 +45,8 @@ async function copyMessageText(text: string): Promise<boolean> {
 }
 
 export function ChatMessage({ message, isLoading = false, onResend }: ChatMessageProps) {
+  const { locale } = useLocale();
+  const ar = locale === "ar";
   const isUser = message.role === "user";
   const isThinking = message.isStreaming && !message.content;
   const [copied, setCopied] = useState(false);
@@ -74,7 +77,7 @@ export function ChatMessage({ message, isLoading = false, onResend }: ChatMessag
       <div className={cn("min-w-0 space-y-1", isUser ? "max-w-[min(100%,36rem)]" : "max-w-[min(100%,42rem)] flex-1")}>
         <div className={cn("flex items-center gap-2 px-1", isUser && "justify-end")}>
           <p className="text-[11px] font-medium text-muted-foreground">
-            {isUser ? "You" : "PermaMind"}
+            {isUser ? (ar ? "أنت" : "You") : "PermaMind"}
           </p>
           {!isThinking && (
             <span className="text-[11px] text-muted-foreground/70">
@@ -93,7 +96,7 @@ export function ChatMessage({ message, isLoading = false, onResend }: ChatMessag
           {isThinking ? (
             <div className="flex items-center gap-2 text-muted-foreground">
               <Loader2 className="size-4 animate-spin" />
-              <span>Thinking...</span>
+              <span>{ar ? "جارٍ التفكير..." : "Thinking..."}</span>
             </div>
           ) : (
             <p className="whitespace-pre-wrap">
@@ -105,7 +108,7 @@ export function ChatMessage({ message, isLoading = false, onResend }: ChatMessag
           )}
           {message.sources && (
             <div className="mt-3 space-y-1 border-t border-current/10 pt-2">
-              <p className="text-xs font-medium opacity-80">{message.sources.length ? "Sources" : "No web results"}</p>
+              <p className="text-xs font-medium opacity-80">{message.sources.length ? (ar ? "المصادر" : "Sources") : (ar ? "لا نتائج من الويب" : "No web results")}</p>
               {message.sources.map((source) => (
                 <a key={source.url} href={source.url} target="_blank" rel="noreferrer" className="block truncate text-xs underline-offset-2 hover:underline">{source.title || source.url}</a>
               ))}
@@ -118,10 +121,10 @@ export function ChatMessage({ message, isLoading = false, onResend }: ChatMessag
               type="button"
               onClick={() => void handleCopy()}
               className="inline-flex items-center gap-1 rounded-md px-1.5 py-1 text-[11px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-              aria-label={copied ? "Message copied" : "Copy message"}
+              aria-label={copied ? (ar ? "تم نسخ الرسالة" : "Message copied") : (ar ? "نسخ الرسالة" : "Copy message")}
             >
               {copied ? <Check className="size-3" /> : <Copy className="size-3" />}
-              <span>{copied ? "Copied" : "Copy"}</span>
+              <span>{copied ? (ar ? "تم النسخ" : "Copied") : (ar ? "نسخ" : "Copy")}</span>
             </button>
             {isUser && onResend && (
               <button
@@ -129,10 +132,10 @@ export function ChatMessage({ message, isLoading = false, onResend }: ChatMessag
                 onClick={() => onResend(message)}
                 disabled={isLoading}
                 className="inline-flex items-center gap-1 rounded-md px-1.5 py-1 text-[11px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
-                aria-label="Resend message"
+                aria-label={ar ? "إعادة إرسال الرسالة" : "Resend message"}
               >
                 <RotateCcw className="size-3" />
-                <span>Resend</span>
+                <span>{ar ? "إعادة إرسال" : "Resend"}</span>
               </button>
             )}
           </div>
