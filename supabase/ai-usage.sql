@@ -101,9 +101,13 @@ begin
     return;
   end if;
 
-  insert into ai_usage_reservations(day_key, user_id, kind)
+  -- The function's OUT column is also called reservation_id. An unqualified
+  -- `returning reservation_id` is ambiguous between that plpgsql variable and
+  -- the table column, and plpgsql.variable_conflict defaults to error, so the
+  -- statement failed at run time. Qualifying through an alias is required.
+  insert into ai_usage_reservations as r (day_key, user_id, kind)
     values (v_day, p_user_id, p_kind)
-    returning reservation_id into v_reservation_id;
+    returning r.reservation_id into v_reservation_id;
 
   return query select true, v_used + v_pending + 1, v_reservation_id;
 end; $$;

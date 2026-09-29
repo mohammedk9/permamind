@@ -60,12 +60,18 @@ export async function reserveAiQuota(kind: QuotaKind, freeMode: boolean): Promis
     return { ok: false, status: 503, code: "QUOTA_UNAVAILABLE", error: "The daily allowance is temporarily unavailable." };
   }
   if (error) {
-    // This is the failure that broke production: the RPC did not exist because
-    // supabase/bootstrap-production.sql had never been applied. Log it in a way
-    // that is unambiguous when someone reads the deployment logs.
+    // Two real production failures are known, and both are fixed by re-running
+    // supabase/bootstrap-production.sql in the Supabase SQL editor:
+    //   1. the function did not exist, because the SQL was never applied;
+    //   2. the function existed but raised `column reference "reservation_id"
+    //      is ambiguous` at run time, because the OUT column shadowed the
+    //      table column in `returning reservation_id into ...`.
+    // Report the server message verbatim: it is the only evidence that
+    // distinguishes the two, and it is never shown to the user.
     console.error(
-      "[ai-quota] reserve_ai_request failed. If this says the function does not exist, " +
-      "run supabase/bootstrap-production.sql in the Supabase SQL editor.",
+      "[ai-quota] reserve_ai_request failed. Re-run supabase/bootstrap-production.sql " +
+      "in the Supabase SQL editor if the message mentions a missing function or an " +
+      "ambiguous column reference. Server said:",
       error.message,
     );
     return { ok: false, status: 503, code: "QUOTA_UNAVAILABLE", error: "The daily allowance is temporarily unavailable." };

@@ -143,9 +143,13 @@ begin
     return;
   end if;
 
-  insert into ai_usage_reservations(day_key, user_id, kind)
+  -- The function's OUT column is also called reservation_id. An unqualified
+  -- `returning reservation_id` is ambiguous between that plpgsql variable and
+  -- the table column, and plpgsql.variable_conflict defaults to error, so the
+  -- statement failed at run time. Qualifying through an alias is required.
+  insert into ai_usage_reservations as r (day_key, user_id, kind)
     values (v_day, p_user_id, p_kind)
-    returning reservation_id into v_reservation_id;
+    returning r.reservation_id into v_reservation_id;
 
   return query select true, v_used + v_pending + 1, v_reservation_id;
 end; $$;
@@ -509,15 +513,19 @@ declare
 begin
   if v_user is null then raise exception 'not authorized'; end if;
   if v_label = '' then v_label := 'MCP client'; end if;
-  if (select count(*) from mcp_tokens where user_id = v_user and revoked_at is null and expires_at > now()) >= 5 then
+  -- `expires_at` is both an OUT column of this function and a column of
+  -- mcp_tokens, so the bare reference below is ambiguous at run time. Aliasing
+  -- the table makes the column reference explicit.
+  if (select count(*) from mcp_tokens as t
+      where t.user_id = v_user and t.revoked_at is null and t.expires_at > now()) >= 5 then
     raise exception 'too many active MCP tokens';
   end if;
 
   v_token := 'pmcp_' || encode(gen_random_bytes(32), 'hex');
   v_hash := encode(digest(v_token, 'sha256'), 'hex');
-  insert into mcp_tokens(user_id, token_hash, label, expires_at)
+  insert into mcp_tokens as t (user_id, token_hash, label, expires_at)
     values (v_user, v_hash, v_label, v_expires)
-    returning id into v_id;
+    returning t.id into v_id;
   return query select v_token, v_id, v_expires;
 end; $$;
 

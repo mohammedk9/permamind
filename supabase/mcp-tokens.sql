@@ -45,15 +45,19 @@ declare
 begin
   if v_user is null then raise exception 'not authorized'; end if;
   if v_label = '' then v_label := 'MCP client'; end if;
-  if (select count(*) from mcp_tokens where user_id = v_user and revoked_at is null and expires_at > now()) >= 5 then
+  -- `expires_at` is both an OUT column of this function and a column of
+  -- mcp_tokens, so the bare reference below is ambiguous at run time. Aliasing
+  -- the table makes the column reference explicit.
+  if (select count(*) from mcp_tokens as t
+      where t.user_id = v_user and t.revoked_at is null and t.expires_at > now()) >= 5 then
     raise exception 'too many active MCP tokens';
   end if;
 
   v_token := 'pmcp_' || encode(gen_random_bytes(32), 'hex');
   v_hash := encode(digest(v_token, 'sha256'), 'hex');
-  insert into mcp_tokens(user_id, token_hash, label, expires_at)
+  insert into mcp_tokens as t (user_id, token_hash, label, expires_at)
     values (v_user, v_hash, v_label, v_expires)
-    returning id into v_id;
+    returning t.id into v_id;
   return query select v_token, v_id, v_expires;
 end; $$;
 
