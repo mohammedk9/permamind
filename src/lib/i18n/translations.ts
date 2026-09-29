@@ -118,25 +118,48 @@ export const translations = {
     // How it works
     howItWorksTitle: "How it works",
     howItWorksDescription:
-      "From a conversation to context you can use again — and a permanent copy only if you want one.",
+      "Four steps from an ordinary conversation to a memory that is yours for good.",
+    howEyebrow: "Chat. Recall. Keep.",
+    howPreviewHint: "Pick a step to preview it.",
+    howPreview: {
+      chatUser: "What did we decide about the Atlas launch last month?",
+      chatAssistant:
+        "A staged launch: private beta first, then public after the Arabic review.",
+      chatNote: "Your API key and passphrase stay on this device.",
+      extractTitle: "What PermaMind kept",
+      extractItems: [
+        "Launch: staged, private beta before public",
+        "Owner: you — not the model provider",
+        "Language: Arabic and English",
+      ],
+      extractNote: "Stored beside your chat, on this device.",
+      recallLabel: "Context recalled",
+      vaultNote: "Only after you confirm, and it can never be deleted.",
+    },
     steps: [
       {
         title: "Chat naturally",
-        description: "Talk with the AI provider you choose. Nothing is uploaded by default.",
+        description: "Talk to the provider you already use. Nothing is uploaded by default.",
       },
       {
         title: "Keep the context",
-        description: "PermaMind extracts the important details and stores them with your chats.",
+        description: "PermaMind lifts out the decisions, names, and details worth keeping.",
       },
       {
         title: "Pick up where you left off",
-        description: "The next conversation brings back the relevant context instead of starting over.",
+        description: "The next chat starts with the relevant context, not from zero.",
       },
       {
         title: "Preserve what matters",
-        description: "When you choose, it is encrypted on your device and stored permanently on Arweave.",
+        description: "You choose. It is encrypted here, then stored permanently on Arweave.",
       },
     ],
+
+    // Security strip (numbers come from src/lib/arweave/constants.ts)
+    securityTitle: "Security you can verify",
+    securityCipher: "Encrypted before any upload",
+    securityKdf: "iterations",
+    storageNote: (freeMb: string) => `max per upload · ${freeMb} free`,
 
     // Internet Search
     searchTitle: "Internet Search",
@@ -337,25 +360,47 @@ export const translations = {
     // How it works
     howItWorksTitle: "كيف يعمل",
     howItWorksDescription:
-      "من محادثة إلى سياق تستخدمه مرة أخرى، ونسخة دائمة فقط إذا أردت ذلك.",
+      "أربع خطوات تنقلك من محادثة عادية إلى ذاكرة تبقى ملكك للأبد.",
+    howEyebrow: "تحدّث. استرجع. احتفظ.",
+    howPreviewHint: "اختر أي خطوة لمعاينتها.",
+    howPreview: {
+      chatUser: "ماذا قررنا بشأن إطلاق Atlas الشهر الماضي؟",
+      chatAssistant: "إطلاق تدريجي: نسخة تجريبية خاصة أولاً، ثم عامة بعد المراجعة العربية.",
+      chatNote: "مفتاح الـ API وعبارة مرور التشفير تبقى على هذا الجهاز.",
+      extractTitle: "ما الذي احتفظ به PermaMind",
+      extractItems: [
+        "الإطلاق: تدريجي، تجريبي خاص قبل العام",
+        "الملكية: أنت — لا مزوّد النموذج",
+        "اللغة: العربية والإنجليزية",
+      ],
+      extractNote: "يُحفظ بجانب محادثتك، على هذا الجهاز.",
+      recallLabel: "سياق مسترجَع",
+      vaultNote: "بعد تأكيدك فقط، ولا يمكن حذفه أبداً.",
+    },
     steps: [
       {
-        title: "تحدث بشكل طبيعي",
-        description: "استخدم مزود الذكاء الاصطناعي الذي تختاره. لا يُرفع شيء بشكل افتراضي.",
+        title: "تحدّث بشكل طبيعي",
+        description: "تحدّث مع المزوّد الذي تستخدمه بالفعل. لا يُرفع شيء بشكل افتراضي.",
       },
       {
         title: "يُحفظ السياق",
-        description: "يستخرج PermaMind التفاصيل المهمة ويحفظها مع محادثاتك.",
+        description: "يستخرج PermaMind القرارات والأسماء والتفاصيل التي تستحق الاحتفاظ.",
       },
       {
         title: "أكمل من حيث توقفت",
-        description: "تعيد المحادثة التالية السياق المناسب بدل أن تبدأ من الصفر.",
+        description: "المحادثة التالية تبدأ بالسياق المناسب، لا من الصفر.",
       },
       {
         title: "احفظ ما يهم",
-        description: "عند اختيارك، تُشفّر البيانات على جهازك وتُحفظ بشكل دائم على Arweave.",
+        description: "أنت تختار. يُشفَّر هنا، ثم يُحفظ بشكل دائم على Arweave.",
       },
     ],
+
+    // Security strip (numbers come from src/lib/arweave/constants.ts)
+    securityTitle: "أمان يمكنك التحقق منه",
+    securityCipher: "تُشفَّر قبل أي رفع",
+    securityKdf: "تكرار",
+    storageNote: (freeMb: string) => `للرفع الواحد · ${freeMb} مجاناً`,
 
     // Internet Search
     searchTitle: "بحث الإنترنت",

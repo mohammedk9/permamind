@@ -64,7 +64,11 @@ export function ChatMessage({ message, isLoading = false, onResend }: ChatMessag
     <div
       className={cn(
         "flex gap-3 px-3 py-2 sm:px-4",
-        isUser ? "justify-end" : "justify-start"
+        // The user's own message anchors to the start of the reading direction,
+        // and the assistant answers from the far side. `justify-start` /
+        // `justify-end` are physical, so under dir="rtl" they swap sides on
+        // their own and both languages come out mirrored.
+        isUser ? "justify-start" : "justify-end"
       )}
     >
       {!isUser && (
@@ -75,7 +79,7 @@ export function ChatMessage({ message, isLoading = false, onResend }: ChatMessag
         </Avatar>
       )}
       <div className={cn("min-w-0 space-y-1", isUser ? "max-w-[min(100%,36rem)]" : "max-w-[min(100%,42rem)] flex-1")}>
-        <div className={cn("flex items-center gap-2 px-1", isUser && "justify-end")}>
+        <div className={cn("flex items-center gap-2 px-1", isUser && "justify-start")}>
           <p className="text-[11px] font-medium text-muted-foreground">
             {isUser ? (ar ? "أنت" : "You") : "PermaMind"}
           </p>
@@ -89,8 +93,8 @@ export function ChatMessage({ message, isLoading = false, onResend }: ChatMessag
           className={cn(
             "rounded-2xl px-3.5 py-2.5 text-sm leading-7 sm:text-[15px]",
             isUser
-              ? "rounded-ee-md bg-primary text-primary-foreground"
-              : "rounded-es-md border border-border/70 bg-card text-card-foreground"
+              ? "rounded-se-md bg-primary text-primary-foreground"
+              : "rounded-ee-md border border-border/70 bg-card text-card-foreground"
           )}
         >
           {isThinking ? (
@@ -116,7 +120,7 @@ export function ChatMessage({ message, isLoading = false, onResend }: ChatMessag
           )}
         </div>
         {canAct && (
-          <div className={cn("flex items-center gap-1 px-1", isUser ? "justify-end" : "justify-start")}>
+          <div className={cn("flex items-center gap-1 px-1", isUser ? "justify-start" : "justify-end")}>
             <button
               type="button"
               onClick={() => void handleCopy()}

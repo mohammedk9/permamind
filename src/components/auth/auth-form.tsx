@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { FormEvent, useState } from "react";
+import { useRouter } from "next/navigation";
+import { FormEvent, useEffect, useState } from "react";
 import { Eye, EyeOff } from "lucide-react";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import { useLocale } from "@/hooks/use-locale";
@@ -11,6 +12,7 @@ type Mode = "sign-in" | "sign-up" | "forgot" | "reset";
 
 export function AuthForm({ mode }: { mode: Mode }) {
   const { locale, toggleLocale, isRTL } = useLocale();
+  const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -19,6 +21,25 @@ export function AuthForm({ mode }: { mode: Mode }) {
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+
+  // A valid session must not cost the user another email and password. The
+  // access token is short lived, so this reads the stored session (which the
+  // client can refresh) rather than the network-backed getUser().
+  useEffect(() => {
+    if (mode === "forgot" || mode === "reset") return;
+    let active = true;
+    getSupabaseBrowserClient()
+      .auth.getSession()
+      .then(({ data }) => {
+        if (active && data.session?.user) router.replace("/chat");
+      })
+      .catch(() => {
+        // No stored session: stay on the form.
+      });
+    return () => {
+      active = false;
+    };
+  }, [mode, router]);
 
   async function submit(event: FormEvent) {
     event.preventDefault(); setLoading(true); setError(""); setMessage("");
@@ -45,7 +66,10 @@ if (mode === "sign-in" || mode === "reset") window.location.assign("/chat");
   const eyeButtonClass = "absolute left-2 top-1/2 mt-0.5 -translate-y-1/2 rounded p-1 text-muted-foreground hover:text-foreground";
   return <main dir={isRTL ? "rtl" : "ltr"} className="flex min-h-dvh items-center justify-center bg-background p-6"><div className="w-full max-w-md rounded-2xl border bg-card p-8 shadow-sm">
     <button type="button" onClick={toggleLocale} className="mb-4 text-sm text-muted-foreground underline">{ar ? "English" : "العربية"}</button>
-    <div className="mb-8 text-center"><div className="mx-auto mb-4"><LogoMark size="lg" /></div><h1 className="text-2xl font-semibold">{title}</h1><p className="mt-2 text-sm text-muted-foreground">{ar ? "PermaMind يتذكر ما يهمك." : "PermaMind remembers what matters."}</p></div>
+    {/* The mark is a block-level <img>, so `text-center` does not centre it and
+        `mx-auto` on a full-width <div> has nothing to distribute. Flex centring
+        is the only form that reliably centres it in both reading directions. */}
+    <div className="mb-8 text-center"><div className="mb-4 flex justify-center"><LogoMark size="lg" /></div><h1 className="text-2xl font-semibold">{title}</h1><p className="mt-2 text-sm text-muted-foreground">{ar ? "PermaMind يتذكر ما يهمك." : "PermaMind remembers what matters."}</p></div>
     <form onSubmit={submit} className="space-y-4">
       {mode !== "reset" && <label className="block text-sm font-medium">{ar ? "البريد الإلكتروني" : "Email"}<input required type="email" value={email} onChange={e => setEmail(e.target.value)} className="mt-1 w-full rounded-lg border bg-background px-3 py-2.5 outline-none focus:ring-2 focus:ring-ring" /></label>}
       {mode !== "forgot" && <>

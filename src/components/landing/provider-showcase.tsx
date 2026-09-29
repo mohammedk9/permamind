@@ -1,3 +1,4 @@
+import React, { useEffect, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
 
 type LogoBrand = {
@@ -6,6 +7,11 @@ type LogoBrand = {
   emphasis?: boolean;
 };
 
+/**
+ * Display names for the providers in `AiProvider`
+ * (src/lib/settings/api-key-storage.ts), so the rail advertises exactly what
+ * Settings can actually connect to.
+ */
 const modelNames = [
   "OpenAI",
   "Claude",
@@ -14,8 +20,25 @@ const modelNames = [
   "Qwen",
   "Grok",
   "Kimi",
+  "Llama",
+  "Mistral",
   "Groq",
+  "OpenRouter",
+  "Meta",
+  "Hugging Face",
+  "NanoGPT",
+  "Eden",
+  "OrcaRouter",
+  "Ollama",
 ];
+
+/**
+ * How much wider than the viewport the track has to be before a model can be
+ * seen twice at once. Two full screens is the safe minimum; the rail then
+ * always shows a partial list that wraps outside the visible window.
+ */
+const VIEWPORT_MULTIPLE = 2.2;
+const MIN_SETS = 4;
 
 const workBrands: LogoBrand[] = [
   { name: "Cursor", src: "/logos/cursor.svg" },
@@ -61,18 +84,60 @@ function BrandChip({ brand }: { brand: LogoBrand }) {
 }
 
 export function ProviderRail({ label }: { label: string }) {
-  const names = [...modelNames, ...modelNames];
+  const viewport = useRef<HTMLDivElement>(null);
+  const [sets, setSets] = useState(6);
+
+  /**
+   * The loop only hides a repeated name while the track is wider than the
+   * window. A fixed repeat count is a guess that fails on ultrawide monitors
+   * (the list fits on screen and both halves show at once), so the count is
+   * derived from the measured width of one set.
+   *
+   * An even count is enforced because the seam sits at -50%: an odd number
+   * would place the wrap in the middle of a set and jump by half a gap.
+   */
+  useEffect(() => {
+    const element = viewport.current;
+    if (!element) return;
+
+    const measure = () => {
+      const available = element.clientWidth;
+      if (!available) return;
+      const oneSet = element.scrollWidth / sets || available;
+      const needed = Math.ceil((available * VIEWPORT_MULTIPLE) / oneSet);
+      const even = Math.max(MIN_SETS, needed % 2 === 0 ? needed : needed + 1);
+      if (even !== sets) setSets(even);
+    };
+
+    measure();
+    // ResizeObserver is the precise tool here, but it is absent in older
+    // browsers and in test environments; a window resize listener keeps the
+    // rail correct either way.
+    if (typeof ResizeObserver === "undefined") {
+      window.addEventListener("resize", measure);
+      return () => window.removeEventListener("resize", measure);
+    }
+    const observer = new ResizeObserver(measure);
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [sets]);
+
+  const names = Array.from({ length: sets }, () => modelNames).flat();
+
   return (
     <div className="relative mt-12">
-      <p className="mb-4 text-center text-xs font-semibold uppercase tracking-[0.22em] text-muted-foreground">
+      <p className="mb-5 text-center text-sm font-semibold uppercase tracking-[0.22em] text-muted-foreground">
         {label}
       </p>
-      <div className="logo-mask overflow-hidden" dir="ltr">
-        <div className="logo-track flex w-max items-center gap-3 py-1">
+      <div ref={viewport} className="logo-mask overflow-hidden" dir="ltr">
+        <div
+          className="logo-track flex w-max items-center"
+          style={{ ["--marquee-gap" as string]: "1rem" }}
+        >
           {names.map((name, index) => (
             <span
               key={`${name}-${index}`}
-              className="inline-flex h-12 shrink-0 items-center rounded-full border border-border/80 bg-card/80 px-4 text-sm font-semibold text-foreground/80"
+              className="mx-2 inline-flex h-14 shrink-0 items-center rounded-full border border-border/80 bg-card/80 px-6 text-base font-semibold text-foreground/85"
             >
               {name}
             </span>

@@ -8,12 +8,12 @@ import {
   Search,
   Shield,
   ArrowRight,
-  MessageSquare,
-  Database,
+  ArrowDown,
   Sparkles,
-  Lock,
 } from "lucide-react";
 import { LanguageToggle } from "@/components/landing/language-toggle";
+import { HowItWorks } from "@/components/landing/how-it-works";
+import { SecurityStrip } from "@/components/landing/security-strip";
 import { OwnershipMarks, ProductStage, ProviderRail } from "@/components/landing/provider-showcase";
 import { Logo } from "@/components/ui/logo";
 import { SplashScreen } from "@/components/landing/splash-screen";
@@ -25,8 +25,6 @@ const featureIcons = {
   shield: Shield,
   globe: Globe,
 } as const;
-
-const stepIcons = [MessageSquare, Database, Sparkles, Lock] as const;
 
 export default function LandingPage() {
   const [locale, setLocale] = useState<Locale>("en");
@@ -98,11 +96,15 @@ export default function LandingPage() {
             {/* Title */}
             <h1 className="text-balance text-4xl font-bold tracking-tight sm:text-6xl">
               {t.heroTitle}{" "}
-              <span className="bg-gradient-to-r from-primary to-primary/60 bg-clip-text text-transparent">
+              {/* The gradient span clips its own text; the closing line needs an
+                  explicit colour or it inherits the transparent fill. */}
+              <span className="bg-gradient-to-r from-primary via-primary/85 to-primary/60 bg-clip-text text-transparent">
                 {t.heroTitleHighlight}
               </span>
               {t.heroTitleEnd ? (
-                <span className="mt-2 block text-3xl sm:text-5xl">{t.heroTitleEnd}</span>
+                <span className="mt-2 block text-3xl text-foreground sm:text-5xl">
+                  {t.heroTitleEnd}
+                </span>
               ) : null}
             </h1>
 
@@ -123,10 +125,11 @@ export default function LandingPage() {
                 />
               </Link>
               <a
-                href="#features"
-                className="flex w-full items-center justify-center rounded-xl border border-border bg-card px-8 py-3.5 text-base font-semibold text-card-foreground transition-colors hover:bg-accent hover:text-accent-foreground sm:w-auto"
+                href="#how"
+                className="flex w-full items-center justify-center gap-2 rounded-xl border border-border bg-card px-8 py-3.5 text-base font-semibold text-card-foreground transition-colors hover:bg-accent hover:text-accent-foreground sm:w-auto"
               >
                 {t.heroSecondary}
+                <ArrowDown className={`size-4 ${isRTL ? "rotate-180" : ""}`} />
               </a>
             </div>
             <p className="mx-auto mt-4 max-w-xl text-sm text-muted-foreground">
@@ -257,46 +260,10 @@ export default function LandingPage() {
       </section>
 
       {/* How It Works Section */}
-      <section className="border-t border-border/50 py-24">
-        <div className="mx-auto max-w-6xl px-4 sm:px-6">
-          <div className="mx-auto max-w-2xl text-center">
-            <h2 className="text-3xl font-bold tracking-tight sm:text-4xl">
-              {t.howItWorksTitle}
-            </h2>
-            <p className="mt-4 text-lg text-muted-foreground">
-              {t.howItWorksDescription}
-            </p>
-          </div>
+      <HowItWorks copy={t} rtl={isRTL} />
 
-          <div className="mt-16 grid gap-8 sm:grid-cols-2 lg:grid-cols-4">
-            {t.steps.map((step, index) => {
-              const StepIcon = stepIcons[index];
-              return (
-                <div key={step.title} className="relative text-center">
-                  {/* Connector line */}
-                  {index < t.steps.length - 1 && (
-                    <div
-                      className={`absolute top-8 hidden h-px w-full bg-gradient-to-r from-border to-transparent lg:block ${
-                        isRTL ? "right-1/2" : "left-1/2"
-                      }`}
-                    />
-                  )}
-                  <div className="relative mx-auto mb-4 flex size-16 items-center justify-center rounded-2xl border border-border bg-card">
-                    <StepIcon className="size-7 text-primary" />
-                    <span className="absolute -right-1 -top-1 flex size-6 items-center justify-center rounded-full bg-primary text-xs font-bold text-primary-foreground">
-                      {index + 1}
-                    </span>
-                  </div>
-                  <h3 className="text-base font-semibold">{step.title}</h3>
-                  <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
-                    {step.description}
-                  </p>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      </section>
+      {/* Security strip */}
+      <SecurityStrip copy={t} />
 
       {/* CTA Section */}
       <section className="border-t border-border/50 py-24">
