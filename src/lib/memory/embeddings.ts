@@ -6,10 +6,18 @@
  * localStorage stores them.
  */
 
+import { normalizeForMatch } from "@/lib/i18n/arabic-normalize";
+
 const INDEX_KEY = "permamind:memory-embeddings:v1";
 const KEY_KEY = "permamind:memory-embeddings:key:v1";
 const DIMENSIONS = 96;
-const MODEL = "permamind-local-hashing-v1";
+/**
+ * Bumped when the token definition changed. Vectors hashed under the old
+ * normaliser cannot be compared with new ones, so the fingerprint includes the
+ * model name and every stored entry is recomputed on the next sync. The key is
+ * unchanged, so there is no re-encryption cost.
+ */
+const MODEL = "permamind-local-hashing-v2";
 
 export interface MemoryEmbeddingDocument {
   id: string;
@@ -35,11 +43,16 @@ export interface SemanticMatch { id: string; conversationId: string; score: numb
 
 const cache = new Map<string, { fingerprint: string; vector: Float32Array }>();
 
+/**
+ * Hashes a normalised string into a fixed-width vector.
+ *
+ * The token definition comes from the shared normaliser. Before this module used
+ * it, `retrieve.ts` and `embeddings.ts` each had their own copy and normalised
+ * `ؤ` to `و` in one but not the other, so the lexical and semantic retrievers
+ * disagreed about whether two sentences were the same text.
+ */
 function normalize(text: string): string {
-  return text.normalize("NFKC").toLowerCase()
-    .replace(/[\u0610-\u061A\u064B-\u065F\u0670\u06D6-\u06ED]/g, "")
-    .replace(/[أإآ]/g, "ا").replace(/ى/g, "ي").replace(/ة/g, "ه")
-    .replace(/[^\p{L}\p{N}\s]/gu, " ");
+  return normalizeForMatch(text);
 }
 
 function hash(value: string): number {
@@ -133,7 +146,11 @@ function readIndex(): StoredIndex {
 /** Refreshes changed documents and removes vectors whose source disappeared. */
 export async function syncMemoryEmbeddings(documents: MemoryEmbeddingDocument[]): Promise<void> {
   if (typeof window === "undefined") return;
-  const index = readIndex();
+  // Entries hashed under a previous token definition are dropped so they get
+  // recomputed. Keeping them would mix two incompatible vector spaces, which
+  // silently degrades every semantic comparison after the upgrade.
+  const previous = readIndex();
+  const index: StoredIndex = { version: 1, entries: previous.entries.filter((entry) => entry.model === MODEL) };
   const key = await deviceKey();
   const live = new Set(documents.map((document) => document.id));
   const next: StoredVector[] = [];

@@ -40,7 +40,6 @@ export function resolveRequestAuth(request: Request): ResolvedRequestAuth {
     if (!modelName) throw new Error("A valid local model name is required");
     return { apiKey: "", mode: "byok", isUserKey: true, provider, baseUrl, modelName };
   }
-
   if (mode === "byok") {
     if (!userKey) {
       throw new Error(
@@ -67,6 +66,40 @@ export function resolveRequestAuth(request: Request): ResolvedRequestAuth {
   throw new Error(
     "Free mode needs a configured server AI key or switch to BYOK in Settings with your own key."
   );
+}
+
+/**
+ * Stable per-caller bucket id for rate limiting.
+ *
+ * Routes previously keyed on `auth.apiKey.slice(-12)`. That works for a BYOK key
+ * but collapses to the empty string for Ollama, whose resolved key is `""`, so
+ * every local-mode user on the deployment shared one bucket and the first
+ * 30 requests per minute blocked everyone else. Local callers are now separated
+ * by request origin, and a keyless caller still gets a distinct namespace from
+ * a keyed one so the two never share a counter.
+ */
+export function requestBucketId(
+  auth: Pick<ResolvedRequestAuth, "apiKey" | "provider" | "mode">,
+  request: Request,
+): string {
+  if (auth.apiKey && auth.apiKey !== "server-managed") {
+    return `byok:${auth.apiKey.slice(-12)}`;
+  }
+
+  const forwarded = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim();
+  const ip = forwarded || request.headers.get("x-real-ip")?.trim() || "unknown";
+  // The provider keeps the local and free namespaces apart; hashing avoids
+  // storing a raw address in a Map key that outlives the request.
+  return `anon:${auth.provider}:${auth.mode}:${hashIdentifier(ip)}`;
+}
+
+function hashIdentifier(value: string): string {
+  let result = 2166136261;
+  for (let index = 0; index < value.length; index += 1) {
+    result ^= value.charCodeAt(index);
+    result = Math.imul(result, 16777619);
+  }
+  return (result >>> 0).toString(36);
 }
 
 /** The only non-public model address permitted. Everything else stays blocked. */

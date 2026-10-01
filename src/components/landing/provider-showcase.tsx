@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
+import { VaultFlow } from "@/components/landing/vault-flow";
 
 type LogoBrand = {
   name: string;
@@ -47,22 +48,20 @@ const workBrands: LogoBrand[] = [
   { name: "Arweave", src: "/logos/arweave.svg", emphasis: true },
 ];
 
-function BrandLogo({
-  src,
-  framed = false,
-}: {
-  src: string;
-  framed?: boolean;
-}) {
+/**
+ * The Arweave brand, named so callers stop reaching for a positional index.
+ * `ProductStage` used `workBrands[3]`, which silently pointed at Arweave only as
+ * long as nobody reordered the array above it.
+ */
+export const ARWEAVE_BRAND: LogoBrand = workBrands[3];
+
+function BrandLogo({ src }: { src: string }) {
   return (
     <img
       src={src}
       alt=""
       draggable={false}
-      className={cn(
-        "h-7 w-auto max-w-28 shrink-0 object-contain object-center",
-        framed && "h-6 max-w-8",
-      )}
+      className="h-7 w-auto max-w-28 shrink-0 object-contain object-center"
     />
   );
 }
@@ -200,28 +199,14 @@ export function ProductStage({
         <p className="mt-3 text-xs text-muted-foreground">{source}</p>
       </div>
 
-      <div className="relative mt-4 grid gap-3 sm:grid-cols-[1fr_auto_1fr] sm:items-center">
-        <div className="flex items-center gap-3 rounded-2xl border border-border bg-background p-3">
-          <span className="flex size-10 items-center justify-center rounded-xl bg-primary/10 text-xs font-semibold tracking-wide text-foreground">
-            AES
-          </span>
-          <div>
-            <p className="text-sm font-semibold">{encrypted}</p>
-            <p className="text-xs text-muted-foreground">{cipher}</p>
-          </div>
-        </div>
-        <span className={`hidden text-xl text-primary sm:block ${rtl ? "rotate-180" : ""}`} aria-hidden="true">
-          →
-        </span>
-        <div className="flex items-center gap-3 rounded-2xl border border-primary/30 bg-primary/10 p-3">
-          <span className="flex size-10 items-center justify-center overflow-hidden rounded-xl bg-background">
-            <BrandLogo src={workBrands[3].src} framed />
-          </span>
-          <div>
-            <p className="text-sm font-semibold">Arweave</p>
-            <p className="text-xs text-muted-foreground">{permanent}</p>
-          </div>
-        </div>
+      <div className="relative mt-4">
+        <VaultFlow
+          stageEncrypted={encrypted}
+          stageCipher={cipher}
+          stagePermanent={permanent}
+          rtl={rtl}
+          variant="stage"
+        />
       </div>
     </div>
   );

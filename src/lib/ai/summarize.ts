@@ -1,4 +1,5 @@
 import type { ChatCompletionMessage } from "@/lib/ai/types";
+import { containsArabicScript } from "@/lib/i18n/arabic-normalize";
 import type { ConversationMetadata, Message, MemoryDecision, MemoryFact, MemoryProject } from "@/types/chat";
 import {
   SUMMARY_MAX_CHARS,
@@ -42,13 +43,13 @@ export function formatConversationForSummary(messages: Message[]): string {
  * user actually wrote in. Without this the model follows the language of these
  * English instructions and returns English summaries, which then surface as
  * foreign text inside Arabic conversations.
+ *
+ * The range check lives in the shared normaliser alongside the retrieval
+ * tokenisation, so language detection and indexing cannot drift apart.
  */
-function containsArabic(text: string): boolean {
-  return /[\u0600-\u06FF\u0750-\u077F\uFB50-\uFDFF\uFE70-\uFEFF]/.test(text);
-}
 
 export function buildSummaryPrompt(conversationText: string): ChatCompletionMessage[] {
-  const languageRule = containsArabic(conversationText)
+  const languageRule = containsArabicScript(conversationText)
     ? "Write the summary, topics, tags, entities, facts, decisions, and project fields in Arabic, because the conversation is in Arabic. Do not translate them into English."
     : "Write the summary, topics, tags, entities, facts, decisions, and project fields in English, because the conversation is in English. Do not translate them into Arabic.";
 

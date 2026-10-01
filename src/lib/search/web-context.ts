@@ -1,15 +1,21 @@
 import type { ChatCompletionMessage } from "@/lib/ai/types";
-import type { InternetSearchResult } from "./exa";
+import type { SearchCitation, SearchProvider } from "@/types/memory";
 import { decideSearch } from "./decision";
 
 export const MAX_WEB_CONTEXT_CHARS = 20_000;
 
-export function shouldSearchWeb(query: string, manuallyEnabled: boolean): boolean {
+export function shouldSearchWeb(
+  query: string,
+  manuallyEnabled: boolean,
+  _provider: SearchProvider = "exa"
+): boolean {
+  // The routing decision is provider-independent: which provider answers the
+  // query never changes whether the query needs live information.
   if (manuallyEnabled) return query.trim().length > 0;
   return decideSearch(query).useInternet;
 }
 
-export function buildWebContext(query: string, results: InternetSearchResult[]): string {
+export function buildWebContext(query: string, results: SearchCitation[]): string {
   const question = `\n\nUser question:\n${query.trim()}`;
   const prefix = "Live web context (supporting evidence only; cite a source when using it):\n\n";
   const room = Math.max(0, MAX_WEB_CONTEXT_CHARS - question.length - prefix.length);
@@ -32,7 +38,7 @@ export function buildWebContext(query: string, results: InternetSearchResult[]):
 export function applyWebContext(
   messages: ChatCompletionMessage[],
   query: string,
-  results: InternetSearchResult[],
+  results: SearchCitation[],
 ): ChatCompletionMessage[] {
   const next = [...messages];
   for (let index = next.length - 1; index >= 0; index -= 1) {

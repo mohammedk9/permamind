@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import {
   Brain,
+  Check,
   Globe,
   Search,
   Shield,
@@ -15,6 +16,7 @@ import { LanguageToggle } from "@/components/landing/language-toggle";
 import { HowItWorks } from "@/components/landing/how-it-works";
 import { SecurityStrip } from "@/components/landing/security-strip";
 import { OwnershipMarks, ProductStage, ProviderRail } from "@/components/landing/provider-showcase";
+import { SearchRail } from "@/components/landing/search-rail";
 import { Logo } from "@/components/ui/logo";
 import { SplashScreen } from "@/components/landing/splash-screen";
 import { Locale, translations } from "@/lib/i18n/translations";
@@ -47,15 +49,46 @@ export default function LandingPage() {
     <div
       id="top"
       dir={isRTL ? "rtl" : "ltr"}
-      className="min-h-dvh overflow-y-auto bg-background text-foreground"
+      /* This element is the scroll container: `html` and `body` are both
+         `overflow: hidden` (see globals.css), so `scroll-behavior: smooth` on
+         `html` never applies to it. Without this, the header anchors jump
+         instantly instead of animating. */
+      className="min-h-dvh scroll-smooth overflow-y-auto bg-background text-foreground"
     >
       <SplashScreen />
+      <a
+        href="#main"
+        className="sr-only focus:not-sr-only focus:absolute focus:start-4 focus:top-4 focus:z-[60] focus:rounded-lg focus:bg-primary focus:px-4 focus:py-2 focus:text-sm focus:font-semibold focus:text-primary-foreground"
+      >
+        {isRTL ? "تخطَّ إلى المحتوى" : "Skip to content"}
+      </a>
       {/* Header */}
       <header className="sticky top-0 z-50 border-b border-border/50 bg-background/80 backdrop-blur-xl">
         <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-4 sm:px-6">
           <Link href="/" className="flex items-center gap-2.5" aria-label="PermaMind home">
-            <Logo size="md" withWordmark />
+            <Logo size="sm" withWordmark />
           </Link>
+          {/* Section links, desktop only. The labels reuse the headings already on
+              the page, so the nav can never disagree with what it points at. */}
+          <nav
+            aria-label={isRTL ? "أقسام الصفحة" : "Page sections"}
+            className="hidden items-center gap-1 lg:flex"
+          >
+            {[
+              { href: "#how", label: t.howItWorksTitle },
+              { href: "#features", label: t.featuresTitle },
+              { href: "#search", label: t.searchTitle },
+              { href: "#security", label: t.securityTitle },
+            ].map((item) => (
+              <a
+                key={item.href}
+                href={item.href}
+                className="rounded-lg px-3 py-2 text-sm text-muted-foreground transition-colors hover:text-foreground"
+              >
+                {item.label}
+              </a>
+            ))}
+          </nav>
           <div className="flex items-center gap-3">
             <LanguageToggle
               locale={locale}
@@ -78,8 +111,9 @@ export default function LandingPage() {
         </div>
       </header>
 
-      {/* Hero Section */}
-      <section className="relative overflow-hidden">
+      <main id="main">
+        {/* Hero Section */}
+        <section className="relative overflow-hidden">
         {/* Background gradient */}
         <div className="pointer-events-none absolute inset-0">
           <div className="absolute left-1/2 top-0 h-[600px] w-[900px] -translate-x-1/2 rounded-full bg-primary/5 blur-3xl" />
@@ -98,7 +132,7 @@ export default function LandingPage() {
               {t.heroTitle}{" "}
               {/* The gradient span clips its own text; the closing line needs an
                   explicit colour or it inherits the transparent fill. */}
-              <span className="bg-gradient-to-r from-primary via-primary/85 to-primary/60 bg-clip-text text-transparent">
+              <span className="bg-gradient-to-r from-primary via-primary/85 to-primary/60 bg-clip-text text-transparent rtl:bg-gradient-to-l">
                 {t.heroTitleHighlight}
               </span>
               {t.heroTitleEnd ? (
@@ -165,8 +199,8 @@ export default function LandingPage() {
             <ul className="mt-6 grid gap-3 sm:grid-cols-2">
               {t.trustItems.map((item) => (
                 <li key={item} className="flex items-center gap-2 text-sm font-medium">
-                  <span className="flex size-5 items-center justify-center rounded-full bg-primary/15 text-primary">
-                    ✓
+                  <span className="flex size-5 shrink-0 items-center justify-center rounded-full bg-primary/15 text-primary">
+                    <Check className="size-3" aria-hidden="true" />
                   </span>
                   {item}
                 </li>
@@ -204,7 +238,10 @@ export default function LandingPage() {
 
           <div className="mt-16 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
             {t.features.map((feature) => {
-              const Icon = featureIcons[feature.icon as keyof typeof featureIcons];
+              // `feature.icon` is a plain string in the translation bundle, so a
+              // typo there would render `undefined` and crash the icon element.
+              // Falling back keeps a copy mistake from taking down the section.
+              const Icon = featureIcons[feature.icon as keyof typeof featureIcons] ?? Sparkles;
               return (
                 <div
                   key={feature.title}
@@ -220,6 +257,24 @@ export default function LandingPage() {
                 </div>
               );
             })}
+            {/* Sixth cell, so the three-column grid ends in a full row. With five
+                features the last row held one lonely card; this fills it with the
+                call to action instead of padding the grid with a blank space. */}
+            <div className="flex flex-col justify-between rounded-2xl border border-primary/30 bg-primary/5 p-6">
+              <div>
+                <h3 className="text-lg font-semibold">{t.ctaTitle}</h3>
+                <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
+                  {t.ctaDescription}
+                </p>
+              </div>
+              <Link
+                href="/auth/sign-up"
+                className="mt-6 inline-flex w-fit items-center gap-2 rounded-xl bg-primary px-6 py-3 font-semibold text-primary-foreground transition-opacity hover:opacity-90"
+              >
+                {t.ctaButton}
+                <ArrowRight className={`size-4 ${isRTL ? "rotate-180" : ""}`} />
+              </Link>
+            </div>
           </div>
         </div>
       </section>
@@ -234,7 +289,9 @@ export default function LandingPage() {
             <ul className="mt-6 grid gap-3 sm:grid-cols-2">
               {t.mcpPoints.map((point) => (
                 <li key={point} className="flex items-start gap-2 text-sm font-medium">
-                  <span className="mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full bg-primary/15 text-primary">✓</span>
+                  <span className="mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full bg-primary/15 text-primary">
+                    <Check className="size-3" aria-hidden="true" />
+                  </span>
                   {point}
                 </li>
               ))}
@@ -262,8 +319,13 @@ export default function LandingPage() {
       {/* How It Works Section */}
       <HowItWorks copy={t} rtl={isRTL} />
 
+      {/* Web search providers */}
+      <SearchRail copy={t} />
+
       {/* Security strip */}
       <SecurityStrip copy={t} />
+
+      </main>
 
       {/* CTA Section */}
       <section className="border-t border-border/50 py-24">
@@ -305,7 +367,7 @@ export default function LandingPage() {
                 className="inline-flex rounded-lg"
                 aria-label="PermaMind home"
               >
-                <Logo size="sm" withWordmark />
+                <Logo size="xs" withWordmark />
               </Link>
               <p className="mt-5 max-w-md text-sm leading-6 text-muted-foreground">
                 {t.footerDescription}

@@ -7,7 +7,7 @@ import {
   sanitizeUpstreamError,
 } from "@/lib/ai/openrouter";
 import { isValidModelId } from "@/lib/ai/models";
-import { resolveRequestAuth } from "@/lib/ai/request-auth";
+import { requestBucketId, resolveRequestAuth } from "@/lib/ai/request-auth";
 import {
   isModelUnavailableError,
   resolveModelChain,
@@ -81,7 +81,9 @@ export async function POST(request: Request) {
   }
 
   if (auth.mode !== "free") {
-    const limiter = checkRateLimit(`byok:${auth.apiKey.slice(-12)}`, BYOK_CHAT_REQUESTS_PER_MINUTE);
+    // Keyed BYOK callers share one bucket per key; keyless callers (Ollama)
+    // get their own so one local user cannot throttle every other one.
+    const limiter = checkRateLimit(requestBucketId(auth, request), BYOK_CHAT_REQUESTS_PER_MINUTE);
     if (!limiter.allowed) {
       return Response.json(
         { error: "Too many requests. Please slow down." },

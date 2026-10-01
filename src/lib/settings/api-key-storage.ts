@@ -21,6 +21,39 @@ export interface StoredApiSettings {
   validatedAt?: string;
 }
 
+/** Exactly what is allowed to reach localStorage. The key is not a member. */
+type PersistedApiSettings = Omit<StoredApiSettings, "apiKey">;
+
+/**
+ * Last line of defence for the "keys never leave the device" promise.
+ *
+ * `saveApiSettings` already builds its payload field by field, so `apiKey` can
+ * never be serialised. This guard exists because that is a property of the
+ * current implementation, not of the type: any future change that passes the
+ * caller's object straight through to `JSON.stringify` would persist a BYOK key
+ * to disk permanently, where sessionStorage's expiry no longer applies.
+ *
+ * Returns the payload only when it is proven secret-free.
+ */
+function withoutSecrets(settings: StoredApiSettings): PersistedApiSettings {
+  const candidate: PersistedApiSettings = {
+    mode: settings.mode,
+    validatedAt: settings.validatedAt,
+    provider: settings.provider ?? "openrouter",
+    baseUrl: settings.baseUrl?.trim(),
+    modelName: settings.modelName?.trim(),
+  };
+
+  const serialised = JSON.stringify(candidate);
+  if (settings.apiKey && serialised.includes(settings.apiKey)) {
+    throw new Error("Refusing to persist an API key to localStorage");
+  }
+  if (/\bsk-[A-Za-z0-9_-]{8,}/.test(serialised)) {
+    throw new Error("Refusing to persist a value that looks like an API key");
+  }
+  return candidate;
+}
+
 export function loadApiSettings(): StoredApiSettings {
   if (typeof window === "undefined") {
     return { mode: "free" };
@@ -69,13 +102,7 @@ function writeSessionApiKey(apiKey: string | undefined): void {
 export function saveApiSettings(settings: StoredApiSettings): void {
   if (typeof window === "undefined") return;
 
-  const payload: StoredApiSettings = {
-    mode: settings.mode,
-    validatedAt: settings.validatedAt,
-    provider: settings.provider ?? "openrouter",
-    baseUrl: settings.baseUrl?.trim(),
-    modelName: settings.modelName?.trim(),
-  };
+  const payload = withoutSecrets(settings);
 
   writeSessionApiKey(
     settings.mode === "byok" ? settings.apiKey?.trim() || undefined : undefined

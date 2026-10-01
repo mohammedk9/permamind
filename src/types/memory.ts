@@ -13,6 +13,22 @@ export interface RetrievedMemory {
   updatedAt: Date;
 }
 
+/**
+ * Web search providers supported by PermaMind.
+ * `exa` stays the default so existing behavior is unchanged; the others are
+ * independent of each other and of the LLM provider.
+ */
+export type SearchProvider = "exa" | "anysearch" | "google_grounding";
+
+/** A normalized web search hit, whichever provider produced it. */
+export interface SearchCitation {
+  title: string;
+  url: string;
+  text: string;
+  source: SearchProvider;
+  retrievedAt: string;
+}
+
 export type MemoryRecordKind = "fact" | "decision" | "preference" | "project";
 export type MemoryConfidence = "high" | "medium" | "low";
 export type MemoryRecordStatus = "active" | "forgotten" | "superseded";

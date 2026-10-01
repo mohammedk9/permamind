@@ -1,6 +1,8 @@
 import type { Conversation, MemoryDecision, MemoryFact } from "@/types/chat";
 import type { MemoryConfidence, MemoryRecord } from "@/types/memory";
 
+import { persistOrAnnounce } from "@/lib/storage/storage-health";
+
 export const MEMORY_LEDGER_KEY = "permamind:memory-ledger:v1";
 
 interface StoredLedger { version: 1; records: MemoryRecord[]; }
@@ -21,12 +23,25 @@ function isRecord(value: unknown): value is MemoryRecord {
   return typeof record.id === "string" && typeof record.text === "string" && typeof record.conversationId === "string";
 }
 
-function write(records: MemoryRecord[]): void {
-  localStorage.setItem(MEMORY_LEDGER_KEY, JSON.stringify({ version: 1, records } satisfies StoredLedger));
+/**
+ * Writes the ledger exactly once per batch.
+ *
+ * The previous version called this unconditionally, which meant a full origin
+ * quota threw `QuotaExceededError` straight through `syncExtractedMemory` and
+ * aborted the whole memory-index rebuild in `chat-app`. It also serialised the
+ * entire record set on every single mutation.
+ */
+function write(records: MemoryRecord[]): boolean {
+  if (typeof window === "undefined") return false;
+  return persistOrAnnounce(MEMORY_LEDGER_KEY, JSON.stringify({ version: 1, records } satisfies StoredLedger));
+}
+
+function sorted(records: MemoryRecord[]): MemoryRecord[] {
+  return records.sort((left, right) => Number(right.pinned) - Number(left.pinned) || right.updatedAt.localeCompare(left.updatedAt));
 }
 
 export function loadMemoryLedger(): MemoryRecord[] {
-  return read().sort((left, right) => Number(right.pinned) - Number(left.pinned) || right.updatedAt.localeCompare(left.updatedAt));
+  return sorted(read());
 }
 
 export function activeMemoryRecords(): MemoryRecord[] {
@@ -52,29 +67,61 @@ function upsert(records: MemoryRecord[], next: MemoryRecord): MemoryRecord[] {
  * Adds newly extracted facts and decisions. A later extraction never replaces
  * an older decision: a new decision is stored beside it, and the older one is
  * marked superseded only when the extraction explicitly says so.
+ *
+ * The record list is read once, mutated in memory, and written once. The
+ * previous implementation persisted inside the loop, which meant one full
+ * serialise-and-write per fact and per decision on every single message.
  */
 export function syncExtractedMemory(conversation: Conversation): MemoryRecord[] {
   const metadata = conversation.metadata;
   if (!metadata || typeof window === "undefined") return loadMemoryLedger();
+  const records = applyExtraction(read(), conversation, metadata);
+  write(records);
+  return sorted(records);
+}
+
+/**
+ * Applies extraction for several conversations with a single read and a single
+ * write.
+ *
+ * `chat-app` rebuilds the whole index after every message, which previously
+ * called `syncExtractedMemory` once per conversation. With 100 conversations
+ * that was 100 reads plus 100 full writes of the entire ledger per message.
+ * The per-conversation function stays for the single-conversation path; the
+ * rebuild path uses this one.
+ */
+export function syncExtractedMemories(conversations: Conversation[]): MemoryRecord[] {
+  if (typeof window === "undefined") return [];
   let records = read();
+  for (const conversation of conversations) {
+    const metadata = conversation.metadata;
+    if (!metadata) continue;
+    records = applyExtraction(records, conversation, metadata);
+  }
+  write(records);
+  return sorted(records);
+}
+
+/** Mutates the record list for one conversation without touching storage. */
+function applyExtraction(
+  records: MemoryRecord[],
+  conversation: Conversation,
+  metadata: NonNullable<Conversation["metadata"]>,
+): MemoryRecord[] {
+  let next = records;
   const base = { conversationId: conversation.id, conversationTitle: conversation.title, status: "active" as const, source: "extracted" as const, pinned: false, updatedAt: metadata.generatedAt.toISOString() };
 
   for (const fact of metadata.facts ?? []) {
-    records = upsert(records, factRecord(conversation.id, fact, base));
+    next = upsert(next, factRecord(conversation.id, fact, base));
   }
   for (const decision of metadata.decisions ?? []) {
-    const next = decisionRecord(conversation.id, decision, base);
-    if (decision.status === "superseded") {
-      records = supersedeMatching(records, next);
-      continue;
-    }
-    records = upsert(records, next);
+    const record = decisionRecord(conversation.id, decision, base);
+    next = decision.status === "superseded" ? supersedeMatching(next, record) : upsert(next, record);
   }
   if (metadata.project?.name) {
-    records = upsert(records, { ...base, id: `project:${conversation.id}`, kind: "project", category: "project", confidence: "medium", text: [metadata.project.name, metadata.project.goal, ...(metadata.project.tasks ?? [])].filter(Boolean).join(" — ") });
+    next = upsert(next, { ...base, id: `project:${conversation.id}`, kind: "project", category: "project", confidence: "medium", text: [metadata.project.name, metadata.project.goal, ...(metadata.project.tasks ?? [])].filter(Boolean).join(" — ") });
   }
-  write(records);
-  return loadMemoryLedger();
+  return next;
 }
 
 /** Keeps the old decision and points it at the newer record instead of deleting it. */
@@ -105,15 +152,17 @@ function normalizeKey(value: string): string {
 }
 
 export function addMemoryRecord(record: MemoryRecord): MemoryRecord[] {
-  const records = upsert(read(), { ...record, text: record.text.trim().slice(0, 500) });
-  write(records.filter((item) => item.text));
-  return loadMemoryLedger();
+  // Return the in-memory result rather than re-reading storage, so a failed
+  // write can never make the caller see a stale list as if it were saved.
+  const records = upsert(read(), { ...record, text: record.text.trim().slice(0, 500) }).filter((item) => item.text);
+  write(records);
+  return sorted(records);
 }
 
 export function updateMemoryRecord(id: string, changes: Partial<Pick<MemoryRecord, "text" | "pinned" | "status">>): MemoryRecord[] {
-  const records = read().map((record) => record.id === id ? { ...record, ...changes, text: (changes.text ?? record.text).trim().slice(0, 500), source: changes.text ? "user" as const : record.source, confidence: changes.pinned ? "high" as const : record.confidence, updatedAt: new Date().toISOString() } : record);
-  write(records.filter((record) => record.text));
-  return loadMemoryLedger();
+  const records = read().map((record) => record.id === id ? { ...record, ...changes, text: (changes.text ?? record.text).trim().slice(0, 500), source: changes.text ? "user" as const : record.source, confidence: changes.pinned ? "high" as const : record.confidence, updatedAt: new Date().toISOString() } : record).filter((record) => record.text);
+  write(records);
+  return sorted(records);
 }
 
 export function forgetMemoryRecord(id: string): MemoryRecord[] {

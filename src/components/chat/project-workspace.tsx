@@ -4,6 +4,7 @@ import { FolderKanban, MessageSquare, Plus, Target, CheckSquare, Scale, HelpCirc
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { buildWeeklyPlan, exportProjectMarkdown } from "@/lib/projects/context";
+import { downloadBlob } from "@/lib/storage/download";
 import type { Conversation, Project } from "@/types/chat";
 
 export function ProjectWorkspace({ project, conversations, unlinkedConversations, onOpenConversation, onLinkConversation, onAddTask }: { project: Project; conversations: Conversation[]; unlinkedConversations: Conversation[]; onOpenConversation: (id: string) => void; onLinkConversation: (conversationId: string) => void; onAddTask: (task: string) => void }) {
@@ -14,13 +15,10 @@ export function ProjectWorkspace({ project, conversations, unlinkedConversations
     ["Goals", project.goals, Target], ["Tasks", project.tasks, CheckSquare], ["Decisions", project.decisions, Scale], ["Open questions", project.openQuestions, HelpCircle],
   ] as const;
   const exportMarkdown = () => {
-    const blob = new Blob([exportProjectMarkdown(project, conversations)], { type: "text/markdown;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = `${project.name.replace(/[^\p{L}\p{N}]+/gu, "-").replace(/^-|-$/g, "") || "project"}.md`;
-    link.click();
-    URL.revokeObjectURL(url);
+    downloadBlob(
+      new Blob([exportProjectMarkdown(project, conversations)], { type: "text/markdown;charset=utf-8" }),
+      `${project.name.replace(/[^\p{L}\p{N}]+/gu, "-").replace(/^-|-$/g, "") || "project"}.md`,
+    );
   };
   return <section className="min-h-0 flex-1 overflow-y-auto p-6 lg:p-10">
     <div className="mx-auto max-w-5xl space-y-8">

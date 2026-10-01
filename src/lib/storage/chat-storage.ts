@@ -1,6 +1,20 @@
 import type { Conversation, ConversationMetadata, Message, Project } from "@/types/chat";
 
+import { announceStorageFull, persistOrAnnounce } from "./storage-health";
+
 const STORAGE_KEY = "permamind:chat:v1";
+
+/**
+ * Outcome of a localStorage write.
+ *
+ * The old implementation swallowed every exception and returned void, so callers
+ * could not tell a successful save from a discarded one. A full quota made the
+ * user lose every new message with no warning, while the UI still showed the
+ * reply as saved.
+ */
+export type SaveResult =
+  | { ok: true }
+  | { ok: false; reason: "quota" | "unavailable"; bytes: number };
 
 interface StoredMessage {
   id: string;
@@ -171,12 +185,19 @@ export function loadChatData(): LoadedChatData {
   }
 }
 
+/**
+ * Persists conversations, projects, and the active selection.
+ *
+ * Returns whether the write actually landed. On a full quota the payload is
+ * discarded by the browser and `STORAGE_FULL_EVENT` is dispatched so the shell
+ * can warn the user and offer an export before anything is lost.
+ */
 export function saveChatData(
   conversations: Conversation[],
   activeId: string | null,
   projects: Project[] = []
-): void {
-  if (typeof window === "undefined") return;
+): SaveResult {
+  if (typeof window === "undefined") return { ok: false, reason: "unavailable", bytes: 0 };
 
   const data: StoredChatData = {
     version: 1,
@@ -185,9 +206,17 @@ export function saveChatData(
     projects: projects.map((project) => ({ ...project, createdAt: project.createdAt.toISOString(), updatedAt: project.updatedAt.toISOString() })),
   };
 
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
-  } catch {
-    // Quota exceeded or private browsing — fail silently for MVP
-  }
+  const serialized = JSON.stringify(data);
+  if (persistOrAnnounce(STORAGE_KEY, serialized)) return { ok: true };
+
+  // persistOrAnnounce already dispatched the event; report the same outcome so
+  // callers and listeners can never disagree about what happened.
+  return { ok: false, reason: "quota", bytes: serialized.length * 2 };
 }
+
+/**
+ * Re-export so a caller that only needs to warn on a failed write does not have
+ * to import from two modules.
+ */
+export { announceStorageFull };
+

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { assertPublicHttpsUrl, fetchPublicHttps, isLocalOllamaUrl, isSafeCustomUrl, resolveRequestAuth, type DnsLookup } from "../request-auth";
+import { assertPublicHttpsUrl, fetchPublicHttps, isLocalOllamaUrl, isSafeCustomUrl, requestBucketId, resolveRequestAuth, type DnsLookup } from "../request-auth";
 
 const publicLookup: DnsLookup = async () => [{ address: "8.8.8.8" }];
 
@@ -59,5 +59,52 @@ describe("custom provider URL protection", () => {
     expect(resolveRequestAuth(request)).toMatchObject({ provider: "ollama", apiKey: "", baseUrl: "http://127.0.0.1:11434/v1" });
     const remote = new Request("https://app.example/api/chat", { headers: { "x-ai-provider": "ollama", "x-ai-base-url": "http://10.0.0.8:11434/v1", "x-ai-model": "llama3.1" } });
     expect(() => resolveRequestAuth(remote)).toThrow(/this device/);
+  });
+});
+
+describe("rate limit bucket identity", () => {
+  const ollamaHeaders = { "x-ai-provider": "ollama", "x-ai-base-url": "http://127.0.0.1:11434/v1", "x-ai-model": "llama3.1" };
+
+  it("gives every local Ollama caller its own bucket", () => {
+    // The resolved Ollama key is "", so the old `apiKey.slice(-12)` produced the
+    // same bucket for everyone and one local user could throttle all the others.
+    const first = resolveRequestAuth(new Request("https://app.example/api/chat", { headers: { ...ollamaHeaders, "x-forwarded-for": "203.0.113.10" } }));
+    const second = resolveRequestAuth(new Request("https://app.example/api/chat", { headers: { ...ollamaHeaders, "x-forwarded-for": "203.0.113.11" } }));
+
+    expect(first.apiKey).toBe("");
+    expect(requestBucketId(first, new Request("https://app.example/api/chat", { headers: { "x-forwarded-for": "203.0.113.10" } }))).not.toBe(
+      requestBucketId(second, new Request("https://app.example/api/chat", { headers: { "x-forwarded-for": "203.0.113.11" } })),
+    );
+  });
+
+  it("keeps a local caller consistent across its own requests", () => {
+    const request = () => new Request("https://app.example/api/chat", { headers: { ...ollamaHeaders, "x-forwarded-for": "203.0.113.10" } });
+    const auth = resolveRequestAuth(request());
+
+    expect(requestBucketId(auth, request())).toBe(requestBucketId(auth, request()));
+  });
+
+  it("never puts a raw address in the bucket key", () => {
+    const request = new Request("https://app.example/api/chat", { headers: { ...ollamaHeaders, "x-forwarded-for": "203.0.113.10" } });
+    const bucket = requestBucketId(resolveRequestAuth(request), request);
+
+    expect(bucket).not.toContain("203.0.113.10");
+  });
+
+  it("keys a BYOK caller by their own key, not by address", () => {
+    const auth = { apiKey: "sk-user-key-abcdefghijkl", mode: "byok" as const, provider: "openai" as const };
+    const a = requestBucketId(auth, new Request("https://app.example/api/chat", { headers: { "x-forwarded-for": "1.1.1.1" } }));
+    const b = requestBucketId(auth, new Request("https://app.example/api/chat", { headers: { "x-forwarded-for": "2.2.2.2" } }));
+
+    expect(a).toBe(b);
+    expect(a).not.toContain("sk-user-key-abcdefghijkl");
+  });
+
+  it("separates the free server key namespace from local callers", () => {
+    const free = { apiKey: "server-managed", mode: "free" as const, provider: "openrouter" as const };
+    const local = { apiKey: "", mode: "byok" as const, provider: "ollama" as const };
+    const request = new Request("https://app.example/api/chat", { headers: { "x-forwarded-for": "203.0.113.10" } });
+
+    expect(requestBucketId(free, request)).not.toBe(requestBucketId(local, request));
   });
 });

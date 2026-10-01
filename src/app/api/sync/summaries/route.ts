@@ -3,6 +3,58 @@ import { requireUser } from "@/lib/supabase/server";
 
 export const runtime = "nodejs";
 const MAX_CIPHERTEXT_LENGTH = 1_000_000;
+/** Upper bound on one delta page, so a large history cannot produce an unbounded response. */
+const MAX_PAGE = 500;
+
+/**
+ * Returns conversation summaries that changed since a given timestamp.
+ *
+ * This is the read half of multi-device sync. The previous design pulled the
+ * whole encrypted blob for a scope, so two devices editing two different
+ * conversations could not both survive: the second upload overwrote the first.
+ * Fetching only rows newer than the caller's last successful sync turns that
+ * into a per-conversation merge, because the table is already keyed on
+ * `(user_id, conversation_id)`.
+ *
+ * `since` is the caller's own high-water mark. When omitted the full history is
+ * returned, which is what a fresh device needs.
+ */
+export async function GET(request: Request) {
+  const { supabase, user } = await requireUser();
+  if (!supabase || !user) return NextResponse.json({ error: "Sign in required" }, { status: 401 });
+
+  const params = new URL(request.url).searchParams;
+  const sinceRaw = params.get("since");
+  const limitRaw = Number(params.get("limit") ?? MAX_PAGE);
+
+  if (sinceRaw !== null && Number.isNaN(Date.parse(sinceRaw))) {
+    return NextResponse.json({ error: "Invalid since timestamp" }, { status: 400 });
+  }
+  const limit = Math.min(MAX_PAGE, Math.max(1, Number.isFinite(limitRaw) ? limitRaw : MAX_PAGE));
+
+  const query = supabase
+    .from("cloud_conversation_summaries")
+    .select("conversation_id,ciphertext,encryption_version,content_hash,source_created_at,source_updated_at,updated_at")
+    .eq("user_id", user.id)
+    .not("ciphertext", "is", null)
+    .order("updated_at", { ascending: true })
+    .limit(limit);
+
+  if (sinceRaw) query.gt("updated_at", new Date(sinceRaw).toISOString());
+
+  const { data, error } = await query;
+  if (error) return NextResponse.json({ error: "Could not load sync data" }, { status: 500 });
+
+  const summaries = data ?? [];
+  // The next call uses the newest row's updated_at as its watermark. When nothing
+  // matched, the caller's own mark is echoed back so it does not reset.
+  const lastSyncedAt =
+    summaries.length > 0
+      ? (summaries[summaries.length - 1].updated_at as string)
+      : (sinceRaw ?? new Date().toISOString());
+
+  return NextResponse.json({ summaries, lastSyncedAt, hasMore: summaries.length === limit });
+}
 
 export async function PUT(request: Request) {
   const { supabase, user } = await requireUser();

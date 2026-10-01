@@ -10,7 +10,7 @@ import {
   getFreeRoute,
   parseOpenRouterError,
 } from "@/lib/ai/openrouter";
-import { resolveRequestAuth } from "@/lib/ai/request-auth";
+import { requestBucketId, resolveRequestAuth } from "@/lib/ai/request-auth";
 import {
   isModelUnavailableError,
   resolveModelChain,
@@ -83,7 +83,7 @@ export async function POST(request: Request) {
   }
 
   if (auth.mode !== "free") {
-    const limiter = checkRateLimit(`byok:summary:${auth.apiKey.slice(-12)}`, BYOK_SUMMARY_REQUESTS_PER_MINUTE);
+    const limiter = checkRateLimit(requestBucketId(auth, request), BYOK_SUMMARY_REQUESTS_PER_MINUTE);
     if (!limiter.allowed) {
       return Response.json(
         { error: "Too many summary requests. Please slow down." },

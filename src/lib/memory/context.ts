@@ -1,4 +1,5 @@
 import type { ChatCompletionMessage } from "@/lib/ai/types";
+import { dominantScript } from "@/lib/i18n/arabic-normalize";
 import type { Conversation } from "@/types/chat";
 import type { MemoryRecord, RetrievedMemory } from "@/types/memory";
 import { formatConversationTime } from "@/lib/format/date";
@@ -18,12 +19,9 @@ export function detectReplyLanguage(messages: ChatCompletionMessage[]): "ar" | "
   for (let i = messages.length - 1; i >= 0; i--) {
     const message = messages[i];
     if (message.role !== "user" || !message.content.trim()) continue;
-    const arabic = message.content.match(/[\u0600-\u06FF\u0750-\u077F\uFB50-\uFDFF\uFE70-\uFEFF]/g);
-    const latin = message.content.match(/[A-Za-z]/g);
     // Mixed input (Arabic plus a technical term) is decided by which script
     // actually dominates, so a single English word does not flip the answer.
-    if (arabic && arabic.length >= (latin?.length ?? 0)) return "ar";
-    return "en";
+    return dominantScript(message.content);
   }
   return "en";
 }

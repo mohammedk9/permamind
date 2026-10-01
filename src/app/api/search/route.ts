@@ -1,13 +1,31 @@
-import { searchInternet } from "@/lib/search/exa";
+import {
+  availableProviders,
+  isProviderConfigured,
+  parseSearchProvider,
+  runWebSearch,
+} from "@/lib/search/provider";
 import { currentSearchMonth, SEARCH_GLOBAL_LIMIT, SEARCH_PER_USER_LIMIT } from "@/lib/search/quota";
 import { requireUser } from "@/lib/supabase/server";
 
 export const runtime = "nodejs";
 
+/**
+ * Which providers have a server-side key right now. Only provider *ids* are
+ * returned — never keys, never which env var supplied them.
+ */
+export async function POST() {
+  const { user } = await requireUser();
+  if (!user) return Response.json({ error: "Sign in to use web search" }, { status: 401 });
+  return Response.json({ providers: availableProviders() });
+}
+
 export async function GET(request: Request) {
-  const query = new URL(request.url).searchParams.get("q")?.trim() ?? "";
+  const params = new URL(request.url).searchParams;
+  const query = params.get("q")?.trim() ?? "";
   if (!query || query.length > 500) return Response.json({ error: "A valid search query is required" }, { status: 400 });
-  if (!process.env.EXA_API_KEY) return Response.json({ error: "Web search is not configured" }, { status: 503 });
+
+  const provider = parseSearchProvider(params.get("provider"));
+  if (!isProviderConfigured(provider)) return Response.json({ error: "Web search is not configured" }, { status: 503 });
 
   const { supabase, user } = await requireUser();
   if (!supabase || !user) return Response.json({ error: "Sign in to use web search" }, { status: 401 });
@@ -24,6 +42,6 @@ export async function GET(request: Request) {
     return Response.json({ error: "Monthly web-search limit reached", used: quota?.user_count ?? SEARCH_PER_USER_LIMIT, limit: SEARCH_PER_USER_LIMIT }, { status: 429 });
   }
 
-  const results = await searchInternet(query);
-  return Response.json({ results, used: quota.user_count, limit: SEARCH_PER_USER_LIMIT });
+  const { results, provider: resolved } = await runWebSearch(query, provider);
+  return Response.json({ results, provider: resolved, used: quota.user_count, limit: SEARCH_PER_USER_LIMIT });
 }

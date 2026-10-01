@@ -52,6 +52,9 @@ export function useConversations(options: UseConversationsOptions = {}) {
     if (!isHydrated) return;
 
     const timeout = setTimeout(() => {
+      // saveChatData announces its own failure through STORAGE_FULL_EVENT, so
+      // a full quota surfaces as a banner with an export prompt instead of a
+      // silently discarded message.
       saveChatData(conversations, activeId, projects);
     }, SAVE_DEBOUNCE_MS);
 

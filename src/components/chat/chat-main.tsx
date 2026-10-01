@@ -20,14 +20,16 @@ import { ChatSidebar } from "@/components/chat/chat-sidebar";
 import type { ConnectionStatus } from "@/hooks/use-api-settings";
 import type { ApiKeyMode } from "@/lib/settings/api-key-storage";
 import { MemoriesUsed } from "@/components/chat/memories-used";
+import { LocalStorageWarning } from "@/components/chat/local-storage-warning";
 import { PageHeader } from "@/components/ui/page-header";
 import type { AnalyticsSummary } from "@/types/analytics";
 import type { Conversation } from "@/types/chat";
-import type { RetrievedMemory } from "@/types/memory";
+import type { RetrievedMemory, SearchProvider } from "@/types/memory";
 import { useLocale } from "@/hooks/use-locale";
 import { useOnlineStatus } from "@/hooks/use-online-status";
 import type { QuickCommand } from "@/lib/chat/quick-commands";
 import { OFFLINE_MODEL_NOTICE } from "@/lib/pwa/cache-scope";
+import { DEFAULT_SEARCH_PROVIDER } from "@/lib/search/settings";
 
 interface ChatMainProps {
   conversation: Conversation | null;
@@ -64,6 +66,8 @@ interface ChatMainProps {
   freeMessagesRemaining?: number | null;
   webSearchEnabled?: boolean;
   onWebSearchChange?: (enabled: boolean) => void;
+  searchProvider?: SearchProvider;
+  onSearchProviderChange?: (provider: SearchProvider) => void;
   searchUsage?: { used: number; limit: number } | null;
   onLinkedConversationsChange: (ids: string[]) => void;
 }
@@ -103,6 +107,8 @@ export function ChatMain({
   freeMessagesRemaining = null,
   webSearchEnabled = false,
   onWebSearchChange,
+  searchProvider = DEFAULT_SEARCH_PROVIDER,
+  onSearchProviderChange,
   searchUsage,
   onLinkedConversationsChange,
 }: ChatMainProps) {
@@ -177,6 +183,8 @@ export function ChatMain({
         />
       )}
 
+      <LocalStorageWarning conversations={conversations} />
+
       <ScrollArea aria-label={ar ? "رسائل المحادثة" : "Conversation messages"} className="min-h-0 flex-1 overflow-hidden [scrollbar-gutter:stable]">
         {messages.length === 0 ? (
           <div className="flex min-h-[46vh] items-center justify-center px-4 py-8">
@@ -216,7 +224,7 @@ export function ChatMain({
 
       <div className="relative">
         {webSearchEnabled && searchUsage && <p className="absolute bottom-1 right-5 z-20 text-[10px] text-muted-foreground">{ar ? `بحث الويب: ${searchUsage.used}/${searchUsage.limit}` : `Web search: ${searchUsage.used}/${searchUsage.limit}`}</p>}
-        <ChatInput onSend={onSend} isLoading={isLoading} disabled={!canSend || !online} webSearchEnabled={webSearchEnabled} onWebSearchChange={onWebSearchChange} conversation={conversation} conversations={conversations} onLinkedConversationsChange={onLinkedConversationsChange} />
+        <ChatInput onSend={onSend} isLoading={isLoading} disabled={!canSend || !online} webSearchEnabled={webSearchEnabled} onWebSearchChange={onWebSearchChange} searchProvider={searchProvider} onSearchProviderChange={onSearchProviderChange} conversation={conversation} conversations={conversations} onLinkedConversationsChange={onLinkedConversationsChange} />
         {!online && <p className="mx-auto mt-2 max-w-3xl px-2 text-xs text-muted-foreground" role="status">{OFFLINE_MODEL_NOTICE}</p>}
       </div>
     </div>

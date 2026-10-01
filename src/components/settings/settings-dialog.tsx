@@ -37,6 +37,7 @@ import {
 import { setSyncPassphrase } from "@/lib/storage/sync-encryption";
 import { loadChatData } from "@/lib/storage/chat-storage";
 import { buildConversationExport, conversationExportFileName } from "@/lib/storage/chat-export";
+import { downloadBlob } from "@/lib/storage/download";
 import { loadStoragePolicy, saveStoragePolicy, type StoragePolicy } from "@/lib/arweave/storage-policy";
 
 interface SettingsDialogProps {
@@ -105,13 +106,12 @@ function StoragePreferencesPanel() {
   const downloadConversations = () => {
     const { conversations } = loadChatData();
     const exportedAt = new Date();
-    const blob = new Blob([JSON.stringify(buildConversationExport(conversations, exportedAt), null, 2)], { type: "application/json" });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = conversationExportFileName(exportedAt);
-    link.click();
-    URL.revokeObjectURL(url);
+    downloadBlob(
+      new Blob([JSON.stringify(buildConversationExport(conversations, exportedAt), null, 2)], {
+        type: "application/json",
+      }),
+      conversationExportFileName(exportedAt),
+    );
   };
   return (
     <div className="space-y-3 text-xs">

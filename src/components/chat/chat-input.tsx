@@ -11,6 +11,14 @@ import { extractAttachmentText } from "@/lib/documents/extract";
 import { attachmentKind, attachmentSizeLimit, composeMessageContent, MAX_ATTACHMENT_COUNT, prepareAttachments, type AttachmentInput } from "@/lib/documents/limits";
 import { cn } from "@/lib/utils";
 import type { Conversation } from "@/types/chat";
+import type { SearchProvider } from "@/types/memory";
+import { DEFAULT_SEARCH_PROVIDER, SEARCH_PROVIDERS } from "@/lib/search/settings";
+
+const SEARCH_PROVIDER_LABELS: Record<SearchProvider, { en: string; ar: string }> = {
+  exa: { en: "Exa", ar: "Exa" },
+  anysearch: { en: "AnySearch", ar: "AnySearch" },
+  google_grounding: { en: "Gemini Grounding", ar: "تأريض Gemini" },
+};
 
 interface ChatInputProps {
   onSend: (content: string, displayContent?: string) => void;
@@ -18,6 +26,8 @@ interface ChatInputProps {
   isLoading?: boolean;
   webSearchEnabled?: boolean;
   onWebSearchChange?: (enabled: boolean) => void;
+  searchProvider?: SearchProvider;
+  onSearchProviderChange?: (provider: SearchProvider) => void;
   conversation?: Conversation | null;
   conversations?: Conversation[];
   onLinkedConversationsChange?: (ids: string[]) => void;
@@ -25,7 +35,7 @@ interface ChatInputProps {
 
 interface PendingAttachment extends AttachmentInput { id: string; status: "reading" | "ready" | "error"; }
 
-export function ChatInput({ onSend, disabled, isLoading, webSearchEnabled = false, onWebSearchChange, conversation = null, conversations = [], onLinkedConversationsChange }: ChatInputProps) {
+export function ChatInput({ onSend, disabled, isLoading, webSearchEnabled = false, onWebSearchChange, searchProvider = DEFAULT_SEARCH_PROVIDER, onSearchProviderChange, conversation = null, conversations = [], onLinkedConversationsChange }: ChatInputProps) {
   const { locale } = useLocale();
   const ar = locale === "ar";
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -174,7 +184,7 @@ export function ChatInput({ onSend, disabled, isLoading, webSearchEnabled = fals
           disabled={disabled || isLoading}
           aria-pressed={webSearchEnabled}
           aria-label={webSearchEnabled ? (ar ? "إيقاف بحث الويب" : "Turn off web search") : (ar ? "تفعيل بحث الويب" : "Turn on web search")}
-          title={ar ? "بحث الويب: يستخدم Exa ويستهلك من حصتك" : "Web search: uses Exa and consumes your search quota"}
+          title={ar ? "بحث الويب: يستهلك من حصتك" : "Web search: consumes your search quota"}
         >
           <Globe2 className={`size-4 ${webSearchEnabled ? "text-primary" : ""}`} />
           <span className="hidden text-xs font-medium sm:inline">{ar ? "بحث الويب" : "Web search"}</span>
@@ -182,6 +192,22 @@ export function ChatInput({ onSend, disabled, isLoading, webSearchEnabled = fals
             {webSearchEnabled ? (ar ? "مفعّل" : "On") : (ar ? "متوقف" : "Off")}
           </span>
         </Button>
+        {webSearchEnabled && (
+          <select
+            value={searchProvider}
+            onChange={(event) => onSearchProviderChange?.(event.target.value as SearchProvider)}
+            disabled={disabled || isLoading}
+            aria-label={ar ? "مزود بحث الويب" : "Web search provider"}
+            title={ar ? "مزود بحث الويب المستخدم لهذا البحث" : "The web search provider used for this search"}
+            className="mb-0.5 h-9 shrink-0 rounded-xl border border-border bg-background px-2 text-[11px] text-muted-foreground outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:opacity-50"
+          >
+            {SEARCH_PROVIDERS.map((item) => (
+              <option key={item} value={item}>
+                {SEARCH_PROVIDER_LABELS[item][ar ? "ar" : "en"]}
+              </option>
+            ))}
+          </select>
+        )}
         <Textarea
           ref={textareaRef}
           placeholder={

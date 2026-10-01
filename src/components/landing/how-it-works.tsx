@@ -3,7 +3,6 @@
 import React, { useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import {
   ArrowDown,
-  ArrowRight,
   Check,
   History,
   Lock,
@@ -12,6 +11,7 @@ import {
   Sparkles,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { VaultFlow } from "@/components/landing/vault-flow";
 
 /** The subset of the translation bundle this section needs. */
 export type HowItWorksCopy = {
@@ -141,35 +141,14 @@ function RecallPreview({ copy }: { copy: HowItWorksCopy }) {
 function VaultPreview({ copy, rtl }: { copy: HowItWorksCopy; rtl: boolean }) {
   return (
     <PreviewFrame label={copy.steps[3].title} icon={Lock}>
-      <div className="grid flex-1 items-center gap-3 sm:grid-cols-[1fr_auto_1fr]">
-        <div className="flex items-center gap-3 rounded-2xl border border-border bg-background px-4 py-4">
-          <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-xs font-semibold tracking-wide">
-            AES
-          </span>
-          <div className="min-w-0">
-            <p className="text-sm font-semibold">{copy.stageEncrypted}</p>
-            <p className="text-xs text-muted-foreground">{copy.stageCipher}</p>
-          </div>
-        </div>
-        <span
-          aria-hidden="true"
-          className={cn(
-            "how-arrow-pulse justify-self-center text-primary",
-            rtl && "rotate-180",
-          )}
-        >
-          <ArrowRight className="size-5" />
-        </span>
-        <div className="flex items-center gap-3 rounded-2xl border border-primary/30 bg-primary/10 px-4 py-4">
-          <span className="flex size-10 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-background">
-            <img src="/logos/arweave.svg" alt="" draggable={false} className="h-6 w-auto" />
-          </span>
-          <div className="min-w-0">
-            <p className="text-sm font-semibold">Arweave</p>
-            <p className="text-xs text-muted-foreground">{copy.stagePermanent}</p>
-          </div>
-        </div>
-      </div>
+      <VaultFlow
+        stageEncrypted={copy.stageEncrypted}
+        stageCipher={copy.stageCipher}
+        stagePermanent={copy.stagePermanent}
+        rtl={rtl}
+        variant="panel"
+        animated
+      />
       <p className="mt-4 flex items-center gap-2 border-t border-border pt-4 text-xs text-muted-foreground">
         <ShieldCheck className="size-4 shrink-0 text-primary" />
         {copy.howPreview.vaultNote}

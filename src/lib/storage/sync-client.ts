@@ -76,6 +76,92 @@ export interface RemoteSyncBlob {
   updated_at: string;
 }
 
+/** One row returned by the delta endpoint. */
+export interface RemoteSummaryRow {
+  conversation_id: string;
+  ciphertext: string;
+  encryption_version: number;
+  content_hash: string;
+  source_created_at: string;
+  source_updated_at: string;
+  updated_at: string;
+}
+
+export interface DeltaSyncResult {
+  summaries: RemoteSummaryRow[];
+  /** Watermark to pass as `since` on the next call. */
+  lastSyncedAt: string;
+  /** True when the server had more rows than this page returned. */
+  hasMore: boolean;
+}
+
+const SYNC_WATERMARK_KEY = "permamind:delta-sync-watermark:v1";
+
+/**
+ * Watermark of the last delta pull.
+ *
+ * Kept separate from the conversation blob because it describes the sync
+ * relationship, not the data. It is per-device on purpose: a second device
+ * must start from zero and pull the full history once.
+ */
+export function readSyncWatermark(): string | null {
+  if (typeof window === "undefined") return null;
+  try {
+    return localStorage.getItem(SYNC_WATERMARK_KEY);
+  } catch {
+    return null;
+  }
+}
+
+export function writeSyncWatermark(value: string): void {
+  if (typeof window === "undefined") return;
+  try {
+    localStorage.setItem(SYNC_WATERMARK_KEY, value);
+  } catch {
+    // A missing watermark only costs one redundant full pull.
+  }
+}
+
+export function clearSyncWatermark(): void {
+  if (typeof window === "undefined") return;
+  try {
+    localStorage.removeItem(SYNC_WATERMARK_KEY);
+  } catch {
+    // nothing to do
+  }
+}
+
+/**
+ * Pulls only what changed since the last successful pull.
+ *
+ * Passing `since: undefined` returns the full history, which is what a device
+ * that has never synced needs. The caller is responsible for merging the result
+ * and for advancing the watermark only after a successful apply, so a failed
+ * decrypt is retried instead of being skipped past.
+ */
+export async function fetchSyncDelta(
+  options: { since?: string | null; limit?: number } = {},
+): Promise<DeltaSyncResult> {
+  const params = new URLSearchParams();
+  if (options.since) params.set("since", options.since);
+  if (options.limit) params.set("limit", String(options.limit));
+
+  const response = await fetch(`/api/sync/summaries${params.size ? `?${params}` : ""}`, {
+    cache: "no-store",
+  });
+  if (!response.ok) {
+    const payload = (await response.json().catch(() => null)) as { error?: string } | null;
+    throw new Error(payload?.error ?? "Could not load sync data");
+  }
+
+  const payload = (await response.json()) as Partial<DeltaSyncResult>;
+  return {
+    summaries: Array.isArray(payload.summaries) ? payload.summaries : [],
+    lastSyncedAt: typeof payload.lastSyncedAt === "string" ? payload.lastSyncedAt : new Date().toISOString(),
+    hasMore: payload.hasMore === true,
+  };
+}
+
 export async function uploadEncryptedSync(scope: SyncScope, value: unknown): Promise<void> {
   const ciphertext = await encryptSyncValue(value);
   const contentHash = await computeContentHash(canonicalJSON(value));

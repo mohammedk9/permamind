@@ -1,17 +1,19 @@
 /**
- * Internet search client (Exa provider).
+ * Internet search client (Exa provider) — the default web search provider.
  *
- * Public surface is provider-agnostic: `InternetSearchResult` and
- * `searchInternet`. Exa-specific request/response types stay internal so the
- * backend can swap providers without changing callers.
+ * Public surface is provider-agnostic: `searchInternet` returns
+ * `SearchCitation`, the same shape the AnySearch and Google Grounding adapters
+ * return. Exa-specific request/response types stay internal so the backend can
+ * swap providers without changing callers.
  */
 
-/** Normalized web search hit — the only fields callers should depend on. */
-export interface InternetSearchResult {
-  title: string;
-  url: string;
-  text: string;
-}
+import type { SearchCitation } from "@/types/memory";
+
+/**
+ * @deprecated Use `SearchCitation` from `@/types/memory`. Kept as an alias so
+ * existing imports keep compiling while every provider shares one shape.
+ */
+export type InternetSearchResult = SearchCitation;
 
 const EXA_SEARCH_URL = "https://api.exa.ai/search";
 const DEFAULT_TIMEOUT_MS = 15_000;
@@ -83,12 +85,15 @@ async function requestExaSearch(
   );
 }
 
-function mapExaResults(data: ExaSearchResponse): InternetSearchResult[] {
+function mapExaResults(data: ExaSearchResponse): SearchCitation[] {
+  const retrievedAt = new Date().toISOString();
   return (data.results ?? [])
     .map((item) => ({
       title: item.title?.trim() ?? "",
       url: item.url?.trim() ?? "",
       text: item.text?.trim() ?? "",
+      source: "exa" as const,
+      retrievedAt,
     }))
     .filter((item) => item.url.length > 0);
 }
@@ -96,7 +101,7 @@ function mapExaResults(data: ExaSearchResponse): InternetSearchResult[] {
 async function searchWithExa(
   query: string,
   apiKey: string
-): Promise<InternetSearchResult[]> {
+): Promise<SearchCitation[]> {
   let response = await requestExaSearch(query, apiKey, DEFAULT_TIMEOUT_MS);
 
   if (response.status === 429) {
@@ -112,6 +117,11 @@ async function searchWithExa(
   return mapExaResults(data);
 }
 
+/** True when a server-side Exa key is configured. */
+export function isExaConfigured(): boolean {
+  return Boolean(process.env.EXA_API_KEY?.trim());
+}
+
 /**
  * Search the public internet for pages relevant to `query`.
  *
@@ -120,7 +130,7 @@ async function searchWithExa(
  */
 export async function searchInternet(
   query: string
-): Promise<InternetSearchResult[]> {
+): Promise<SearchCitation[]> {
   const trimmed = query.trim();
   if (!trimmed) {
     return [];

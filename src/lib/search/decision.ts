@@ -3,6 +3,7 @@ import {
     MEMORY_KEYWORDS,
     MIXED_KEYWORDS,
   } from "@/lib/search/keywords";
+import { normalizeArabicPhrase } from "@/lib/i18n/arabic-normalize";
   import type {
     KeywordMatchResult,
     SearchDecision,
@@ -14,15 +15,14 @@ import {
   
   /**
    * Normalize for matching: lowercase, collapse whitespace, unify common Arabic forms.
+   *
+   * Uses the shared normaliser so keyword routing sees exactly the text the
+   * retriever indexed. This copy previously handled only أ إ آ and ى and ة, so a
+   * question containing ؤ or a zero-width joiner routed differently from the way
+   * it was stored.
    */
   function normalizeQuery(query: string): string {
-    return query
-      .trim()
-      .toLowerCase()
-      .replace(/\s+/g, " ")
-      .replace(/[أإآ]/g, "ا")
-      .replace(/ى/g, "ي")
-      .replace(/ة/g, "ه");
+    return normalizeArabicPhrase(query);
   }
   
   function findMatches(

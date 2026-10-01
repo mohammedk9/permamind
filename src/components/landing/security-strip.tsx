@@ -44,7 +44,7 @@ export function SecurityStrip({ copy }: { copy: SecurityStripCopy }) {
   ];
 
   return (
-    <section className="border-t border-border/50 py-16">
+    <section id="security" className="scroll-mt-20 border-t border-border/50 py-16">
       <div className="mx-auto max-w-5xl px-4 sm:px-6">
         <p className="text-center text-sm font-semibold uppercase tracking-[0.18em] text-muted-foreground">
           {copy.securityTitle}

@@ -7,9 +7,14 @@ PermaMind is a privacy-focused AI memory workspace. Conversations stay in the br
 ## Features
 
 - Streaming chat through OpenRouter, a personal API key (BYOK), or a supported direct provider.
-- Free mode with an automatic server-side fallback across OpenRouter, Groq, and Google AI Studio. Provider keys and internal routes stay on the server.
+- Free mode with an automatic server-side fallback across OpenRouter, Groq, and Google AI Studio. Provider keys and internal routes stay on the server. The shared key is limited to 10 chat messages and 10 summaries per UTC day per user, tracked durably in Postgres so a browser reload cannot reset the count. A request is reserved first and only counted on completion, so a failed provider call or a cancelled stream does not spend the allowance.
 - Local conversation storage with rename, delete, and cross-conversation search.
+- Full account export and import in one file — conversations, projects, the memory ledger, storage preferences, and policy. A readable JSON file for self-hosting and inspection, or a gzip + AES-256-GCM archive for moving to another device. The API key is never included. Import shows a plan first and merges rather than replaces, so a stale file cannot wipe newer local work.
+- Local storage health monitoring. The browser reports exhaustion only by throwing `QuotaExceededError`, which previously discarded a write with no signal anywhere: the user kept chatting, saw a successful reply, and lost the conversation on the next refresh. A banner now reports real per-origin usage, breaks it down per store, and surfaces the failed write itself.
+- Delta cloud sync. The client keeps a watermark and pulls only rows newer than it, merging by `updatedAt` instead of re-sending the whole dataset every time.
 - Automatic summaries, topics, tags, and entities, plus memory-aware context before each reply.
+- Hybrid memory retrieval: local BM25 ranked by inverse document frequency, fused with embedding similarity through reciprocal rank fusion, and capped by an embedding pre-filter. Everything runs on the device; the index is built in memory and discarded.
+- Shared Arabic normalization for every retrieval path — diacritics, tatweel, zero-width marks, and hamza variants are folded once in `lib/i18n/arabic-normalize`, so the lexical and the semantic ranker no longer normalize the same sentence into two different strings.
 - A decision ledger inside the Memory page. Active decisions come first, and a superseded decision stays visible underneath with its source and date. You can open the source conversation, pin a decision, correct it, or save a short note as a new decision beside the old one. A later extraction marks an old decision superseded only when the extraction says so. Pinned and manually corrected records are not overwritten.
 - Decision questions in English or Arabic, such as "what did we decide?" or "ماذا قررنا؟", retrieve more decision context and ask the model to cite the source title, date, and whether a decision was superseded. If the source is insufficient, the answer says so instead of inventing one.
 - Optional local Ollama in Settings, fixed to `http://127.0.0.1:11434/v1`, with no API key. Other HTTP addresses stay blocked. Web search is disabled in this mode, and cloud sync should stay off so decision context does not leave the device.
@@ -17,8 +22,9 @@ PermaMind is a privacy-focused AI memory workspace. Conversations stay in the br
 - Supabase authentication, protected API routes, and cloud summary synchronization.
 - AES-256-GCM snapshots compressed with gzip, queued durably, and uploaded to Arweave.
 - Snapshot restore by latest backup or a validated transaction ID, with size and content limits.
-- Optional Exa web search, Groq voice transcription, storage quotas, and multi-network storage purchases.
+- Optional web search with three independent providers — Exa (default), AnySearch, and Gemini Grounding — plus Groq voice transcription, storage quotas, and multi-network storage purchases.
 - Read-only MCP access to summaries and decisions the user explicitly allows, including `search_memory`, `get_memory`, and `list_decisions`. `save_memory` is visible but every call is rejected and audited. See `mcp/README.md`.
+- A bilingual interface, English and Arabic, with the landing page and the app sharing one translation bundle.
 
 ## Stack
 
@@ -27,7 +33,7 @@ PermaMind is a privacy-focused AI memory workspace. Conversations stay in the br
 - Supabase Auth and Postgres
 - Vitest and Testing Library
 - OpenRouter and OpenAI-compatible provider APIs
-- Arweave and optional Exa search
+- Arweave and optional Exa, AnySearch, or Gemini Grounding search
 
 ## Local setup
 
@@ -35,14 +41,14 @@ Requirements: Node.js 20 or newer and npm.
 
 ```bash
 npm install
-copy .env.example .env.local   # Windows
-# cp .env.example .env.local   # macOS/Linux
 npm run dev
 ```
 
-Open `http://localhost:3000`. There is no `.env.example` in this checkout, so create `.env.local` manually and never commit it.
+Open `http://localhost:3000`. There is no `.env.example` in this checkout, so create `.env.local` yourself and never commit it. See [Configuration](#configuration).
 
-### Minimum configuration
+### Configuration
+
+Minimum configuration:
 
 ```bash
 NEXT_PUBLIC_SUPABASE_URL=
@@ -53,23 +59,46 @@ NEXT_PUBLIC_APP_URL=http://localhost:3000
 OPENROUTER_API_KEY=
 GROQ_API_KEY=
 GOOGLE_AI_API_KEY=
+
+# Web search. Exa is the default; add the others to enable them.
+EXA_API_KEY=
+ANYSEARCH_API_KEY=
+GEMINI_API_KEY=
+# Optional. Defaults to gemini-2.5-flash when unset.
+# GEMINI_GROUNDING_MODEL=gemini-2.5-flash
 ```
 
 In production, `NEXT_PUBLIC_APP_URL` must be the real `https://` origin. OpenRouter requests fail closed without it.
 
-
-
 `GROQ_API_KEY` also enables transcription. Leave unused payment or provider values empty; their features return a configuration error instead of failing the whole app.
+
+## Web search providers
+
+Web search is optional and runs behind the same monthly per-user quota for every provider. The provider is chosen in the chat composer next to the web-search toggle, and the choice is stored locally in `localStorage` under `permamind:search-provider:v1`. Provider keys never reach the browser; only the preference does.
+
+| Provider | Key | Notes |
+| --- | --- | --- |
+| Exa | `EXA_API_KEY` | The default. Existing installs behave exactly as before. |
+| AnySearch | `ANYSEARCH_API_KEY` | Independent of the LLM provider and of Exa. Works with any model. |
+| Gemini Grounding | `GEMINI_API_KEY`, `GOOGLE_AI_API_KEY`, or `GOOGLE_API_KEY` | Calls Gemini directly with `tools: [{ google_search: {} }]`, never through OpenRouter. Model overridable with `GEMINI_GROUNDING_MODEL`. |
+
+If the selected provider is not configured, or returns nothing, PermaMind falls back to Exa when Exa is configured, so a temporarily unavailable free key never turns into a failed reply. Every hit is normalized to one `SearchCitation` shape (`title`, `url`, `text`, `source`, `retrievedAt`) before it reaches the model, which keeps the prompt format identical no matter which provider answered.
+
+AnySearch's free tier is limited to a trial period rather than a permanent free plan, so treat it as an optional second provider and keep `EXA_API_KEY` set if you want a stable default. Google Grounding requires a Gemini key and is not part of the free chat tier.
+
+`GET /api/search` accepts an optional `provider` query parameter and returns the provider that actually answered. `POST /api/search` returns the provider ids that currently have a server-side key, so the UI can show only what is usable. Provider keys are read from the environment on the server and are never sent to the browser.
 
 ## Database setup
 
 Run these files in the Supabase SQL editor, in order:
 
-1. `supabase/storage-purchases.sql` — purchases, immutable client updates, and monthly search quotas.
-2. `supabase/ai-usage.sql` — durable daily free-tier chat and summary quotas.
+1. `supabase/ai-usage.sql` — durable daily free-tier chat and summary quotas.
+2. `supabase/storage-purchases.sql` — purchases, immutable client updates, and monthly search quotas.
 3. `supabase/arweave-upload-queue.sql` — encrypted upload queue. Clients can insert pending ciphertext only.
 4. `supabase/mcp-readonly.sql` — allowed-summary projection and MCP audit log.
 5. `supabase/mcp-tokens.sql` — hashed, expiring, revocable MCP credentials. Run it after the MCP read-only file.
+
+`supabase/bootstrap-production.sql` is a generated concatenation of exactly those five, in that order, plus `pgcrypto` and verification queries. Prefer it for a fresh database. It is additive and safe to re-run: it never drops a table, truncates, or deletes, and it carries its own provenance note explaining why it exists. It is generated — edit the five source files, never the bootstrap.
 
 Use the Supabase service role only on the server. Do not expose it with a `NEXT_PUBLIC_` name.
 
@@ -95,6 +124,7 @@ Managed storage defaults are 15 MB of free quota, a 50 MB maximum upload, 10 upl
 | `/memory` | Memory browser and decision ledger |
 | `/backup` | Encrypted snapshot and storage management |
 | `/settings` | API mode, provider, and preferences |
+| `/storage` | How local, cloud, and Arweave storage relate |
 | `/admin/storage` | Purchase administration for configured admin IDs |
 | `/auth/*` | Sign-in, sign-up, and password recovery |
 | `/privacy`, `/terms` | Privacy and terms pages |
@@ -114,42 +144,82 @@ The API key is kept only in `sessionStorage` under `permamind:api-key:v1` and di
 ```text
 src/
   app/          Routes, pages, and API handlers
-  components/   Chat, backup, memory, and shadcn/ui components
+  components/   Chat, backup, memory, settings, and shadcn/ui components
   hooks/        Client state and browser integration
   lib/          AI, Arweave, memory, payments, search, storage, and Supabase
   types/        Shared TypeScript types
 supabase/       SQL for quotas, purchases, upload queue, and MCP
 scripts/        Favicon generation
+mcp/            MCP server documentation
 ```
+
+Notable modules:
+
+| Module | Why it exists |
+| --- | --- |
+| `lib/search/bm25.ts` | Lexical ranking by inverse document frequency. The previous scorer awarded one point per matching token, so a term in fifty conversations scored the same as a term in one, and ranking became arbitrary after a few dozen conversations. |
+| `lib/search/reciprocal-rank-fusion.ts` | Merges the lexical and semantic rankings without needing comparable scores. |
+| `lib/i18n/arabic-normalize.ts` | One normalization for all four retrieval paths, which had drifted into producing different strings for the same Arabic sentence. |
+| `lib/storage/download.ts` | The single download path. Revoking the object URL in the same task as `click()` tears the blob down before the browser reads it, which makes an export button intermittently produce no file. |
+| `lib/storage/full-export.ts` | Builds the portable archive and validates an import before a single byte is written. |
+| `lib/storage/storage-health.ts` | Measures real per-origin usage and broadcasts write failures, because the browser only signals exhaustion by throwing. |
+
+## Export, import, and downloads
+
+Every export in the app goes through `lib/storage/download`, and this is deliberate. The obvious three-liner is silently unreliable:
+
+```ts
+const url = URL.createObjectURL(blob);
+link.click();
+URL.revokeObjectURL(url);   // tears the blob down before the browser reads it
+```
+
+Chrome usually wins that race; other engines deliver no file at all. The symptom is an export button that appears to work and then silently produces nothing, which is far harder to diagnose than a hard failure. The shared helper attaches the anchor, clicks, and revokes on a later task.
+
+The Settings → Backup panel offers two shapes from the same data:
+
+| Format | Use it for | Notes |
+| --- | --- | --- |
+| Readable JSON | Inspection, self-hosting, keeping your own copy | Human-readable. The API key is never included. |
+| `.pmx` encrypted archive | Moving an account to another device | gzip then AES-256-GCM, the same pipeline as the Arweave backup. Compression happens before encryption because ciphertext has high entropy and would not compress. |
+
+Import validates the whole archive before writing anything, then merges rather than replaces: a newer copy of each item wins, and a record you edited by hand (`source: "user"`) is never overwritten by an extracted copy. The one destructive path in the app stays the explicit restore confirmation on `/backup`, which is a separate flow with its own review.
 
 ## Verification
 
 ```bash
-npm run dev
 npm run lint
 npx tsc --noEmit
 npm test
 npm run build
-npm start
 ```
 
-`npm test` runs the Vitest suite once. Coverage includes encryption, compression, snapshot creation, upload limits, queues, restore validation, quotas, memory retrieval, and UI behavior.
+`npm test` runs the Vitest suite once. Coverage includes encryption, compression, snapshot creation, upload limits, queues, restore validation, quotas, memory retrieval, download behavior, and UI behavior.
 
 ## Security
 
 - Never commit `.env.local`, API keys, service-role keys, wallet JWKs, or database credentials.
 - Rotate any secret that appears in a terminal, screenshot, chat, or Git history.
 - Snapshot plaintext is compressed and encrypted in the browser. Arweave receives ciphertext, and the passphrase is not uploaded.
-- Restore checks metadata, hashes, dates, and payload limits, then requires explicit confirmation before replacing local data.
+- An exported archive never contains the API key. It lives in `sessionStorage` and is not part of any localStorage payload, so it cannot travel inside a backup.
+- Restore and import both check metadata, hashes, dates, and payload limits, then require explicit confirmation before replacing local data.
 - Queue status changes and purchase confirmation are reserved for trusted server code.
 - MCP tokens are stored as hashes, expire, can be revoked, and can only read summaries and decisions marked as allowed. Writes through MCP are rejected. Full messages, ciphertext, Arweave snapshots, and other users' data are never returned.
 - Put the deployment behind HTTPS and configure rate limits and monitoring before sharing server-side AI keys.
+
+## Known limitations
+
+- `localStorage` is small (5 MB in Chromium, 10 MB in Firefox) and every conversation, the memory ledger, and the embedding index live there. Storage health warns before a write fails; migrating to IndexedDB is not done yet.
+- An Arweave upload is permanent. Losing the passphrase means that copy cannot be decrypted by anyone, including you.
+- Search providers are configured server-side, so the chat composer can only offer providers that currently have a key. AnySearch's free tier is time-limited rather than permanent.
+- The app renders in English on the server and corrects the language on the client, because the chosen locale lives in `localStorage`.
 
 ## Roadmap
 
 - Stronger multi-device synchronization.
 - Clearer backup discovery and recovery.
 - Expanded provider and model policy controls.
+- Migrating local storage to IndexedDB to escape the localStorage quota.
 - Deployment monitoring, audit visibility, and operational runbooks.
 
 ## License

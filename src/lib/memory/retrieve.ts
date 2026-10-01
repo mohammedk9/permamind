@@ -3,30 +3,21 @@ import type { MemoryRecord, RetrievedMemory } from "@/types/memory";
 import { cosineSimilarity, embedText } from "./embeddings";
 import { graphConversationNeighbors, updateMemoryGraph } from "./graph";
 
-const MAX_MEMORIES = 3;
-const DECISION_MAX_MEMORIES = 6;
-export const MEMORY_TOKEN_BUDGET = 600;
-const DECISION_TOKEN_BUDGET = 1400;
+import { normalizeArabic, normalizeForMatch, tokenizeArabic } from "@/lib/i18n/arabic-normalize";
+import { buildBm25Index } from "@/lib/search/bm25";
+import { reciprocalRankFusion } from "@/lib/search/reciprocal-rank-fusion";
+
+/**
+ * Three memories per reply left most of a stored history unused. The budget is
+ * what actually protects the context window, not this number, so it is raised
+ * and the character budget stays the binding constraint.
+ */
+const MAX_MEMORIES = 8;
+const DECISION_MAX_MEMORIES = 10;
+export const MEMORY_TOKEN_BUDGET = 900;
+const DECISION_TOKEN_BUDGET = 1600;
 const MIN_QUERY_LENGTH = 3;
 const MIN_SCORE = 0.8;
-
-const ARABIC_DIACRITICS = /[\u0610-\u061A\u064B-\u065F\u0670\u06D6-\u06ED]/g;
-const ARABIC_ZERO_WIDTH = /[\u200B-\u200F]/g;
-
-function normalizeArabic(text: string): string {
-  return text
-    .normalize("NFKC")
-    .toLowerCase()
-    .replace(ARABIC_DIACRITICS, "")
-    .replace(ARABIC_ZERO_WIDTH, "")
-    .replace(/[أإآ]/g, "ا")
-    .replace(/ى/g, "ي")
-    .replace(/ة/g, "ه")
-    .replace(/ؤ/g, "و")
-    .replace(/ئ/g, "ي")
-    .replace(/ء/g, "")
-    .replace(/ـ/g, "");
-}
 
 const PREVIOUS_CONVERSATION_PATTERNS = [
   /\bdid we (?:ever )?talk(?:ed)? about\b/i,
@@ -294,22 +285,27 @@ const STOP_WORDS = new Set([
   "which",
 ]);
 
+/** Normalised here once, then filtered against the language stop lists. */
 function tokenize(text: string): string[] {
-  const normalized = normalizeArabic(text);
-  return normalized
-    .replace(/[^\p{L}\p{N}\s]/gu, " ")
-    .split(/\s+/u)
-    .filter((word) => word.length > 2 && !STOP_WORDS.has(word) && !ARABIC_STOP_WORDS.has(word));
+  return tokenizeArabic(text).filter((word) => !STOP_WORDS.has(word) && !ARABIC_STOP_WORDS.has(word));
 }
 
+/**
+ * Legacy overlap score, retained for the memory-index search path and as the
+ * tie-breaker BM25 feeds.
+ *
+ * BM25 is now the primary ranker; this survives because the Memory page search
+ * needs a bounded, explainable 0-1 number per hit and because
+ * `scoreMemory` is part of the exported surface other modules already call.
+ */
 function wordOverlapScore(
   queryTokens: string[],
   text: string,
   fullQuery: string
 ): number {
   if (queryTokens.length === 0) return 0;
-  const normalizedText = normalizeArabic(text);
-  const normalizedFullQuery = normalizeArabic(fullQuery);
+  const normalizedText = normalizeForMatch(text);
+  const normalizedFullQuery = normalizeForMatch(fullQuery);
   let score = 0;
   for (const token of queryTokens) {
     if (normalizedText.includes(token)) score += 1;
@@ -398,6 +394,45 @@ interface Candidate {
   reason: RetrievedMemory["reason"];
 }
 
+/**
+ * Builds the corpus BM25 ranks over.
+ *
+ * Each conversation contributes its summary plus the same recent messages the
+ * fallback scan uses, so the two paths see the same material and BM25 is a
+ * re-ranking of it rather than a different dataset. Document ids encode the
+ * conversation so a hit can be attributed back.
+ */
+function buildRetrievalDocuments(
+  conversations: Conversation[],
+  excludeConversationId?: string | null,
+  previousConversationQuery = false,
+): Array<{ id: string; text: string }> {
+  const documents: Array<{ id: string; text: string }> = [];
+
+  for (const conversation of conversations) {
+    if (conversation.id === excludeConversationId) continue;
+
+    const meta = conversation.metadata;
+    if (meta?.summary) {
+      documents.push({
+        id: `summary:${conversation.id}`,
+        text: [conversation.title, meta.summary, ...meta.topics, ...meta.tags, ...meta.entities].join(" "),
+      });
+    }
+
+    const messages = conversation.messages.filter((message) => !message.isStreaming && message.content.trim());
+    // A recall question ("what did we say about X?") should be able to reach the
+    // whole history, which is why it widens the window the same way the
+    // fallback scan does.
+    const recent = previousConversationQuery ? messages : messages.slice(-6);
+    for (const message of recent) {
+      documents.push({ id: `message:${message.id}`, text: `${conversation.title} ${message.content}` });
+    }
+  }
+
+  return documents;
+}
+
 export function retrieveRelevantMemories(
   query: string,
   conversations: Conversation[],
@@ -416,11 +451,39 @@ export function retrieveRelevantMemories(
   const graph = updateMemoryGraph(conversations);
   const lexicalScores = new Map<string, number>();
 
+  /**
+   * BM25 pre-filter.
+   *
+   * The old loop scored every conversation and every one of its last six
+   * messages with a flat overlap count, which ranked a term appearing in fifty
+   * conversations exactly the same as a term appearing in one. BM25 inverts
+   * that: a rare term dominates, which is what makes "what did we decide about
+   * launch?" find the one conversation that actually mentions a launch.
+   *
+   * The index is built over conversation summaries and their recent messages,
+   * and its scores are merged into the existing pipeline rather than replacing
+   * it, so recency, graph signals, pinned memories, and the decision rules all
+   * keep working exactly as before.
+   */
+  const bm25 = buildBm25Index(buildRetrievalDocuments(conversations, excludeConversationId, previousConversationQuery));
+  const bm25Scores = new Map<string, number>();
+  if (bm25.size > 0) {
+    const maxScore = bm25.maxScore;
+    for (const hit of bm25.search(q, { limit: conversations.length * 4 || 40 })) {
+      // Normalise onto 0-1 so it can be combined with the other signals, which
+      // already live in that range. The cap keeps one dominant hit from
+      // erasing the recency and graph contributions entirely.
+      bm25Scores.set(hit.id, Math.min(1, hit.score / maxScore));
+    }
+  }
+
   for (const conversation of conversations) {
     if (conversation.id === excludeConversationId) continue;
 
     const recency = recencyBoost(conversation.updatedAt);
     const meta = conversation.metadata;
+    /** BM25 evidence for this conversation, averaged over its indexed documents. */
+    const bm25Score = bm25Scores.get(conversation.id) ?? 0;
 
     if (meta?.summary) {
       const metaText = [
@@ -430,7 +493,9 @@ export function retrieveRelevantMemories(
         ...meta.entities,
       ].join(" ");
       const overlap = wordOverlapScore(queryTokens, metaText, q);
-      const score = overlap * 2.2 + recency;
+      // BM25 is weighted highest: it is the only signal that understands how
+      // rare the query terms are, which the flat overlap count cannot express.
+      const score = overlap * 1.4 + bm25Score * 1.6 + recency;
       lexicalScores.set(conversation.id, Math.max(lexicalScores.get(conversation.id) ?? 0, score));
 
       if (score >= MIN_SCORE || previousConversationQuery) {
@@ -456,7 +521,7 @@ export function retrieveRelevantMemories(
       const overlap = wordOverlapScore(queryTokens, message.content, q);
       const score = previousConversationQuery && queryTokens.length === 0
         ? Math.max(recency * 0.9, MIN_SCORE)
-        : overlap * 1.4 + recency * 0.9;
+        : overlap * 1.0 + bm25Score * 1.3 + recency * 0.9;
       lexicalScores.set(conversation.id, Math.max(lexicalScores.get(conversation.id) ?? 0, score));
 
       if (score >= MIN_SCORE) {
@@ -598,16 +663,67 @@ function mergeSemanticMemories(
     });
   }
 
-  const merged = [...lexical];
-  for (const addition of additions.sort((left, right) => right.score - left.score)) {
-    const duplicate = merged.find((memory) => memory.recordId === addition.recordId || (memory.conversationId === addition.conversationId && memory.excerpt === addition.excerpt));
-    if (duplicate) {
-      duplicate.score = Math.max(duplicate.score, addition.score);
-      duplicate.reason = addition.reason === "pinned memory" ? addition.reason : duplicate.reason;
-      continue;
-    }
-    merged.push(addition);
+  /**
+   * Fusion.
+   *
+   * The previous implementation took `Math.max(lexicalScore, semanticScore)`,
+   * which assumed the two numbers were on the same scale. They are not: a
+   * cosine similarity near 0.3 and an overlap ratio near 0.9 are different
+   * quantities, so the larger one silently erased the other. A memory the
+   * semantic retriever loved but the lexical one disliked lost, and vice versa.
+   *
+   * Reciprocal Rank Fusion replaces that with a position-based combination, so
+   * a memory ranked highly by either retriever survives, and neither can
+   * single-handedly dictate the final order. Pinned and decision memories keep
+   * their explicit boosts, which are a user instruction rather than a ranking
+   * signal and therefore must not be normalised away.
+   */
+  const semanticRanking = additions
+    .slice()
+    .sort((left, right) => right.score - left.score)
+    .map((memory) => ({ id: memory.recordId ?? `${memory.conversationId}::${memory.excerpt}`, memory }));
+
+  const fused = reciprocalRankFusion(
+    [
+      {
+        name: "lexical",
+        items: lexical
+          .slice()
+          .sort((left, right) => right.score - left.score)
+          .map((memory) => ({ id: memory.recordId ?? `${memory.conversationId}::${memory.excerpt}`, memory })),
+      },
+      { name: "semantic", items: semanticRanking },
+    ],
+    { limit: lexical.length + additions.length },
+  );
+
+  const byId = new Map<string, RetrievedMemory>();
+  for (const memory of lexical) byId.set(memory.recordId ?? `${memory.conversationId}::${memory.excerpt}`, memory);
+  for (const entry of semanticRanking) byId.set(entry.id, entry.memory);
+
+  /** Explicit user intent, kept outside the fused ranking score. */
+  const intentBoost = new Map<string, number>();
+  for (const entry of semanticRanking) {
+    const memory = entry.memory;
+    let boost = 0;
+    if (memory.reason === "pinned memory") boost += 1.4;
+    if (decisionQuery && memory.source === "decision") boost += 2;
+    if (boost > 0) intentBoost.set(entry.id, boost);
   }
+
+  const merged = fused.map((entry) => {
+    const memory = byId.get(entry.id)!;
+    // Rescale the fused score back into the 0-1-plus range the rest of this
+    // file and the UI already assume, then apply the intent boost last.
+    const normalized = entry.score * 20;
+    return {
+      ...memory,
+      score: normalized + (intentBoost.get(entry.id) ?? 0),
+      // A memory both retrievers agree on is genuinely more trustworthy.
+      confidence: entry.sources.length > 1 ? "high" : memory.confidence,
+    };
+  });
+
   return selectMemoriesByScore(
     merged,
     decisionQuery ? DECISION_TOKEN_BUDGET : MEMORY_TOKEN_BUDGET,

@@ -20,6 +20,7 @@ import { getQueueStatus } from "@/lib/arweave/upload-queue";
 import { restoreLatestSnapshot, restoreSnapshotByTxId, previewSnapshotByTxId, applyRestorePreview, type RestorePreview, type RestoreResult } from "@/lib/arweave/restore";
 import type { QueueStatusSummary } from "@/lib/arweave/snapshot-types";
 import { startProcessor, stopProcessor } from "@/lib/arweave/queue-processor";
+import { downloadJson } from "@/lib/storage/download";
 import Arweave from "arweave";
 import { useLocale } from "@/hooks/use-locale";
 import { cn } from "@/lib/utils";
@@ -169,12 +170,7 @@ export default function BackupPage() {
   const downloadRecoveryCard = () => {
     if (!latestAvailable?.txId || passphrase.length < 8) return;
     const bundle = buildRecoveryBundle({ txId: latestAvailable.txId, snapshotVersion: latestAvailable.version, createdAt: latestAvailable.createdAt, passphrase });
-    const url = URL.createObjectURL(new Blob([JSON.stringify(bundle, null, 2)], { type: "application/json" }));
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = `permamind-recovery-v${latestAvailable.version}.json`;
-    link.click();
-    URL.revokeObjectURL(url);
+    downloadJson(bundle, `permamind-recovery-v${latestAvailable.version}.json`);
   };
   const importRecoveryBundle = async (file: File) => {
     try {

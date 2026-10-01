@@ -1,12 +1,12 @@
 "use client";
 
 import { Loader2 } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { needsSummary } from "@/lib/ai/summarize";
 import { buildMessagesWithMemory, linkedConversationContext } from "@/lib/memory/context";
 import { projectConversationContext } from "@/lib/projects/context";
 import { embedText, syncMemoryEmbeddings, type MemoryEmbeddingDocument } from "@/lib/memory/embeddings";
-import { activeMemoryRecords, addMemoryRecord, forgetMemoryRecord, loadMemoryLedger, syncExtractedMemory, updateMemoryRecord } from "@/lib/memory/ledger";
+import { activeMemoryRecords, addMemoryRecord, forgetMemoryRecord, syncExtractedMemories, updateMemoryRecord } from "@/lib/memory/ledger";
 import { isPreviousConversationQuery, previousConversationSearchQuery, retrieveRelevantMemories } from "@/lib/memory/retrieve";
 
 import { ChatMain } from "@/components/chat/chat-main";
@@ -24,14 +24,16 @@ import { useConversationSummary } from "@/hooks/use-conversation-summary";
 import { useConversations } from "@/hooks/use-conversations";
 import { useLocale } from "@/hooks/use-locale";
 import { useSnapshot } from "@/hooks/use-snapshot";
+import { useDeltaSync } from "@/hooks/use-delta-sync";
 import { createId, truncateTitle } from "@/lib/chat/conversation";
 import { QUICK_COMMANDS, buildQuickCommandReply, localCommandMessages, type QuickCommand } from "@/lib/chat/quick-commands";
 import { getLastSnapshot } from "@/lib/arweave/snapshot-registry";
 import { startProcessor, stopProcessor } from "@/lib/arweave/queue-processor";
 import type { ChatCompletionMessage } from "@/lib/ai/types";
 import type { Message, Project } from "@/types/chat";
-import type { MemoryRecord, RetrievedMemory } from "@/types/memory";
+import type { MemoryRecord, RetrievedMemory, SearchCitation, SearchProvider } from "@/types/memory";
 import { applyWebContext, shouldSearchWeb } from "@/lib/search/web-context";
+import { DEFAULT_SEARCH_PROVIDER, loadSearchProvider, saveSearchProvider } from "@/lib/search/settings";
 import { dismissPermanentMemoryWarning, isPermanentMemoryWarningDismissed } from "@/lib/arweave/storage-policy";
 import { MemoryExperience } from "@/components/memory/memory-experience";
 import { MemoryControls } from "@/components/memory/memory-controls";
@@ -74,11 +76,25 @@ export function ChatApp() {
     projects,
     createProject,
     updateProject,
+    reload: reloadConversations,
   } = useConversations();
+
+  // Pulls summaries written on another device. The same passphrase used for
+  // Arweave backups unlocks the sync rows, so the user is never asked twice.
+  // Merged rows are written straight to storage, so the conversation list is
+  // reloaded rather than patched, which keeps one source of truth for ordering
+  // and dates.
+  useDeltaSync({ onApplied: reloadConversations, passphrase: snapshotPassphrase });
 
   useEffect(() => {
     setStoragePolicy(loadStoragePolicy());
+    setSearchProviderState(loadSearchProvider());
     if (!hasCompletedFirstRun()) setShowOnboarding(true);
+  }, []);
+
+  const setSearchProvider = useCallback((next: SearchProvider) => {
+    setSearchProviderState(next);
+    saveSearchProvider(next);
   }, []);
 
   const handleStoragePolicyChange = useCallback((policy: StoragePolicy) => {
@@ -116,6 +132,7 @@ export function ChatApp() {
   const [semanticVectors, setSemanticVectors] = useState<Array<{ id: string; vector: Float32Array }>>([]);
   const [area, setArea] = useState<ProductArea>("chat");
   const [webSearchEnabled, setWebSearchEnabled] = useState(false);
+  const [searchProvider, setSearchProviderState] = useState<SearchProvider>(DEFAULT_SEARCH_PROVIDER);
   const [searchUsage, setSearchUsage] = useState<{ used: number; limit: number } | null>(null);
   const [activeProjectId, setActiveProjectId] = useState<string | null>(null);
   useEffect(() => {
@@ -136,9 +153,41 @@ export function ChatApp() {
     if (window.location.pathname !== path) window.history.pushState({}, "", path);
   }, []);
 
+  /**
+   * Cheap signature of everything the memory index actually depends on.
+   *
+   * The old effect keyed on the `conversations` array itself, so every streamed
+   * chunk produced a new array and therefore a full rebuild: one SHA-256 and
+   * one AES-GCM encryption per memory, per token. Only the summary fingerprint,
+   * the decision count, and the title can change what gets indexed, so a chat
+   * that has not been re-summarised keeps the same signature and is skipped.
+   */
+  const memoryIndexKey = useMemo(
+    () =>
+      conversations
+        .map(
+          (conversation) =>
+            `${conversation.id}:${conversation.title.length}:${conversation.metadata?.messageFingerprint ?? ""}:${conversation.metadata?.decisions?.length ?? 0}:${conversation.metadata?.facts?.length ?? 0}`,
+        )
+        .join("|"),
+    [conversations],
+  );
+  const builtIndexKey = useRef("");
+
   const refreshMemoryIndex = useCallback(async (source = conversations) => {
-    let records = loadMemoryLedger();
-    for (const conversation of source) records = syncExtractedMemory(conversation);
+    const signature = source
+      .map(
+        (conversation) =>
+          `${conversation.id}:${conversation.title.length}:${conversation.metadata?.messageFingerprint ?? ""}:${conversation.metadata?.decisions?.length ?? 0}:${conversation.metadata?.facts?.length ?? 0}`,
+      )
+      .join("|");
+
+    // Rebuild only when the indexed content actually changed.
+    if (builtIndexKey.current === signature) return;
+    builtIndexKey.current = signature;
+
+    // One read and one write for the whole batch instead of one per conversation.
+    const records = syncExtractedMemories(source);
     setMemoryRecords(records);
     const documents: MemoryEmbeddingDocument[] = [];
     for (const conversation of source) {
@@ -157,7 +206,8 @@ export function ChatApp() {
     if (!isHydrated) return;
     const timer = window.setTimeout(() => { void refreshMemoryIndex(); }, 300);
     return () => window.clearTimeout(timer);
-  }, [isHydrated, refreshMemoryIndex]);
+    // memoryIndexKey is the real dependency; conversations would defeat the guard.
+  }, [isHydrated, memoryIndexKey, refreshMemoryIndex]);
 
   const changeMemory = useCallback((change: () => MemoryRecord[]) => setMemoryRecords(change()), []);
 
@@ -354,13 +404,19 @@ export function ChatApp() {
 
       let messagesForRequest = apiMessages;
       let sources: Message["sources"];
-      if (provider !== "ollama" && shouldSearchWeb(visibleContent, webSearchEnabled)) {
-        const response = await fetch(`/api/search?q=${encodeURIComponent(visibleContent)}`);
+      if (provider !== "ollama" && shouldSearchWeb(visibleContent, webSearchEnabled, searchProvider)) {
+        const response = await fetch(
+          `/api/search?q=${encodeURIComponent(visibleContent)}&provider=${encodeURIComponent(searchProvider)}`
+        );
         if (!response.ok) {
           const payload = await response.json().catch(() => null) as { error?: string } | null;
           throw new Error(payload?.error ?? "Web search failed");
         }
-        const payload = await response.json() as { results: Array<{ title: string; url: string; text: string }>; used: number; limit: number };
+        const payload = await response.json() as {
+          results: SearchCitation[];
+          used: number;
+          limit: number;
+        };
         setSearchUsage({ used: payload.used, limit: payload.limit });
         sources = payload.results.map((item) => ({ title: item.title, url: item.url }));
         messagesForRequest = applyWebContext(apiMessages, content, payload.results);
@@ -603,6 +659,8 @@ export function ChatApp() {
           canSend={canSendRequests}
           webSearchEnabled={webSearchEnabled}
           onWebSearchChange={setWebSearchEnabled}
+          searchProvider={searchProvider}
+          onSearchProviderChange={setSearchProvider}
           searchUsage={searchUsage}
           onLinkedConversationsChange={(ids) => {
             const valid = [...new Set(ids)].filter((id) => id !== activeId && conversations.some((item) => item.id === id));
