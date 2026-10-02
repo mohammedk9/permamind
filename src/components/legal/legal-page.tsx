@@ -17,17 +17,22 @@ export function LegalPage({ kind }: { kind: PolicyKind }) {
   const sections = kind === "privacy" ? t.privacySections : t.termsSections;
 
   return (
-    <main dir={isRTL ? "rtl" : "ltr"} className="min-h-dvh bg-background text-foreground">
+    // `html` and `body` are `overflow: hidden` (globals.css) because the app
+    // shell owns its own scrolling. A `min-h-dvh` main with no scroll container
+    // of its own therefore clipped everything below the fold on a phone and
+    // made the policy unreadable. `h-dvh overflow-y-auto` makes this page the
+    // scrollport, matching how the landing page already does it.
+    <main dir={isRTL ? "rtl" : "ltr"} className="h-dvh scroll-container scroll-safe overflow-y-auto overscroll-contain bg-background text-foreground">
       <header className="sticky top-0 z-50 border-b border-border/50 bg-background/80 backdrop-blur-xl">
-        <div className="mx-auto flex h-16 max-w-3xl items-center justify-between px-4 sm:px-6">
-          <Link href="/" className="flex items-center gap-2.5" aria-label="PermaMind home">
-            <Logo size="md" withWordmark />
+        <div className="mx-auto flex h-14 max-w-3xl items-center justify-between gap-3 px-4 pt-[env(safe-area-inset-top)] sm:h-16 sm:px-6">
+          <Link href="/" className="flex min-w-0 items-center gap-2.5" aria-label="PermaMind home">
+            <Logo size="sm" withWordmark />
           </Link>
           <LanguageToggle locale={locale} onToggle={toggleLocale} label={t.languageToggle} />
         </div>
       </header>
 
-      <article className="mx-auto max-w-3xl px-4 py-14 sm:px-6 sm:py-20">
+      <article className="mx-auto max-w-3xl px-4 py-10 sm:px-6 sm:py-20">
         <Link
           href="/"
           className="inline-flex items-center gap-2 text-sm text-muted-foreground transition-colors hover:text-foreground"
@@ -54,7 +59,7 @@ export function LegalPage({ kind }: { kind: PolicyKind }) {
       <footer className="border-t border-border/60">
         <div className="mx-auto flex max-w-3xl flex-col gap-3 px-4 py-6 text-sm text-muted-foreground sm:flex-row sm:items-center sm:justify-between sm:px-6">
           <p>© {new Date().getFullYear()} PermaMind. {t.footerRights}</p>
-          <nav className="flex gap-5">
+          <nav className="flex flex-wrap gap-5">
             <Link href="/privacy" className="transition-colors hover:text-foreground">{t.footerPrivacy}</Link>
             <Link href="/terms" className="transition-colors hover:text-foreground">{t.footerTerms}</Link>
           </nav>

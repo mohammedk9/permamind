@@ -52,10 +52,10 @@ function PreviewFrame({
   children: ReactNode;
 }) {
   return (
-    <div className="flex h-full flex-col rounded-3xl border border-border bg-card p-5 shadow-2xl shadow-primary/10 sm:p-6">
+    <div className="flex h-full flex-col rounded-3xl border border-border bg-card p-4 shadow-2xl shadow-primary/10 sm:p-6">
       <div className="mb-4 flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
-        <Icon className="size-4 text-primary" />
-        {label}
+        <Icon className="size-4 shrink-0 text-primary" />
+        <span className="min-w-0 truncate">{label}</span>
       </div>
       {children}
     </div>
@@ -197,23 +197,26 @@ export function HowItWorks({ copy, rtl }: { copy: HowItWorksCopy; rtl: boolean }
   }
 
   return (
-    <section id="how" className="relative scroll-mt-20 border-t border-border/50 py-24">
+    <section id="how" className="relative scroll-mt-20 overflow-hidden border-t border-border/50 py-16 sm:py-24">
+      {/* `overflow-hidden` on the section is what keeps this glow — 560px wide,
+          centred — from forcing a horizontal scrollbar on a phone. The glow is
+          also capped in width so it degrades gracefully on small screens. */}
       <div
         aria-hidden="true"
-        className="pointer-events-none absolute left-1/2 top-1/3 size-[560px] -translate-x-1/2 rounded-full bg-primary/5 blur-3xl"
+        className="pointer-events-none absolute left-1/2 top-1/3 size-[360px] max-w-[120vw] -translate-x-1/2 rounded-full bg-primary/5 blur-3xl sm:size-[560px]"
       />
       <div className="relative mx-auto max-w-6xl px-4 sm:px-6">
         <div className="mx-auto max-w-2xl text-center">
           <p className="text-sm font-semibold uppercase tracking-[0.18em] text-primary">
             {copy.howEyebrow}
           </p>
-          <h2 className="mt-4 text-3xl font-bold tracking-tight sm:text-4xl">
+          <h2 className="mt-4 text-2xl font-bold tracking-tight sm:text-4xl">
             {copy.howItWorksTitle}
           </h2>
-          <p className="mt-4 text-lg text-muted-foreground">{copy.howItWorksDescription}</p>
+          <p className="mt-4 text-base text-muted-foreground sm:text-lg">{copy.howItWorksDescription}</p>
         </div>
 
-        <div className="mt-14 grid gap-10 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)] lg:items-center lg:gap-14">
+        <div className="mt-10 grid gap-8 sm:mt-14 sm:gap-10 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)] lg:items-center lg:gap-14">
           <div
             role="tablist"
             aria-label={copy.howItWorksTitle}
@@ -252,7 +255,10 @@ export function HowItWorks({ copy, rtl }: { copy: HowItWorksCopy; rtl: boolean }
                   onClick={() => setActive(index)}
                   onKeyDown={(event) => onKeyDown(event, index)}
                   className={cn(
-                    "relative flex items-start gap-4 rounded-2xl border p-4 text-start transition-all duration-300",
+                    // Tighter padding and a smaller badge below `sm`: at the
+                    // original size the 44px icon plus 32px padding left almost
+                    // no room for the step title on a 360px screen.
+                    "relative flex items-start gap-3 rounded-2xl border p-3 text-start transition-all duration-300 sm:gap-4 sm:p-4",
                     isActive
                       ? "border-primary/40 bg-primary/10 shadow-lg shadow-primary/10"
                       : "border-border bg-card/40 hover:bg-card/80",
@@ -260,16 +266,16 @@ export function HowItWorks({ copy, rtl }: { copy: HowItWorksCopy; rtl: boolean }
                 >
                   <span
                     className={cn(
-                      "relative z-10 flex size-11 shrink-0 items-center justify-center rounded-xl border transition-colors duration-300",
+                      "relative z-10 flex size-9 shrink-0 items-center justify-center rounded-xl border transition-colors duration-300 sm:size-11",
                       isActive
                         ? "border-primary bg-primary text-primary-foreground"
                         : "border-border bg-background text-muted-foreground",
                     )}
                   >
-                    <Icon className="size-5" />
+                    <Icon className="size-4 sm:size-5" />
                   </span>
-                  <span className="min-w-0 pt-1">
-                    <span className="flex items-center gap-2">
+                  <span className="min-w-0 pt-0.5 sm:pt-1">
+                    <span className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
                       <span
                         className={cn(
                           "text-[11px] font-semibold tracking-[0.14em]",
@@ -278,7 +284,7 @@ export function HowItWorks({ copy, rtl }: { copy: HowItWorksCopy; rtl: boolean }
                       >
                         0{index + 1}
                       </span>
-                      <span className="text-base font-semibold">{step.title}</span>
+                      <span className="min-w-0 text-sm font-semibold sm:text-base">{step.title}</span>
                     </span>
                     <span className="mt-1 block text-sm leading-6 text-muted-foreground">
                       {step.description}

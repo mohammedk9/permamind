@@ -1,6 +1,6 @@
 "use client";
 
-import { Menu, Sparkles } from "lucide-react";
+import { MessagesSquare, Sparkles } from "lucide-react";
 import { useEffect, useRef } from "react";
 
 import { ConversationMetadataBar } from "@/components/chat/conversation-metadata";
@@ -17,6 +17,7 @@ import {
   SheetTrigger,
 } from "@/components/ui/sheet";
 import { ChatSidebar } from "@/components/chat/chat-sidebar";
+import { DataExportButton } from "@/components/settings/data-export-button";
 import type { ConnectionStatus } from "@/hooks/use-api-settings";
 import type { ApiKeyMode } from "@/lib/settings/api-key-storage";
 import { MemoriesUsed } from "@/components/chat/memories-used";
@@ -112,7 +113,7 @@ export function ChatMain({
   searchUsage,
   onLinkedConversationsChange,
 }: ChatMainProps) {
-  const { locale } = useLocale();
+  const { locale, isRTL } = useLocale();
   const online = useOnlineStatus();
   const ar = locale === "ar";
   const title = conversation?.title ?? (ar ? "محادثة جديدة" : "New conversation");
@@ -130,10 +131,19 @@ export function ChatMain({
   return (
     <div className="flex h-full min-h-0 min-w-0 flex-1 flex-col bg-background">
       <PageHeader
-        className="min-h-14 shrink-0 gap-2 border-b bg-card/50 px-12 py-2 backdrop-blur sm:flex-row sm:items-center sm:px-4 sm:pb-2"
-        title={title}
+        /* `ps` rather than `px`: AppShell already renders a fixed menu button
+           at the inline start below `md`, so only that side needs clearance. */
+        className="min-h-14 shrink-0 gap-2 border-b bg-card/50 px-3 py-2 ps-14 backdrop-blur sm:flex-row sm:items-center sm:px-4 sm:pb-2 sm:ps-4"
+        title={<span className="truncate">{title}</span>}
         actions={<div className="flex min-w-0 flex-wrap items-center justify-end gap-1.5 sm:gap-2">
         {!online && <span className="rounded-full border border-destructive/30 bg-destructive/10 px-2 py-1 text-xs text-destructive">{ar ? "غير متصل" : "Offline"}</span>}
+        {/* Keeping your own data should never require three clicks of navigation,
+            so the export sits in the header rather than only in Settings. */}
+        <DataExportButton variant="icon" />
+        {/* This sheet lists *conversations*; AppShell owns the product-area
+            menu. Both are `md:hidden`, so the two identical hamburger buttons
+            used to stack in the same corner. This one now carries a distinct
+            icon and label. */}
         <Sheet>
           <SheetTrigger
             render={
@@ -141,14 +151,14 @@ export function ChatMain({
                 variant="ghost"
                 size="icon"
                 className="md:hidden"
-                aria-label={ar ? "فتح القائمة" : "Open menu"}
+                aria-label={ar ? "فتح قائمة المحادثات" : "Open conversations"}
               />
             }
           >
-            <Menu className="size-5" />
+            <MessagesSquare className="size-5" />
           </SheetTrigger>
-          <SheetContent side="left" className="w-64 p-0">
-            <SheetTitle className="sr-only">{ar ? "التنقل" : "Navigation"}</SheetTitle>
+          <SheetContent side={isRTL ? "right" : "left"} className="w-[min(20rem,calc(100vw-2rem))] p-0">
+            <SheetTitle className="sr-only">{ar ? "المحادثات" : "Conversations"}</SheetTitle>
             <ChatSidebar
               conversations={conversations}
               activeId={activeId}

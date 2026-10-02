@@ -124,19 +124,19 @@ export function ProviderRail({ label }: { label: string }) {
   const names = Array.from({ length: sets }, () => modelNames).flat();
 
   return (
-    <div className="relative mt-12">
-      <p className="mb-5 text-center text-sm font-semibold uppercase tracking-[0.22em] text-muted-foreground">
+    <div className="relative mt-8 sm:mt-12">
+      <p className="mb-4 text-center text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground sm:mb-5 sm:text-sm sm:tracking-[0.22em]">
         {label}
       </p>
       <div ref={viewport} className="logo-mask overflow-hidden" dir="ltr">
         <div
           className="logo-track flex w-max items-center"
-          style={{ ["--marquee-gap" as string]: "1rem" }}
+          style={{ ["--marquee-gap" as string]: "0.5rem" }}
         >
           {names.map((name, index) => (
             <span
               key={`${name}-${index}`}
-              className="mx-2 inline-flex h-14 shrink-0 items-center rounded-full border border-border/80 bg-card/80 px-6 text-base font-semibold text-foreground/85"
+              className="mx-1.5 inline-flex h-11 shrink-0 items-center rounded-full border border-border/80 bg-card/80 px-4 text-sm font-semibold text-foreground/85 sm:mx-2 sm:h-14 sm:px-6 sm:text-base"
             >
               {name}
             </span>
@@ -149,7 +149,7 @@ export function ProviderRail({ label }: { label: string }) {
 
 export function OwnershipMarks() {
   return (
-    <div className="mt-8 flex flex-wrap items-center gap-2">
+    <div className="mt-6 flex flex-wrap items-center gap-2 sm:mt-8">
       {workBrands.map((brand) => (
         <BrandChip key={brand.name} brand={brand} />
       ))}

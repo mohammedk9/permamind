@@ -12,17 +12,19 @@ export function StorageGuidePage() {
   const t = translations[locale];
 
   return (
-    <main dir={isRTL ? "rtl" : "ltr"} className="min-h-dvh bg-background text-foreground">
+    // See `LegalPage` for why this page is its own scrollport: `html`/`body` are
+    // `overflow: hidden`, so a `min-h-dvh` main clipped everything below the fold.
+    <main dir={isRTL ? "rtl" : "ltr"} className="h-dvh scroll-container scroll-safe overflow-y-auto overscroll-contain bg-background text-foreground">
       <header className="sticky top-0 z-50 border-b border-border/50 bg-background/80 backdrop-blur-xl">
-        <div className="mx-auto flex h-16 max-w-3xl items-center justify-between px-4 sm:px-6">
-          <Link href="/" className="flex items-center gap-2.5" aria-label="PermaMind home">
-            <Logo size="md" withWordmark />
+        <div className="mx-auto flex h-14 max-w-3xl items-center justify-between gap-3 px-4 pt-[env(safe-area-inset-top)] sm:h-16 sm:px-6">
+          <Link href="/" className="flex min-w-0 items-center gap-2.5" aria-label="PermaMind home">
+            <Logo size="sm" withWordmark />
           </Link>
           <LanguageToggle locale={locale} onToggle={toggleLocale} label={t.languageToggle} />
         </div>
       </header>
 
-      <article className="mx-auto max-w-3xl px-4 py-14 sm:px-6 sm:py-20">
+      <article className="mx-auto max-w-3xl px-4 py-10 sm:px-6 sm:py-20">
         <Link
           href="/backup"
           className="inline-flex items-center gap-2 text-sm text-muted-foreground transition-colors hover:text-foreground"

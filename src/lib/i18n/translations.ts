@@ -97,6 +97,12 @@ export const translations = {
           "Optional Ollama at 127.0.0.1 port 11434, with no API key. Web search stays off. If a decision must remain on this device, keep cloud sync off too.",
         icon: "globe",
       },
+      {
+        title: "Rooms that read the room, and nothing else",
+        description:
+          "Brainstorm with people and your own model. Guests join with a link and a code, no account. The model is given the room transcript only, never your private conversations or memory. The room ends when the host says so, and is deleted with it.",
+        icon: "users",
+      },
     ],
 
     // MCP
@@ -338,6 +344,12 @@ export const translations = {
         description:
           "Ollama اختياري على العنوان المحلي 127.0.0.1 والمنفذ 11434، بلا مفتاح. بحث الويب يبقى متوقفاً. إذا كان يجب أن يبقى القرار على هذا الجهاز، أبقِ المزامنة السحابية مغلقة أيضاً.",
         icon: "globe",
+      },
+      {
+        title: "غرف تقرأ الغرفة، ولا شيء غيرها",
+        description:
+          "اعصف ذهنياً مع أشخاص ومع نموذجك. ينضم الضيوف برابط ورمز، بلا حساب. النموذج يقرأ نص الغرفة فقط، لا محادثاتك الخاصة ولا ذاكرتك. تنتهي الغرفة حين يقول المضيف ذلك، وتُحذف معه.",
+        icon: "users",
       },
     ],
 

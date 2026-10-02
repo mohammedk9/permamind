@@ -53,10 +53,10 @@ export function AppShell({ activeArea, onNavigate, children, utility, sidebar }:
     <span>{isSigningOut ? (locale === "ar" ? "جارٍ تسجيل الخروج..." : "Logging out...") : (locale === "ar" ? "تسجيل الخروج" : "Log out")}</span>
   </Button>;
 
-  return <div dir={isRTL ? "rtl" : "ltr"} className="flex h-dvh overflow-hidden bg-background">
-    <aside className="hidden h-full min-h-0 w-52 shrink-0 flex-col overflow-hidden border-r bg-sidebar p-3 md:flex lg:w-56">
+  return <div dir={isRTL ? "rtl" : "ltr"} className="flex h-dvh touch-manipulation overflow-hidden bg-background">
+    <aside className="hidden h-full min-h-0 w-52 shrink-0 flex-col overflow-hidden border-e bg-sidebar p-3 md:flex lg:w-56">
       <div className="mb-6 flex shrink-0 items-center gap-2 px-2 font-semibold"><Logo size="xs" withWordmark /></div>
-      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
+      <div className="scroll-container flex min-h-0 flex-1 flex-col overflow-y-auto">
         <Navigation activeArea={activeArea} onNavigate={onNavigate} />
         {sidebar}
       </div>
@@ -67,8 +67,12 @@ export function AppShell({ activeArea, onNavigate, children, utility, sidebar }:
       </div>
     </aside>
     <Sheet>
-      <SheetTrigger render={<Button variant="ghost" size="icon" className="fixed left-2 top-2 z-30 md:hidden" aria-label="Open navigation"><Menu className="size-5" /></Button>} />
-      <SheetContent side="left" className="flex h-full min-h-0 w-[min(18rem,calc(100vw-2rem))] flex-col overflow-hidden p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]"><div className="mb-5 shrink-0"><Logo size="xs" withWordmark /></div><div className="min-h-0 flex-1 overflow-y-auto"><Navigation activeArea={activeArea} onNavigate={onNavigate} /></div><div className="mt-auto shrink-0 space-y-1.5 border-t border-border pt-3"><Button type="button" variant="ghost" className="w-full justify-start gap-3 rounded-lg px-3 py-2 text-xs font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:ring-2 focus-visible:ring-ring/50" onClick={toggleLocale}>{locale === "ar" ? "English" : "العربية"}</Button>{utility}<div>{logoutButton}</div></div></SheetContent>
+      {/* `start-2`, not `left-2`: the shell flips to RTL for Arabic, and a
+          physical left offset would park the button on the wrong edge.
+          `pt-[env(safe-area-inset-top)]` keeps it below the notch in
+          standalone mode. */}
+      <SheetTrigger render={<Button variant="ghost" size="icon" className="fixed start-2 top-2 z-30 pt-[env(safe-area-inset-top)] md:hidden" aria-label="Open navigation"><Menu className="size-5" /></Button>} />
+      <SheetContent side={isRTL ? "right" : "left"} className="flex h-full min-h-0 w-[min(18rem,calc(100vw-2rem))] flex-col overflow-hidden p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]"><div className="mb-5 shrink-0"><Logo size="xs" withWordmark /></div><div className="min-h-0 flex-1 overflow-y-auto"><Navigation activeArea={activeArea} onNavigate={onNavigate} /></div><div className="mt-auto shrink-0 space-y-1.5 border-t border-border pt-3"><Button type="button" variant="ghost" className="w-full justify-start gap-3 rounded-lg px-3 py-2 text-xs font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:ring-2 focus-visible:ring-ring/50" onClick={toggleLocale}>{locale === "ar" ? "English" : "العربية"}</Button>{utility}<div>{logoutButton}</div></div></SheetContent>
     </Sheet>
     <main id="main-content" className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">{children}</main>
   </div>;

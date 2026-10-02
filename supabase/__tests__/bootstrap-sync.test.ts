@@ -19,6 +19,7 @@ const SOURCES = [
   "arweave-upload-queue.sql",
   "mcp-readonly.sql",
   "mcp-tokens.sql",
+  "rooms.sql",
 ];
 
 /** Normalizes line endings and trailing whitespace so sources compare cleanly. */
@@ -72,6 +73,8 @@ describe("bootstrap-production.sql is a faithful copy of the SQL sources", () =>
       "issue_mcp_token",
       "resolve_mcp_token",
       "read_mcp_summaries",
+      "room_role",
+      "room_is_open",
     ]) {
       expect(bootstrap, `${fn} is missing from the bootstrap script`).toContain(fn);
     }
@@ -81,5 +84,43 @@ describe("bootstrap-production.sql is a faithful copy of the SQL sources", () =>
     expect(bootstrap).toContain("create extension if not exists pgcrypto;");
     expect(bootstrap).toContain("create table if not exists public.ai_usage_daily");
     expect(bootstrap).toMatch(/create or replace function public\.reserve_ai_request/);
+  });
+
+  it("has no bare separator line, because the whole file fails to run without them", () => {
+    // The script this file is generated from once wrote its `=` rules without the
+    // leading `--`. Every one of them was invalid SQL, and pasting the file into the
+    // Supabase editor failed immediately with:
+    //
+    //   ERROR: 42601: operator too long at or near "============"
+    //
+    // It reached production because the assertions above were about the *sources*,
+    // and the sources were embedded verbatim — the file matched perfectly and still
+    // could not run. This is the check that was missing.
+    const bare = bootstrap
+      .split("\n")
+      .map((line, index) => ({ line: line.trim(), number: index + 1 }))
+      .filter(({ line }) => /^=+$/.test(line) && line.length >= 20);
+
+    expect(
+      bare.map(({ number }) => number),
+      "a separator line must start with '--'",
+    ).toEqual([]);
+  });
+
+  it("has balanced dollar quotes, so no statement body is truncated", () => {
+    // The other way this file can be unrunnable: a missing `$$` swallows everything
+    // after it into a string literal, and the error then points at a random line far
+    // from the cause. Every `create function` in these sources is wrapped in `$$`,
+    // so an odd count means one of them lost its terminator.
+    const quotes = (bootstrap.match(/\$\$/g) ?? []).length;
+    expect(quotes % 2, `found ${quotes} dollar-quote markers, which is odd`).toBe(0);
+    expect(quotes).toBeGreaterThan(0);
+  });
+
+  it("keeps the room section, so a re-run cannot silently drop it", () => {
+    expect(bootstrap).toContain("create table if not exists public.rooms");
+    expect(bootstrap).toContain("create table if not exists public.room_members");
+    expect(bootstrap).toContain("create table if not exists public.room_messages");
+    expect(bootstrap).toMatch(/create policy "members read messages"/);
   });
 });

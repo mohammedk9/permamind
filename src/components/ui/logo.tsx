@@ -6,11 +6,21 @@ const LOGO_SRC = "/permamind-logo.png";
 /** Pixel sizes used for the mark across the app. */
 type LogoSize = "xs" | "sm" | "md" | "lg";
 
-const sizeMap: Record<LogoSize, { width: number; height: number }> = {
-  xs: { width: 112, height: 61 },
-  sm: { width: 150, height: 81 },
-  md: { width: 190, height: 103 },
-  lg: { width: 250, height: 135 },
+/**
+ * The supplied asset is a wide lockup, 2173x1175 (see `LogoPlanet`, which
+ * already derives its width from that ratio). Sizing it by width pushed a
+ * 150x81 image into a 64px header, so height is now the constrained axis and
+ * the width follows the real ratio. Both attributes are still emitted so the
+ * browser reserves the correct box before the image loads.
+ */
+const ASPECT = 2173 / 1175;
+
+/** Rendered heights per size, as Tailwind height utilities. */
+const heightMap: Record<LogoSize, { className: string; px: number }> = {
+  xs: { className: "h-[30px] w-auto", px: 30 },
+  sm: { className: "h-8 w-auto sm:h-9", px: 36 },
+  md: { className: "h-9 w-auto sm:h-10", px: 40 },
+  lg: { className: "h-14 w-auto sm:h-20", px: 56 },
 };
 
 interface LogoMarkProps {
@@ -31,15 +41,15 @@ export function LogoMark({
   ariaLabel = "PermaMind",
 }: LogoMarkProps) {
   void framed;
-  const dims = sizeMap[size];
+  const height = heightMap[size];
 
   return (
     <img
       src={LOGO_SRC}
       alt={ariaLabel}
-      width={dims.width}
-      height={dims.height}
-      className={cn("h-auto shrink-0 object-contain", className)}
+      width={Math.round(height.px * ASPECT)}
+      height={height.px}
+      className={cn(height.className, "logo-on-light shrink-0 object-contain", className)}
       role="img"
     />
   );
@@ -64,15 +74,23 @@ export function LogoPlanet({
   decorative = false,
   style,
 }: LogoPlanetProps) {
+  // The lockup is nearly twice as wide as it is tall, so a `size` of 180
+  // rendered 332px wide and overflowed a 320px phone. Callers on narrow
+  // viewports pass a smaller `size`, and `maxWidth`/`maxHeight` keep it inside
+  // the screen even before that measurement lands.
   return (
     <img
       src={LOGO_SRC}
       alt={decorative ? "" : ariaLabel}
       role={decorative ? "presentation" : "img"}
       aria-hidden={decorative ? "true" : undefined}
-      width={Math.round(size * 2173 / 1175)}
+      width={Math.round(size * ASPECT)}
       height={size}
-      className={cn("h-auto shrink-0 object-contain", className)}
+      className={cn(
+        "logo-on-light h-auto w-auto shrink-0 object-contain",
+        "max-h-[22svh] max-w-[80vw]",
+        className,
+      )}
       style={style}
     />
   );

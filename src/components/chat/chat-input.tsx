@@ -170,16 +170,16 @@ export function ChatInput({ onSend, disabled, isLoading, webSearchEnabled = fals
         {files.length > 0 && <div className="mb-2 flex flex-wrap gap-2 px-1">{files.map((file) => <div key={file.id} className={cn("flex items-center gap-2 rounded-lg border bg-muted/60 px-2 py-1.5 text-xs", file.status === "error" && "border-destructive/40 text-destructive")}><span className="flex size-6 items-center justify-center rounded bg-background">{file.status === "reading" ? <Loader2 className="size-3.5 animate-spin" aria-label={ar ? "جارٍ قراءة الملفات" : "Reading files"} /> : file.type.startsWith("image/") ? <ImagePlus className="size-3.5" /> : <FileText className="size-3.5" />}</span><span className="max-w-40 truncate">{file.name}</span><span className="sr-only">{file.error ?? file.status}</span><button type="button" onClick={() => removeFile(file.id)} aria-label={ar ? `إزالة ${file.name}` : `Remove ${file.name}`}><X className="size-3.5 text-muted-foreground" /></button></div>)}</div>}
         {voiceError && <p className="mb-2 px-1 text-xs text-destructive" role="alert">{voiceError}</p>}
         <LinkedConversationBadges conversation={conversation} conversations={conversations} onChange={(ids) => onLinkedConversationsChange?.(ids)} />
-        <div className="flex items-end gap-2">
+        <div className="flex touch-manipulation items-end gap-1.5 sm:gap-2">
         <ConversationLinkPicker conversation={conversation} conversations={conversations} disabled={disabled || isLoading} onChange={(ids) => onLinkedConversationsChange?.(ids)} />
         <input ref={fileRef} type="file" multiple accept="image/*,.pdf,.docx,.txt,.md,.csv" className="sr-only" onChange={(event) => { addFiles(event.target.files); event.currentTarget.value = ""; }} />
-         <Button type="button" variant="ghost" size="icon" className="mb-0.5 rounded-xl" onClick={() => fileRef.current?.click()} disabled={disabled || isLoading || files.length >= MAX_ATTACHMENT_COUNT} aria-label={ar ? "إرفاق صور أو ملفات" : "Attach images or files"}><Paperclip className="size-4" /></Button>
-         <Button type="button" variant={isRecording ? "secondary" : "ghost"} size="icon" className={`mb-0.5 rounded-xl ${isRecording ? "text-destructive ring-1 ring-destructive/30" : ""}`} onClick={() => void toggleRecording()} disabled={disabled || isLoading || isTranscribing} aria-label={isRecording ? (ar ? "إيقاف التسجيل" : "Stop recording") : (isTranscribing ? (ar ? "جارٍ تحويل الصوت إلى نص" : "Transcribing audio") : (ar ? "تسجيل رسالة صوتية" : "Record voice message"))} title={ar ? "تحويل الكلام إلى نص" : "Convert speech to text"}>{isTranscribing ? <Loader2 className="size-4 animate-spin" /> : isRecording ? <Square className="size-3.5 fill-current" /> : <Mic className="size-4" />}</Button>
+         <Button type="button" variant="ghost" size="icon" className="mb-0.5 shrink-0 rounded-xl" onClick={() => fileRef.current?.click()} disabled={disabled || isLoading || files.length >= MAX_ATTACHMENT_COUNT} aria-label={ar ? "إرفاق صور أو ملفات" : "Attach images or files"}><Paperclip className="size-4" /></Button>
+         <Button type="button" variant={isRecording ? "secondary" : "ghost"} size="icon" className={`mb-0.5 shrink-0 rounded-xl ${isRecording ? "text-destructive ring-1 ring-destructive/30" : ""}`} onClick={() => void toggleRecording()} disabled={disabled || isLoading || isTranscribing} aria-label={isRecording ? (ar ? "إيقاف التسجيل" : "Stop recording") : (isTranscribing ? (ar ? "جارٍ تحويل الصوت إلى نص" : "Transcribing audio") : (ar ? "تسجيل رسالة صوتية" : "Record voice message"))} title={ar ? "تحويل الكلام إلى نص" : "Convert speech to text"}>{isTranscribing ? <Loader2 className="size-4 animate-spin" /> : isRecording ? <Square className="size-3.5 fill-current" /> : <Mic className="size-4" />}</Button>
         <Button
           type="button"
           variant={webSearchEnabled ? "secondary" : "ghost"}
           size="sm"
-          className={`mb-0.5 h-9 shrink-0 gap-1.5 rounded-xl px-2.5 transition-colors ${webSearchEnabled ? "bg-primary/12 text-primary ring-1 ring-primary/25 hover:bg-primary/20" : "text-muted-foreground hover:text-foreground"}`}
+          className={`mb-0.5 h-9 shrink-0 gap-1.5 rounded-xl px-2 transition-colors sm:px-2.5 ${webSearchEnabled ? "bg-primary/12 text-primary ring-1 ring-primary/25 hover:bg-primary/20" : "text-muted-foreground hover:text-foreground"}`}
           onClick={() => onWebSearchChange?.(!webSearchEnabled)}
           disabled={disabled || isLoading}
           aria-pressed={webSearchEnabled}
@@ -213,7 +213,7 @@ export function ChatInput({ onSend, disabled, isLoading, webSearchEnabled = fals
           placeholder={
             isLoading ? (ar ? "بانتظار الرد..." : "Waiting for response...") : (ar ? "اكتب رسالتك إلى PermaMind..." : "Message PermaMind...")
           }
-          className="mb-0.5 min-h-11 flex-1 resize-none rounded-2xl border-0 bg-background/40 px-3 py-2.5 shadow-none focus-visible:ring-1"
+          className="mb-0.5 min-h-11 min-w-0 flex-1 resize-none rounded-2xl border-0 bg-background/40 px-3 py-2.5 text-base shadow-none focus-visible:ring-1 sm:text-sm"
           rows={1}
           aria-label={ar ? "رسالة إلى PermaMind" : "Message PermaMind"}
           data-chat-composer

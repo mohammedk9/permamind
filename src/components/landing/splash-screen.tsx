@@ -65,27 +65,30 @@ export function SplashScreen({
       }}
     >
       <div
-        className="relative flex items-center justify-center"
+      className="relative flex items-center justify-center"
+      style={{
+        animation:
+          "permamind-splash-pop 700ms cubic-bezier(0.16, 1, 0.3, 1) forwards",
+      }}
+    >
+      {/* Soft glow behind the planet. `max-w` caps it on narrow screens. */}
+      <span
+        aria-hidden
+        className="absolute size-32 max-w-[70vw] rounded-full bg-primary/20 blur-3xl sm:size-40"
+      />
+      <LogoPlanet
+        // The lockup renders ~1.85x as wide as it is tall, so 180 became 332px
+        // and overflowed a 320px phone. The height is what the animation reads,
+        // so it shrinks along with the screen.
+        size={150}
+        decorative
+        className="relative w-auto max-w-[78vw] text-foreground"
         style={{
           animation:
-            "permamind-splash-pop 700ms cubic-bezier(0.16, 1, 0.3, 1) forwards",
+            "permamind-splash-spin 1800ms cubic-bezier(0.4, 0, 0.2, 1) 1 forwards",
         }}
-      >
-        {/* Soft glow behind the planet */}
-        <span
-          aria-hidden
-          className="absolute size-40 rounded-full bg-primary/20 blur-3xl"
-        />
-        <LogoPlanet
-          size={180}
-          decorative
-          className="relative text-foreground"
-          style={{
-            animation:
-              "permamind-splash-spin 1800ms cubic-bezier(0.4, 0, 0.2, 1) 1 forwards",
-          }}
-        />
-      </div>
+      />
+    </div>
     </div>
   );
 }

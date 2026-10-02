@@ -44,7 +44,7 @@ export function SecurityStrip({ copy }: { copy: SecurityStripCopy }) {
   ];
 
   return (
-    <section id="security" className="scroll-mt-20 border-t border-border/50 py-16">
+    <section id="security" className="scroll-mt-20 border-t border-border/50 py-16 sm:py-16">
       <div className="mx-auto max-w-5xl px-4 sm:px-6">
         <p className="text-center text-sm font-semibold uppercase tracking-[0.18em] text-muted-foreground">
           {copy.securityTitle}
@@ -52,17 +52,17 @@ export function SecurityStrip({ copy }: { copy: SecurityStripCopy }) {
 
         {/* One column on small screens; the numbers stay legible instead of
             being squeezed into three narrow cards. */}
-        <dl className="mt-10 grid gap-4 sm:grid-cols-3">
+        <dl className="mt-8 grid gap-4 sm:mt-10 sm:grid-cols-3">
           {cards.map(({ Icon, value, label }) => (
             <div
               key={value}
-              className="flex flex-col items-center gap-2 rounded-2xl border border-border bg-card/50 px-5 py-7 text-center"
+              className="flex flex-col items-center gap-2 rounded-2xl border border-border bg-card/50 px-4 py-6 text-center sm:px-5 sm:py-7"
             >
-              <Icon className="size-5 text-primary" aria-hidden="true" />
-              <dd className="text-2xl font-bold tracking-tight text-primary sm:text-3xl">
+              <Icon className="size-5 shrink-0 text-primary" aria-hidden="true" />
+              <dd className="text-xl font-bold tracking-tight text-primary sm:text-3xl">
                 {value}
               </dd>
-              <dt className="text-sm leading-6 text-muted-foreground">{label}</dt>
+              <dt className="text-xs leading-6 text-muted-foreground sm:text-sm">{label}</dt>
             </div>
           ))}
         </dl>

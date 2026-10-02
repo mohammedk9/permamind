@@ -22,6 +22,7 @@ const SQL_FILES = [
   "arweave-upload-queue.sql",
   "mcp-readonly.sql",
   "mcp-tokens.sql",
+  "rooms.sql",
   "bootstrap-production.sql",
   join("migrations", "20260929000000_ai_usage.sql"),
 ];

@@ -24,4 +24,11 @@ export async function middleware(request: NextRequest) {
   return NextResponse.redirect(new URL("/auth/sign-in", request.url));
 }
 
-export const config = { matcher: ["/chat/:path*", "/memory/:path*", "/backup/:path*", "/settings/:path*"] };
+// `/r/*` is deliberately absent. A room guest has no Supabase account by design:
+// they join with a link and a six-digit code, and the room's own member token
+// authorises them afterwards. Including it here would redirect every guest to the
+// sign-in screen, which would make the feature impossible to use.
+//
+// `/rooms/new` is present, because opening a room is a host action and the host is
+// signed in: the room row carries `owner_id`, which is a foreign key to auth.users.
+export const config = { matcher: ["/chat/:path*", "/memory/:path*", "/backup/:path*", "/settings/:path*", "/rooms/:path*"] };

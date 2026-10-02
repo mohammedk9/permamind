@@ -26,6 +26,22 @@ PermaMind is a privacy-focused AI memory workspace. Conversations stay in the br
 - Read-only MCP access to summaries and decisions the user explicitly allows, including `search_memory`, `get_memory`, and `list_decisions`. `save_memory` is visible but every call is rejected and audited. See `mcp/README.md`.
 - A bilingual interface, English and Arabic, with the landing page and the app sharing one translation bundle.
 
+## Encrypted rooms
+
+A third conversation type: a short-lived encrypted room where several people and one AI model hold the same conversation. The design record, including the options that were considered and discarded, is `docs/group-rooms-design.md`.
+
+- **Guests need no account.** A link plus a six-digit code. The code is exchanged for a random member token, and the room key is unwrapped on the guest's own device.
+- **The server stores ciphertext it cannot read.** Messages are sealed with AES-256-GCM under a room key that never leaves the host's device. A leaked database is not a readable transcript.
+- **The model reads the room and nothing else.** The request is assembled in `lib/rooms/ai-bridge.ts`, which imports nothing from the memory ledger, the private chat, or local storage. A test asserts the built request carries no text from outside the room, using private text that deliberately overlaps the room's own subject. Do not add an import to that file without changing the design first.
+- **The host decides who spends their key.** A `guest` may read and write but cannot invoke the model; the host promotes members to `trusted`. Only the host and trusted members can ask it anything.
+- **Realtime carries a signal, not content.** No room table is in the `supabase_realtime` publication. The server announces "something changed" on a channel named after a 128-bit `feed_id`, and the subscriber re-reads through the member-token API. A subscriber who guesses the channel learns that a room exists and nothing else.
+- **Two key modes.** Option A: the host's browser signs each request with a key that never reaches our servers, and the model stops when they leave. Option B: the key is sealed with envelope encryption — a per-host data key, itself sealed under `ROOM_KEY_MASTER_SECRET` from the environment — so a database dump on its own cannot open it. B requires `ROOM_KEY_MASTER_SECRET`; without it, storage refuses rather than falling back to plaintext.
+- **Every stored key has an end date.** There is no "forever" at the schema, the API boundary, or the store. An expired row is deleted on the next read.
+- **A room is not an archive.** The host sets an expiry, and closing a room deletes it and its transcript. The quota is two active rooms per host.
+- **A room never touches the free tier.** `isValidModelId` accepts a `:free` id, so room creation separately requires a BYOK-tier model; otherwise the room would be billed to PermaMind instead of to the host.
+
+Apply the schema with `supabase/bootstrap-production.sql`, which is generated from the files in `supabase/` — edit the source, then run `powershell -File scripts/rebuild-bootstrap.ps1`.
+
 ## Stack
 
 - Next.js 15 (App Router) and React 19
@@ -97,10 +113,23 @@ Run these files in the Supabase SQL editor, in order:
 3. `supabase/arweave-upload-queue.sql` — encrypted upload queue. Clients can insert pending ciphertext only.
 4. `supabase/mcp-readonly.sql` — allowed-summary projection and MCP audit log.
 5. `supabase/mcp-tokens.sql` — hashed, expiring, revocable MCP credentials. Run it after the MCP read-only file.
+6. `supabase/rooms.sql` — the encrypted room tables: `rooms`, `room_members`, `room_messages`, `room_ideas`, `room_votes`, and `host_ai_keys`.
 
-`supabase/bootstrap-production.sql` is a generated concatenation of exactly those five, in that order, plus `pgcrypto` and verification queries. Prefer it for a fresh database. It is additive and safe to re-run: it never drops a table, truncates, or deletes, and it carries its own provenance note explaining why it exists. It is generated — edit the five source files, never the bootstrap.
+`supabase/bootstrap-production.sql` is a generated concatenation of exactly those six, in that order, plus `pgcrypto` and verification queries. Prefer it for a fresh database. It is additive and safe to re-run: it never drops a table, truncates, or deletes, and it carries its own provenance note explaining why it exists. It is generated — edit the six source files, never the bootstrap.
 
 Use the Supabase service role only on the server. Do not expose it with a `NEXT_PUBLIC_` name.
+
+### Rooms: `ROOM_KEY_MASTER_SECRET`
+
+Only needed for Option B, the setting that keeps a host's provider key on our servers so a room can answer without them:
+
+```bash
+node -e "console.log(require('crypto').randomBytes(48).toString('base64url'))"
+```
+
+Without it the key store refuses rather than falling back to writing anything in the clear, and the "On our server" option reports that it is unavailable. Option A needs no extra variable and works without it.
+
+**Rotating it makes every stored key unreadable.** There is no re-wrapping path, and the room falls back to Option A. That is the intended behaviour for a compromised secret, but it means a rotation is a user-visible action rather than a transparent one.
 
 ## Production operations
 

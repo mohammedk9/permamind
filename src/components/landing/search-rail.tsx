@@ -39,14 +39,14 @@ const providerLabels: Record<(typeof SEARCH_PROVIDERS)[number], string> = {
  */
 export function SearchRail({ copy }: { copy: SearchRailCopy }) {
   return (
-    <section id="search" className="scroll-mt-20 border-t border-border/50 py-24">
-      <div className="mx-auto grid max-w-6xl gap-10 px-4 sm:px-6 lg:grid-cols-[1fr_1.1fr] lg:items-center">
+    <section id="search" className="scroll-mt-20 border-t border-border/50 py-16 sm:py-24">
+      <div className="mx-auto grid max-w-6xl gap-8 px-4 sm:px-6 sm:gap-10 lg:grid-cols-[1fr_1.1fr] lg:items-center">
         <div>
-          <h2 className="flex items-center gap-2 text-3xl font-bold tracking-tight sm:text-4xl">
-            <Compass className="size-7 shrink-0 text-primary" aria-hidden="true" />
-            {copy.searchTitle}
+          <h2 className="flex items-center gap-2 text-2xl font-bold tracking-tight sm:text-4xl">
+            <Compass className="size-6 shrink-0 text-primary sm:size-7" aria-hidden="true" />
+            <span className="min-w-0">{copy.searchTitle}</span>
           </h2>
-          <p className="mt-4 text-lg leading-relaxed text-muted-foreground">
+          <p className="mt-4 text-base leading-relaxed text-muted-foreground sm:text-lg">
             {copy.searchDescription}
           </p>
         </div>
@@ -61,7 +61,7 @@ export function SearchRail({ copy }: { copy: SearchRailCopy }) {
                 // Arweave chip gets in `OwnershipMarks`, so "which one is
                 // default" is answered by the existing visual language instead of
                 // by a new label that would need translating.
-                className={`flex items-center gap-3 rounded-2xl border px-4 py-3 ${
+                className={`flex items-center gap-3 rounded-2xl border px-4 py-3.5 ${
                   isDefault
                     ? "border-primary/40 bg-primary/10"
                     : "border-border/70 bg-card/60"

@@ -56,44 +56,48 @@
 }
 
 :root {
-  --background: oklch(1 0 0);
+  --background: oklch(0.995 0 0);
   --foreground: oklch(0.145 0 0);
   --card: oklch(1 0 0);
   --card-foreground: oklch(0.145 0 0);
   --popover: oklch(1 0 0);
   --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.205 0 0);
-  --primary-foreground: oklch(0.985 0 0);
+  /* Brand violet. The same hue carries both themes so the product identity does
+     not change when the user flips; only the surfaces around it do. */
+  --primary: #7E57C2;
+  --primary-foreground: oklch(0.98 0 0);
   --secondary: oklch(0.97 0 0);
   --secondary-foreground: oklch(0.205 0 0);
   --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
-  --accent: oklch(0.97 0 0);
-  --accent-foreground: oklch(0.205 0 0);
+  --muted-foreground: oklch(0.5 0 0);
+  --accent: oklch(0.96 0.02 290);
+  --accent-foreground: oklch(0.32 0.08 290);
   --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
-  --ring: oklch(0.708 0 0);
-  --chart-1: oklch(0.87 0 0);
-  --chart-2: oklch(0.556 0 0);
-  --chart-3: oklch(0.439 0 0);
-  --chart-4: oklch(0.371 0 0);
-  --chart-5: oklch(0.269 0 0);
+  --border: oklch(0.9 0 0);
+  --input: oklch(0.9 0 0);
+  /* Darkened from the light-mode default: the default ring grey is too close to
+     the white background to be visible as a focus indicator. */
+  --ring: #7E57C2;
+  --chart-1: #7E57C2;
+  --chart-2: oklch(0.62 0.09 200);
+  --chart-3: oklch(0.62 0.12 80);
+  --chart-4: oklch(0.56 0.09 150);
+  --chart-5: oklch(0.52 0.07 40);
   --radius: 0.625rem;
-  --sidebar: oklch(0.985 0 0);
+  --sidebar: oklch(0.98 0 0);
   --sidebar-foreground: oklch(0.145 0 0);
-  --sidebar-primary: oklch(0.205 0 0);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.97 0 0);
-  --sidebar-accent-foreground: oklch(0.205 0 0);
-  --sidebar-border: oklch(0.922 0 0);
-  --sidebar-ring: oklch(0.708 0 0);
+  --sidebar-primary: #7E57C2;
+  --sidebar-primary-foreground: oklch(0.98 0 0);
+  --sidebar-accent: oklch(0.95 0.02 290);
+  --sidebar-accent-foreground: oklch(0.26 0 0);
+  --sidebar-border: oklch(0.9 0 0);
+  --sidebar-ring: #7E57C2;
   --status-active: oklch(0.55 0.18 255);
-  --status-success: oklch(0.55 0.15 150);
-  --status-attention: oklch(0.72 0.16 75);
+  --status-success: oklch(0.5 0.15 150);
+  --status-attention: oklch(0.68 0.16 75);
   --status-error: oklch(0.577 0.245 27.325);
-  --status-protected: oklch(0.5 0.14 290);
-  --status-neutral: oklch(0.556 0 0);
+  --status-protected: #7E57C2;
+  --status-neutral: oklch(0.5 0 0);
 }
 
 .dark {
@@ -103,9 +107,10 @@
   --card-foreground: oklch(0.985 0 0);
   --popover: oklch(0.205 0 0);
   --popover-foreground: oklch(0.985 0 0);
-  /* Brand violet. #651FFF is a deep, saturated blue-violet, so the text that
-     sits on it is dark instead of the near-white used by the old lighter hue. */
-  --primary: #651fff;
+  /* Brand violet. #7E57C2 is a muted medium purple: light enough that the
+     near-white foreground above it clears WCAG AA, and desaturated enough
+     that it does not glare against the near-black background. */
+  --primary: #7E57C2;
   --primary-foreground: oklch(0.98 0 0);
   --secondary: oklch(0.269 0 0);
   --secondary-foreground: oklch(0.985 0 0);
@@ -118,14 +123,14 @@
   --input: oklch(1 0 0 / 16%);
   /* Lightened for focus rings, which sit on the near-black background. */
   --ring: oklch(0.72 0.16 290);
-  --chart-1: #651fff;
+  --chart-1: #7E57C2;
   --chart-2: oklch(0.7 0.08 200);
   --chart-3: oklch(0.75 0.1 80);
   --chart-4: oklch(0.68 0.08 150);
   --chart-5: oklch(0.62 0.06 40);
   --sidebar: oklch(0.12 0 0);
   --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-primary: #651fff;
+  --sidebar-primary: #7E57C2;
   --sidebar-primary-foreground: oklch(0.98 0 0);
   --sidebar-accent: oklch(0.28 0.05 290);
   --sidebar-accent-foreground: oklch(0.985 0 0);
@@ -135,24 +140,88 @@
   --status-success: oklch(0.72 0.14 150);
   --status-attention: oklch(0.8 0.15 80);
   --status-error: oklch(0.704 0.191 22.216);
-  --status-protected: #651fff;
+  --status-protected: #7E57C2;
   --status-neutral: oklch(0.708 0 0);
 }
 
 @layer base {
   * {
     @apply border-border outline-ring/50;
+    /* iOS Safari and Android Chrome both apply an automatic text inflation in
+       landscape orientation, which silently breaks every `text-sm`/`text-xs`
+       scale in the app. Pinning it keeps the type ramp we designed. */
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+    /* Removes the grey flash iOS paints over a tapped link or button before the
+       click resolves. Android honours the same property, so one rule covers
+       both platforms. */
+    -webkit-tap-highlight-color: transparent;
   }
   body {
     @apply flex min-h-0 flex-col bg-background text-foreground;
     height: 100dvh;
     overflow: hidden;
+    /* Arweave transaction ids, MCP URLs, model ids, and pasted JSON are single
+       unbroken tokens. Without this they widen the layout past the viewport
+       instead of wrapping, which is what pushes cards off-screen on a phone. */
+    overflow-wrap: break-word;
   }
   html {
     @apply font-sans;
     height: 100dvh;
     overflow: hidden;
     scroll-behavior: smooth;
+    /* `-webkit-text-size-adjust` is needed on the root too: iOS reads it from
+       the document element when computing the initial scale in landscape. */
+    -webkit-text-size-adjust: 100%;
+  }
+  /* `100dvh` is unsupported on iOS Safari < 15.4 and on several Android OEM
+     builds. Without this fallback those browsers fall back to `height: auto`
+     on the root, which collapses the app shell's `overflow: hidden` contract
+     and reintroduces the double-scrollbar. */
+  @supports not (height: 100dvh) {
+    html,
+    body {
+      height: 100%;
+    }
+  }
+  /* Decorative blur circles and marquee tracks are wider than a phone by
+     design. `clip` contains them without creating a scroll container, which
+     `hidden` would (it makes the element a scrollport and breaks
+     `position: sticky` children such as the landing header). */
+  body {
+    overflow-x: clip;
+  }
+  /* Long unbroken strings must wrap rather than force a horizontal scrollbar
+     inside the app's own scroll containers. */
+  #main,
+  [data-slot="sheet-content"] {
+    overflow-wrap: break-word;
+  }
+  /* Any focusable form control must be at least 16px on iOS. Safari zooms the
+     whole viewport in on focus below that threshold, and the user then has to
+     pinch back out — the single most common iPhone complaint on a form. This
+     targets inputs/selects/textareas only, so display type is unaffected. */
+  input,
+  select,
+  textarea {
+    font-size: max(1rem, 16px);
+  }
+  /* iOS renders a default inner shadow and rounded corners on form controls
+     that cannot be removed by `appearance: none` alone. */
+  input,
+  select,
+  textarea,
+  button {
+    -webkit-appearance: none;
+    appearance: none;
+  }
+  /* Stops iOS Safari from scrolling a field into view under the on-screen
+     keyboard with no way to reach the submit button below it. */
+  input:focus,
+  select:focus,
+  textarea:focus {
+    scroll-margin-block: 6rem;
   }
   :focus-visible {
     @apply outline-2 outline-offset-2 outline-ring;
@@ -168,6 +237,68 @@
   .text-caption { @apply text-xs leading-5 text-muted-foreground; }
   .surface-card { @apply rounded-xl border border-border bg-card text-card-foreground; }
   .surface-elevated { @apply shadow-lg shadow-black/5 dark:shadow-black/20; }
+
+  /* ----------------------------------------------------------- */
+  /*  Brand logo over a light background                        */
+  /* ----------------------------------------------------------- */
+  /* The supplied `permamind-logo.png` is pure white with a transparent
+     background, drawn for the dark UI. On a white surface it renders as an
+     empty box. Inverting luminance (not `invert`, which also swaps the hue)
+     turns those white pixels into the foreground colour and leaves any future
+     coloured pixels recognisable. Scoped to the image rather than a wrapper so
+     the `alt` text and layout box are untouched. */
+  .logo-on-light {
+    filter: invert(1) hue-rotate(180deg);
+  }
+
+  /* The dark palette is the one the asset was drawn for, so it is used as-is.
+     Stated explicitly rather than left implicit so a future `:root` change
+     cannot leave the logo inverted in dark mode. */
+  .dark .logo-on-light {
+    filter: none;
+  }
+
+  /* ----------------------------------------------------------- */
+  /*  Mobile platform behaviour (iOS Safari + Android Chrome)    */
+  /* ----------------------------------------------------------- */
+
+  /* iOS Safari's auto-hiding address bar makes a sticky header slide under the
+     URL bar mid-scroll. `scroll-padding` reserves that strip so an anchored
+     section heading never lands behind it. Android ignores the property. */
+  .scroll-safe {
+    scroll-padding-top: calc(env(safe-area-inset-top) + 1rem);
+    scroll-padding-bottom: calc(env(safe-area-inset-bottom) + 1rem);
+  }
+
+  /* Android Chrome fires a synthetic mouse event ~300ms after a tap and again
+     on the "ghost" click when a finger lifts, which can double-fire a submit.
+     `manipulation` removes both the delay and the ghost click. iOS honours it
+     too, so one rule covers the two platforms. */
+  .touch-manipulation {
+    touch-action: manipulation;
+  }
+
+  /* iOS momentum scrolling on an inner container needs the legacy property on
+     older WebKit; the standard `overscroll-*` below stops the scroll chaining
+     that makes a rubber band appear behind the app shell. */
+  .scroll-container {
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior: contain;
+  }
+
+  /* `-webkit-fill-available` resolves to the real viewport height on iOS where
+     `100%` is the large viewport (address bar visible). */
+  .h-fill-available {
+    height: -webkit-fill-available;
+    height: 100dvh;
+  }
+
+  /* Android's minimum font size (Chrome enforces ~12sp) silently enlarges small
+     type in dense panels. Resetting it keeps the app's own type ramp intact. */
+  .text-size-adjust-none {
+    -webkit-text-size-adjust: none;
+    text-size-adjust: none;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
