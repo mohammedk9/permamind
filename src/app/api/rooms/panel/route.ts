@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { isValidMemberToken, isValidRoomId } from "@/lib/rooms/access";
-import { registerPanelModel, RoomError, withdrawPanelModel } from "@/lib/rooms/server";
+import { registerPanelModel, RoomError, setModelSharing, withdrawPanelModel } from "@/lib/rooms/server";
 
 export const runtime = "nodejs";
 
@@ -67,6 +67,45 @@ export async function POST(request: Request) {
     return NextResponse.json(
       await registerPanelModel({ ...who, modelId, modelLabel, specialty }),
       { status: 201 },
+    );
+  } catch (error) {
+    return fail(error);
+  }
+}
+
+/**
+ * PATCH /api/rooms/panel — what this member agreed about their own model.
+ *
+ * Separate from POST because it is a different promise. Registering a model says "here is
+ * one"; this says "and you may ask me, this often, and not more than this". A member who
+ * registers and changes nothing has agreed to nothing, which is the whole of the consent
+ * default being safe.
+ */
+export async function PATCH(request: Request) {
+  const roomId = new URL(request.url).searchParams.get("roomId") ?? "";
+  const memberToken = request.headers.get("x-room-member") ?? "";
+  if (!isValidRoomId(roomId) || !isValidMemberToken(memberToken)) {
+    return NextResponse.json({ error: "This invite is not valid", code: "INVITE_INVALID" }, { status: 404 });
+  }
+
+  const body = (await request.json().catch(() => null)) as Record<string, unknown> | null;
+  const sharing = body?.sharing;
+  if (sharing !== "silent" && sharing !== "on_request" && sharing !== "always") {
+    return NextResponse.json({ error: "That choice cannot be read", code: "SHARING_INVALID" }, { status: 400 });
+  }
+
+  const asLimit = (value: unknown): number | null =>
+    value === null || value === undefined || value === "" ? null : Number(value);
+
+  try {
+    return NextResponse.json(
+      await setModelSharing({
+        roomId,
+        memberToken,
+        sharing,
+        callLimit: asLimit(body?.callLimit),
+        dailyLimit: asLimit(body?.dailyLimit),
+      }),
     );
   } catch (error) {
     return fail(error);

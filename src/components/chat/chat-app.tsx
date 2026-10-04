@@ -144,14 +144,18 @@ export function ChatApp() {
   useEffect(() => {
     const fromPath = () => (window.location.pathname.split("/")[1] as ProductArea) || "chat";
     const initial = fromPath();
-    if (["chat", "memory", "backup", "settings"].includes(initial)) setArea(initial);
+    if (["chat", "memory", "backup", "settings", "rooms"].includes(initial)) setArea(initial);
     const onPopState = () => setArea(fromPath());
     window.addEventListener("popstate", onPopState);
     return () => window.removeEventListener("popstate", onPopState);
   }, []);
   const navigate = useCallback((next: ProductArea) => {
-    if (next === "backup") {
-      window.location.href = "/backup";
+    // A full page load, like Backup. Rooms are not a view inside this shell: they carry their
+    // own key, their own membership and their own lifetime, and the room page has to start
+    // from the URL. Pushing a history entry and swapping `area` would leave this shell
+    // mounted over a screen it does not know how to render.
+    if (next === "backup" || next === "rooms") {
+      window.location.href = next === "backup" ? "/backup" : "/rooms/new";
       return;
     }
     setArea(next);

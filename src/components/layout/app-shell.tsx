@@ -1,6 +1,6 @@
 "use client";
 
-import { Archive, Brain, LogOut, Menu, MessageSquare, Settings } from "lucide-react";
+import { Archive, Brain, LogOut, Menu, MessageSquare, Settings, Users } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
@@ -9,18 +9,23 @@ import { cn } from "@/lib/utils";
 import { useLocale } from "@/hooks/use-locale";
 import { Logo } from "@/components/ui/logo";
 
-export type ProductArea = "chat" | "memory" | "backup" | "settings" | "project";
+export type ProductArea = "chat" | "memory" | "backup" | "settings" | "project" | "rooms";
 
 const navigation = [
   { id: "chat" as const, label: "Chat", icon: MessageSquare },
   { id: "memory" as const, label: "Memory", icon: Brain },
   { id: "backup" as const, label: "Backup", icon: Archive },
   { id: "settings" as const, label: "Settings", icon: Settings },
+  // Rooms sit below Chat rather than beside it: a room is a separate surface with its
+  // own key, its own membership and its own lifetime, not another view of this chat.
+  { id: "rooms" as const, label: "Rooms", icon: Users },
 ];
 
 function Navigation({ activeArea, onNavigate, compact = false }: { activeArea: ProductArea; onNavigate: (area: ProductArea) => void; compact?: boolean }) {
   const { locale } = useLocale();
-  const labels = locale === "ar" ? { chat: "المحادثة", memory: "الذاكرة", backup: "النسخ الاحتياطي", settings: "الإعدادات" } : { chat: "Chat", memory: "Memory", backup: "Backup", settings: "Settings" };
+  const labels = locale === "ar"
+    ? { chat: "المحادثة", memory: "الذاكرة", backup: "النسخ الاحتياطي", settings: "الإعدادات", rooms: "الغرف" }
+    : { chat: "Chat", memory: "Memory", backup: "Backup", settings: "Settings", rooms: "Rooms" };
   return <nav aria-label="Primary navigation" className="shrink-0 space-y-1">
     {navigation.map(({ id, icon: Icon }) => <Button key={id} variant={activeArea === id ? "secondary" : "ghost"} className={cn("w-full justify-start gap-3 rounded-lg px-3 py-2 text-sm font-medium shadow-sm transition-colors", compact && "justify-center px-2", activeArea === id && "bg-sidebar-accent text-sidebar-accent-foreground")} onClick={() => onNavigate(id)} aria-current={activeArea === id ? "page" : undefined}>
       <Icon className="size-4" /><span className={cn(compact && "sr-only")}>{labels[id]}</span>

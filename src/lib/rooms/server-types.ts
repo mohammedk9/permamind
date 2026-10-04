@@ -26,3 +26,25 @@ export interface RoomSpendSummary {
   members: RoomSpendRow[];
   models: { model: string; calls: number }[];
 }
+
+/**
+ * A model in the room, as any member may address it.
+ *
+ * Declared here rather than imported from `server.ts` for the reason `RoomSpendSummary` is:
+ * that module carries `server-only` and a client cannot import it. `models.test.ts` asserts the
+ * endpoint really sends these fields, so the copy cannot drift from the original.
+ */
+export interface RoomModelTarget {
+  /** The public handle a member is named by. Two members may bring the same provider model. */
+  slot: string;
+  modelId: string;
+  modelLabel: string;
+  specialty: string;
+  /** What the owner agreed. `silent` means the model cannot be addressed at all. */
+  sharing: "silent" | "on_request" | "always";
+  callLimit: number | null;
+  dailyLimit: number | null;
+  totalCalls: number;
+  callsToday: number;
+  isMine: boolean;
+}

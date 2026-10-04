@@ -26,6 +26,15 @@ import {
 // The same validator the guest room uses, so a member cannot register a model id the room
 // itself would have refused. Two lists would be two definitions of "a real model".
 import { isValidModelId } from "@/lib/ai/models";
+// The sharing rules and their sentences, so the budget decision and its refusal live in one
+// place. Imported rather than duplicated because a copy here could disagree with the copy
+// the tests pin.
+import {
+  canModelAnswer,
+  MAX_MODEL_CALL_LIMIT,
+  MIN_MODEL_CALL_LIMIT,
+  sharingRefusalMessage,
+} from "@/lib/rooms/sharing";
 
 /** The failure every room operation reports through. */
 export class RoomError extends Error {
@@ -430,10 +439,18 @@ export async function registerPanelModel(
     .eq("room_id", input.roomId)
     .maybeSingle();
 
-  // A guest room has exactly one model — the room's own — and a member row naming a different
-  // one would mean nothing. Refused rather than ignored so a stale client cannot fill a guest
-  // room's roster with models that will never answer anything.
-  if (!room || room.room_kind !== "panel") {
+  // Both room kinds take member models.
+  //
+  // This used to refuse anything that was not a `panel`, on the reasoning that a guest room has
+  // exactly one model — the host's — so a member row naming another would mean nothing. That
+  // reasoning was wrong: it treated the host's single model as the limit on the *room's* models
+  // rather than as one of them. A room is a conversation, and a member who signs in and brings a
+  // model has asked for the same thing the host already has.
+  //
+  // What actually differs between the kinds is who may join — a panel requires an account — and
+  // who pays. Here, that is whoever registered the model. The host's own model keeps costing the
+  // host whether or not anyone else brings one.
+  if (!room) {
     throw new RoomError("This room does not take member models", 400, "NOT_A_PANEL");
   }
 
@@ -701,14 +718,17 @@ export async function resolveAiAccess(input: {
 
   const roomKind = (room?.room_kind === "panel" ? "panel" : "guest") as "guest" | "panel";
 
-  // The caller's own model, and only in a panel room.
+  // The caller's own model. Both room kinds take member models now, so a signed-in member
   //
   // Read by the caller's token hash, so this is the model belonging to whoever is asking.
   // There is no parameter that could name another member's model, which is what makes the
   // proposal's rule — "whoever invokes a model invokes it with their own" — a property of
   // the shape rather than a check somebody has to remember to write.
+  //
+  // The room's own model stays the fallback for a caller who has none, which is what keeps an
+  // ordinary room working for the guest who never signed in.
   let callerModel: { modelId: string; modelLabel: string; specialty: string } | null = null;
-  if (roomKind === "panel") {
+  {
     const { data: ownRow } = await supabase
       .from("room_members")
       .select("model_id,model_label,model_specialty")
@@ -1621,4 +1641,238 @@ export async function attachIdeaTask(input: {
     .eq("room_id", input.roomId)
     .eq("id", input.ideaId);
   if (error) throw new RoomError("That task could not be linked", 503, "TASK_LINK_FAILED");
+}
+// ---------------------------------------------------------------------------
+// Addressing a model in a panel room
+// ---------------------------------------------------------------------------
+
+/** A model in the room, as a member may address it. */
+export interface RoomModelTarget {
+  /** The public handle. Two members may register the same provider model. */
+  slot: string;
+  /** The owner's display label, encrypted like everything else — resolved client-side. */
+  modelId: string;
+  modelLabel: string;
+  specialty: string;
+  sharing: "silent" | "on_request" | "always";
+  callLimit: number | null;
+  dailyLimit: number | null;
+  totalCalls: number;
+  callsToday: number;
+  /** True when this is the caller's own model. */
+  isMine: boolean;
+}
+
+/** UTC day key, so a daily ceiling resets at a boundary everyone agrees on. */
+function todayKey(): string {
+  return new Date().toISOString().slice(0, 10);
+}
+
+/**
+ * Every model in the room that a member may address.
+ *
+ * Read once per room read rather than per question, and every member reads the same list — the
+ * point of a panel is that everyone can see who is in it. A model whose owner set `silent` is
+ * still listed, because a member who cannot address it deserves to know it exists; the UI shows
+ * it as silent rather than pretending the room has one fewer participant.
+ */
+export async function readRoomModels(input: {
+  roomId: string;
+  memberToken: string;
+}): Promise<RoomModelTarget[]> {
+  const role = await roleFor(input.roomId, input.memberToken);
+  if (!role) throw new RoomError("This invite is not valid", 404, "INVITE_INVALID");
+
+  const { supabase } = await requireUser();
+  if (!supabase) throw new RoomError("Rooms are not available", 503, "ROOMS_UNAVAILABLE");
+
+  const ownHash = await hashSecret(input.memberToken);
+  const { data } = await supabase
+    .from("room_members")
+    .select(
+      "member_token_hash,model_slot,model_id,model_label,model_specialty,model_sharing,model_call_limit,model_daily_limit,model_calls_total,model_calls_on,model_calls_today",
+    )
+    .eq("room_id", input.roomId)
+    .not("model_id", "is", null);
+
+  const today = todayKey();
+  const models: RoomModelTarget[] = [];
+
+  for (const row of (data ?? []) as Record<string, unknown>[]) {
+    if (!row.model_slot || !row.model_id || !row.model_label || !row.model_specialty) continue;
+    // A counter stamped on another day reads as zero for today, without a write.
+    const freshToday = row.model_calls_on === today ? Number(row.model_calls_today ?? 0) : 0;
+    models.push({
+      slot: String(row.model_slot),
+      modelId: String(row.model_id),
+      modelLabel: String(row.model_label),
+      specialty: String(row.model_specialty),
+      sharing: (row.model_sharing as RoomModelTarget["sharing"]) ?? "silent",
+      callLimit: row.model_call_limit === null || row.model_call_limit === undefined ? null : Number(row.model_call_limit),
+      dailyLimit: row.model_daily_limit === null || row.model_daily_limit === undefined ? null : Number(row.model_daily_limit),
+      totalCalls: Number(row.model_calls_total ?? 0),
+      callsToday: freshToday,
+      isMine: row.member_token_hash === ownHash,
+    });
+  }
+
+  return models;
+}
+
+/**
+ * Resolves a target to the row that owns it, and counts the call against that owner.
+ *
+ * ## Who pays
+ *
+ * The **owner of the addressed model**, not the member who pressed ask. That is the whole
+ * bargain: a panel is several people's models in one conversation, a member may ask any of them,
+ * and the person who brought a model pays for it when it answers. Without that, asking another
+ * member's model would either be refused — which makes a panel useless — or billed to whoever
+ * happened to press the button, which is worse.
+ *
+ * ## Why the budget is checked here and not in the route
+ *
+ * The budget belongs to the owner, and the owner is a row in this table. Checking it in the same
+ * place that increments it means the check and the increment cannot drift apart, and two members
+ * pressing ask at once both see the real number.
+ *
+ * `onRequest` true means the member asked for this model specifically, which is what
+ * `always` answers without being named.
+ */
+export async function resolveModelTarget(input: {
+  roomId: string;
+  slot: string;
+  /** True when the caller pressed ask on this model rather than the room answering freely. */
+  onRequest: boolean;
+}): Promise<{
+  modelId: string;
+  modelLabel: string;
+  specialty: string;
+  ownerId: string | null;
+}> {
+  const { supabase } = await requireUser();
+  if (!supabase) throw new RoomError("Rooms are not available", 503, "ROOMS_UNAVAILABLE");
+
+  const { data: row } = await supabase
+    .from("room_members")
+    .select(
+      "model_id,model_label,model_specialty,model_sharing,model_call_limit,model_daily_limit,model_calls_total,model_calls_on,model_calls_today,user_id",
+    )
+    .eq("room_id", input.roomId)
+    .eq("model_slot", input.slot)
+    .maybeSingle();
+
+  const owner = row as Record<string, unknown> | null;
+  if (!owner?.model_id) {
+    throw new RoomError("That model is no longer in the room", 404, "MODEL_NOT_FOUND");
+  }
+
+  const today = todayKey();
+  const totalCalls = Number(owner.model_calls_total ?? 0);
+  const callsToday = owner.model_calls_on === today ? Number(owner.model_calls_today ?? 0) : 0;
+  const sharing = (owner.model_sharing as "silent" | "on_request" | "always") ?? "silent";
+
+  const decision = canModelAnswer({
+    sharing,
+    callLimit: owner.model_call_limit === null || owner.model_call_limit === undefined ? null : Number(owner.model_call_limit),
+    dailyLimit: owner.model_daily_limit === null || owner.model_daily_limit === undefined ? null : Number(owner.model_daily_limit),
+    usage: { totalCalls, callsToday, exhausted: false },
+  });
+
+  // ## Why an `always` model is still not a random reply
+  //
+  // `always` means "you may speak without being named", not "you may speak to everything".
+  // A ceiling still applies, and a silent or on-request model still has to be asked for by
+  // name. This is the whole of the no-random-replies property: a room full of `always` models
+  // does not have every one of them answering every message.
+
+  const refusal = decision.allowed ? null : decision.reason;
+  const speaksUnprompted = sharing === "always" && !input.onRequest;
+
+  // A refusal stands, with one exception: an `always` model may speak unprompted as long as
+  // the refusal was about the *budget* rather than about consent. A model whose owner has
+  // agreed to always and has 3 calls left does not need to be asked first.
+  const blockedByBudget = refusal === "budget" || refusal === "daily";
+  if (refusal && !(blockedByBudget && speaksUnprompted)) {
+    throw new RoomError(sharingRefusalMessage(refusal, false), 403, "MODEL_NOT_SHARED");
+  }
+
+  // Counted against the owner, and stamped with the day so a daily ceiling resets by
+  // comparison rather than by a sweep that might not run.
+  await supabase
+    .from("room_members")
+    .update({
+      model_calls_total: totalCalls + 1,
+      model_calls_today: callsToday + 1,
+      model_calls_on: today,
+    })
+    .eq("room_id", input.roomId)
+    .eq("model_slot", input.slot);
+
+  return {
+    modelId: String(owner.model_id),
+    modelLabel: String(owner.model_label),
+    specialty: String(owner.model_specialty),
+    // The account whose stored key signs this call. Null for a member with no account, whose
+    // model can only be invoked by that member themselves, with their own header key.
+    ownerId: owner.user_id === null || owner.user_id === undefined ? null : String(owner.user_id),
+  };
+}
+
+/**
+ * Records what a member agreed about their own model.
+ *
+ * The seat must match the signed-in account, exactly as it does for `registerPanelModel`: a
+ * leaked member token must not be enough to open a member's model to a room.
+ */
+export async function setModelSharing(input: {
+  roomId: string;
+  memberToken: string;
+  sharing: "silent" | "on_request" | "always";
+  callLimit: number | null;
+  dailyLimit: number | null;
+}): Promise<{ sharing: string; callLimit: number | null; dailyLimit: number | null }> {
+  const { supabase, user } = await requireUser();
+  if (!supabase || !user) throw new RoomError("Sign in required", 401, "SIGNIN_REQUIRED");
+
+  const role = await roleFor(input.roomId, input.memberToken);
+  if (!role) throw new RoomError("This invite is not valid", 404, "INVITE_INVALID");
+
+  const memberHash = await hashSecret(input.memberToken);
+  const { data: member } = await supabase
+    .from("room_members")
+    .select("user_id,model_id")
+    .eq("room_id", input.roomId)
+    .eq("member_token_hash", memberHash)
+    .maybeSingle();
+
+  if (!member) throw new RoomError("This invite is not valid", 404, "INVITE_INVALID");
+  if (member.user_id !== user.id) {
+    throw new RoomError("This seat is not yours", 403, "NOT_YOUR_SEAT");
+  }
+  if (!member.model_id) {
+    throw new RoomError("Bring a model before choosing how it may answer", 400, "NO_MODEL");
+  }
+
+  const bounded = (value: number | null): number | null => {
+    if (value === null || value === undefined) return null;
+    const n = Math.floor(value);
+    if (!Number.isFinite(n) || n < MIN_MODEL_CALL_LIMIT || n > MAX_MODEL_CALL_LIMIT) {
+      throw new RoomError("That limit cannot be read", 400, "LIMIT_INVALID");
+    }
+    return n;
+  };
+
+  const { error } = await supabase
+    .from("room_members")
+    .update({
+      model_sharing: input.sharing,
+      model_call_limit: bounded(input.callLimit),
+      model_daily_limit: bounded(input.dailyLimit),
+    })
+    .eq("room_id", input.roomId)
+    .eq("member_token_hash", memberHash);
+
+  if (error) throw new RoomError("That could not be saved", 503, "SHARING_FAILED");
+  return { sharing: input.sharing, callLimit: bounded(input.callLimit), dailyLimit: bounded(input.dailyLimit) };
 }

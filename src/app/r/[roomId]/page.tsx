@@ -1,7 +1,7 @@
 "use client";
 
 import { useParams, useRouter } from "next/navigation";
-import { useCallback, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { KeyRound, Loader2, ShieldCheck, Sparkles } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -9,6 +9,7 @@ import { RoomMembersPanel } from "@/components/rooms/room-members-panel";
 import { RoomHostControls } from "@/components/rooms/room-host-controls";
 import { PanelModelControls } from "@/components/rooms/panel-model-controls";
 import { IdeasBoard } from "@/components/rooms/ideas-board";
+import { RoomReportExport } from "@/components/rooms/room-report-export";
 import {
   RoomPresenceStrip,
   sealAliasAtJoin,
@@ -19,6 +20,10 @@ import { useApiSettings } from "@/hooks/use-api-settings";
 import { useLocale } from "@/hooks/use-locale";
 import { useRoomTranscript, type DecryptedMessage } from "@/hooks/use-room-transcript";
 import { useRoomIdeas } from "@/hooks/use-room-ideas";
+import { useRoomModels } from "@/hooks/use-room-models";
+import { ModelAddressPicker } from "@/components/rooms/model-address-picker";
+import { RoomFilePicker } from "@/components/rooms/room-file-picker";
+import { ModelSharingControls } from "@/components/rooms/model-sharing-controls";
 import { isValidInviteCode, isValidRoomId } from "@/lib/rooms/access";
 // The context window, imported rather than repeated. The route enforces the same bound and
 // refused longer requests, so two independent numbers here is what broke "Ask the model" in
@@ -66,6 +71,13 @@ export default function RoomDoorPage() {
   // message payload, which is what lets the server be told a name exists without reading it.
   // The host is never asked for one: they own the room and do not choose a name for themselves.
   const [alias, setAlias] = useState("");
+
+  // The host's own summary of what this room decided.
+  //
+  // Held in component state and never persisted: it exists to go into an exported file the
+  // host keeps. A summary stored in the room would be deleted along with everything else,
+  // which is correct — and is exactly why this is a textarea the host fills in, rather than
+  // something the system decided was worth remembering.
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [session, setSession] = useState<{
@@ -284,6 +296,13 @@ function RoomTranscript({
   alias: string;
   ar: boolean;
 }) {
+  // The host's own summary of what this room decided, and the report it becomes.
+  //
+  // Held here and never persisted anywhere: it exists to go into a file the host keeps. A
+  // summary stored in the room would be deleted with everything else, which is correct — and
+  // is exactly why it is a textarea the host fills in rather than something the system
+  // decided was worth remembering.
+  const [decisionSummary, setDecisionSummary] = useState("");
   const {
     messages,
     role,
@@ -308,6 +327,10 @@ function RoomTranscript({
     setPinned,
   } = useRoomTranscript(roomId, roomKey, token, alias);
 
+  // The room's models, and which one this member is addressing. Separate from the
+  // transcript hook because a model answers a question rather than joining a conversation.
+  const models = useRoomModels(roomId, token);
+
   // The ideas board. Separate from the transcript hook because it has its own lifecycle:
   // ideas are sealed and opened on their own schedule, and a board that failed to load
   // must not take the conversation with it.
@@ -318,6 +341,32 @@ function RoomTranscript({
   // their messages, it is never sent anywhere, and it is not the stored hash — so it
   // identifies nothing outside this conversation.
   const memberLabel = `${ar ? "ضيف" : "Guest"} ${token.slice(0, 4)}`;
+
+  // ## What the report carries about who was here
+  //
+  // Distinct display names only, and only from messages — not from the roster, and not from
+  // presence. A report outlives the room, so it must not carry anything the room itself would
+  // not have shown: the roster is host-only, and a member who left is still a member of the
+  // transcript.
+  const contributorNames = useMemo(
+    () =>
+      [...new Set(messages.map((m) => m.alias).filter((a): a is string => Boolean(a)))].slice(0, 50),
+    [messages],
+  );
+
+  // How long the room has existed, measured from its first message.
+  //
+  // Approximate by design: the room's own creation time is not on anything the client holds,
+  // and a room with no messages has no start to measure from. Zero is the honest answer for
+  // an empty room rather than the time since the page loaded.
+  const hoursOpen = useMemo(() => {
+    const stamps = messages
+      .map((m) => new Date(m.createdAt).getTime())
+      .filter((value) => !Number.isNaN(value));
+    if (stamps.length === 0) return 0;
+    const oldest = Math.min(...stamps);
+    return Math.max(0, (Date.now() - oldest) / 3_600_000);
+  }, [messages]);
   const [draft, setDraft] = useState("");
   const [question, setQuestion] = useState("");
   const [asking, setAsking] = useState(false);
@@ -395,6 +444,9 @@ function RoomTranscript({
           // The role this question is asked under. Null when the host offered none, in which
           // case the answer is simply unattributed by role.
           specialty: specialty ?? undefined,
+          // Which model answers, when this member picked one. Null means "mine, or the
+          // room's" — and the server resolves it from that, never from this value.
+          modelSlot: models.target ?? undefined,
           messages: messages
             // The most recent window, not the whole page. `readMessages` serves up to a hundred
             // messages and every one of them was being sent; the route's own cap then refused
@@ -630,6 +682,7 @@ function RoomTranscript({
               rather than inside it, so a member who has not registered a model still reads
               the reason their button is missing. */}
           {roomKind === "panel" ? (
+            <>
             <PanelModelControls
               aiSpecialties={aiSpecialties}
               aiMaxModels={aiMaxModels}
@@ -640,8 +693,18 @@ function RoomTranscript({
               error={panelError}
               ar={ar}
             />
+            {/* What this member agreed about their own model, and what it has cost so
+                far. Only rendered when they have one, and only for them: a member may see
+                their own budget and nobody else's. */}
+            <ModelSharingControls
+              roomId={roomId}
+              memberToken={token}
+              model={models.models.find((m) => m.isMine) ?? null}
+              onSaved={models.refresh}
+              ar={ar}
+            />
+          </>
           ) : null}
-
           {/* In a panel room a member with no model has nothing to invoke. The button is
               absent rather than dead, and the controls above already said why — a member
               taking part without spending their key is taking part. */}
@@ -653,6 +716,18 @@ function RoomTranscript({
 
           {mayAsk ? (
             <div className="space-y-2">
+              {/* Who answers. Rendered whenever the room has more than one model, and in a
+                  panel always. A single-model room needs no picker: there is nothing to
+                  choose between, and a disabled control would be decoration. */}
+              {models.models.length > 1 || roomKind === "panel" ? (
+                <ModelAddressPicker
+                  models={models.models}
+                  selected={models.target}
+                  onSelect={models.setTarget}
+                  busy={asking}
+                  ar={ar}
+                />
+              ) : null}
               {/* The role picker. Rendered only when the host offered roles, which is never in
                   a room created before this feature and is left empty by a host who skips it.
                   A member chooses who they are talking to; the host chooses what is on the
@@ -741,6 +816,23 @@ function RoomTranscript({
             </div>
           ) : null}
 
+          {/* Files. A document is read in the browser and only its text joins the sealed
+              message, so nothing is uploaded and the room keeps its single store of
+              ciphertext. The control is absent in a read-only room because the room would
+              refuse the post anyway, and a button that always fails is worse than none. */}
+          {!readOnly ? (
+            <div className="px-4 pt-3">
+              <RoomFilePicker
+                onAttach={(body) => {
+                  setDraft("");
+                  void send(body);
+                }}
+                busy={sending}
+                ar={ar}
+              />
+            </div>
+          ) : null}
+
           <form onSubmit={submit} className="flex gap-2">
             <Input
               value={draft}
@@ -788,6 +880,46 @@ function RoomTranscript({
         setStatus={ideas.setStatus}
         ar={ar}
       />
+      ) : null}
+
+      {/* The host's way out, and deliberately a file rather than a memory entry.
+          Section 9's warning is that a brainstorm which quietly becomes permanent memory is
+          how a memory system fills with noise. So nothing is recorded on the host's behalf:
+          the host presses a button and keeps a document they can re-read or throw away. */}
+      {role === "host" ? (
+        <>
+          <div className="px-4 pb-4">
+            <label htmlFor="room-decision-summary" className="mb-1.5 block text-sm font-medium">
+              {ar ? "ما اتُّفق عليه" : "What was decided"}
+            </label>
+            <textarea
+              id="room-decision-summary"
+              value={decisionSummary}
+              onChange={(event) => setDecisionSummary(event.target.value.slice(0, 2000))}
+              rows={3}
+              placeholder={
+                ar
+                  ? "اكتب خلاصة ما اتُّفق عليه. تذهب إلى التقرير، ولا إلى أي مكان آخر."
+                  : "Write what was agreed. This goes into the report, and nowhere else."
+              }
+              className="w-full rounded-lg border border-input bg-transparent px-2.5 py-2 text-sm outline-none focus-visible:border-ring"
+            />
+          </div>
+          <RoomReportExport
+            roomId={roomId}
+            summary={decisionSummary}
+            ideas={ideas.ideas.map((idea) => ({
+              text: idea.text,
+              score: idea.score,
+              voters: idea.voters,
+              status: idea.status,
+            }))}
+            contributorLabels={contributorNames}
+            hoursOpen={hoursOpen}
+            locale={ar ? "ar" : "en"}
+            ar={ar}
+          />
+        </>
       ) : null}
 
       {/* The host's only control over AI spending. Rendering it on `role === "host"`

@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { Check, Copy, Loader2, ShieldCheck, TriangleAlert } from "lucide-react";
 
+import { AppShell, type ProductArea } from "@/components/layout/app-shell";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { PageHeader } from "@/components/ui/page-header";
@@ -147,9 +148,20 @@ export default function NewRoomPage() {
     }
   };
 
+  // One shell around both branches. `AppShell` owns the navigation and the sign-out
+  // button, so a member who arrived here from the sidebar can get back without this page
+  // inventing a back link of its own.
+  const shell = {
+    activeArea: "rooms" as const,
+    onNavigate: (area: ProductArea) => {
+      window.location.href = area === "chat" ? "/chat" : `/${area}`;
+    },
+  };
+
   if (created) {
     return (
-      <main dir={ar ? "rtl" : "ltr"} className="mx-auto max-w-2xl px-4 py-16">
+      <AppShell {...shell}>
+        <main dir={ar ? "rtl" : "ltr"} className="mx-auto max-w-2xl px-4 py-16">
         <SurfaceCard
           title={ar ? "غرفتك جاهزة" : "Your room is ready"}
           description={
@@ -206,11 +218,13 @@ export default function NewRoomPage() {
             </Button>
           </div>
         </SurfaceCard>
-      </main>
+        </main>
+      </AppShell>
     );
   }
 
   return (
+    <AppShell {...shell}>
     <main dir={ar ? "rtl" : "ltr"} className="mx-auto max-w-2xl px-4 py-12">
       <PageHeader
         title={ar ? "محادثة جماعية" : "Group room"}
@@ -509,6 +523,7 @@ export default function NewRoomPage() {
         </form>
       )}
     </main>
+    </AppShell>
   );
 }
 

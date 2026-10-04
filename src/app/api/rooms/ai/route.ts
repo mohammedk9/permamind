@@ -6,7 +6,7 @@ import { loadHostKey } from "@/lib/rooms/host-key-store";
 import { checkRateLimit } from "@/lib/ai/rate-limit";
 import type { ChatCompletionMessage } from "@/lib/ai/types";
 import { isValidRoomId, isValidMemberToken } from "@/lib/rooms/access";
-import { recordRoomAiUsage, resolveAiAccess } from "@/lib/rooms/server";
+import { recordRoomAiUsage, resolveAiAccess, resolveModelTarget } from "@/lib/rooms/server";
 
 export const runtime = "nodejs";
 
@@ -194,36 +194,20 @@ export async function POST(request: Request) {
 
   // ## Which model answers
   //
-  // In a guest room it is the room's own, read from the room row and never from the request.
-  // The host chose it when they opened the room, and a caller-supplied model would let anyone
-  // bill the room for a price the host never agreed to.
+  // **The caller's own model, whenever they have one — in either kind of room.**
   //
-  // In a panel room it is **the caller's own registration**. Not the room row — that is the
-  // whole difference between the two kinds — and not the request, because a request-supplied
-  // model would let a member spend *their* key on a model *they* did not register, which is
-  // the same abuse with the roles reversed.
+  // This used to be gated on `roomKind === "panel"`, which meant a signed-in member of an
+  // ordinary guest room was answered by the host's model instead of their own: their key would
+  // have paid for it, and they would have been told a model they never registered was speaking.
+  // A room is a conversation, and a member who brought a model has asked to be answered by it.
   //
-  // `callerModel` is null when the member registered none, and the proposal is explicit that
-  // this is correct rather than a gap: there is no shared credential to fall back to, and
-  // adding one would undo section 5.
-  const model =
-    access.roomKind === "panel"
-      ? (access.callerModel?.modelId ?? "")
-      : (access.aiModel?.trim() ?? "");
-
-  if (!model || model.length > 200 || !isValidModelId(model)) {
-    if (access.roomKind === "panel" && !access.callerModel) {
-      return Response.json(
-        {
-          error: "Bring a model to ask this room. You have not registered one.",
-          code: "PANEL_MODEL_REQUIRED",
-        },
-        { status: 403 },
-      );
-    }
-    return Response.json({ error: "This room has no usable model configured" }, { status: 400 });
-  }
-
+  // The room's own model remains the fallback for a caller with no registration, which is what
+  // keeps an ordinary room working for the guest who never signed in — and who therefore has no
+  // key and no model to bring.
+  //
+  // Never from the request body. A caller-supplied model would let any member spend their key on
+  // a model they never agreed to run, which is the same abuse as paying for it with somebody
+  // else's key.
   // The provider is likewise the room's. A body or header that names a different one would
   // route the host's key somewhere they did not choose, so the room's value wins outright.
   const provider = access.aiProvider?.trim() ?? "openrouter";
@@ -232,7 +216,46 @@ export async function POST(request: Request) {
     messages?: unknown;
     question?: unknown;
     specialty?: unknown;
+    /** Names a model somebody else brought. See the addressing block below. */
+    modelSlot?: unknown;
   } | null;
+
+  // ## Addressing a model by name
+  //
+  // A `modelSlot` in the body names a model **somebody else brought**. In a panel this is
+  // the normal case: the host and every member may ask any model in the room, and the model
+  // that answers is the owner's, paid for by the owner, inside the owner's own budget.
+  //
+  // Without a slot this resolves to the caller's own model, or failing that to the room's.
+  // So an ordinary room with one host model behaves exactly as it always has, and a member who
+  // pressed ask with no choice gets their own.
+  const slot = typeof body?.modelSlot === "string" ? body.modelSlot.trim() : "";
+  const addressed = slot
+    ? await resolveModelTarget({ roomId, slot, onRequest: true })
+    : null;
+
+  const model =
+    addressed?.modelId.trim() || access.callerModel?.modelId?.trim() || access.aiModel?.trim() || "";
+
+  if (!model || model.length > 200 || !isValidModelId(model)) {
+    if (!access.callerModel && !access.aiModel) {
+      // No model of their own and no room model. In a panel this means they never registered
+      // one; in a guest room it means the host never configured the room's.
+      return Response.json(
+        access.roomKind === "panel"
+          ? {
+              error: "Bring a model to ask this room. You have not registered one.",
+              code: "PANEL_MODEL_REQUIRED",
+            }
+          : { error: "This room has no usable model configured" },
+        { status: access.roomKind === "panel" ? 403 : 400 },
+      );
+    }
+    return Response.json({ error: "This room has no usable model configured" }, { status: 400 });
+  }
+
+
+
 
   const question = typeof body?.question === "string" ? body.question.trim() : "";
   const messages = Array.isArray(body?.messages) ? body.messages : [];
@@ -250,13 +273,11 @@ export async function POST(request: Request) {
   // promise that the question is refused — it only fails to be attributed, which is the
   // honest outcome. The room row stays the authority: this never invents a role.
   //
-  // In a panel room the answer is already settled: the caller registered a model *with* a
-  // role, and asking under a different one would let a member answer as the critic while
-  // being billed as the marketer. The registration is the authority there.
-  const acceptedSpecialty =
-    access.roomKind === "panel" && access.callerModel
-      ? access.callerModel.specialty
-      : resolveSpecialty(body?.specialty, access.aiSpecialties);
+  // Whenever the caller registered a model, the answer is already settled: they registered it
+  // *with* a role, and asking under a different one would let a member answer as the critic
+  // while being billed as the marketer. The registration is the authority, in either kind of
+  // room — a member model is a member model wherever it is brought.
+  const acceptedSpecialty = addressed?.specialty || access.callerModel?.specialty || resolveSpecialty(body?.specialty, access.aiSpecialties);
 
   // Tighter than the private chat's limiter, because here every call is the host's money
   // and a member can make several in a row.
@@ -395,11 +416,19 @@ async function resolveKey(
   //
   // > No one spends someone else's key. Whoever invokes a model invokes it with their own.
   //
-  // A guest room's host may have chosen Option B, which stores their key so the room answers
-  // while they are away. In a panel room that key would be the host's, and every member
-  // without one of their own would silently be spending it — which is the exact cost surface
-  // the panel kind exists to remove. So the stored-key branch below is unreachable here, and
-  // adding a reach for it later would break the rule rather than extend the feature.
+  // A **guest room** host may have chosen Option B, which stores their key so the room answers
+  // while they are away. That is the host's own consent, given deliberately, and it extends to
+  // the members they promoted to `trusted` — that promotion is the host handing over their key,
+  // and it is the whole of section 4's quota control.
+  //
+  // I widened this to "any caller with a registered model" and was wrong. A member who brings
+  // their own model in a guest room is a `trusted` member the host authorised, not someone the
+  // host's key was stolen from. Reverted: the guard is on the room kind, not on the caller.
+  //
+  // In a **panel** room it stays closed. There every model belongs to the member who registered
+  // it and pays with that member's key, so a stored host key would be the one credential in the
+  // room that belongs to nobody present — and adding a reach for it later would break section 5
+  // rather than extend the feature.
   if (access.roomKind === "panel") {
     return null;
   }

@@ -184,13 +184,17 @@ describe("a model may only be the caller's own", () => {
   });
 });
 
-describe("only a panel room takes member models", () => {
-  it("refuses a guest room", async () => {
-    install({ roomKind: "guest", ownModelId: null });
+describe("both room kinds take member models", () => {
+  it("lets a signed-in member bring one to a guest room too", async () => {
+    // This said a guest room should be *refused*. That was the wrong rule, and it came from
+    // reading the host's single model as a limit on the room's models rather than as one of
+    // them. A room is a conversation; a member who signs in and brings a model has asked for
+    // exactly what the host already has there.
+    const updates = install({ roomKind: "guest", ownModelId: null });
 
-    await expect(registerPanelModel(registration())).rejects.toMatchObject({
-      code: "NOT_A_PANEL",
-    });
+    await registerPanelModel(registration());
+
+    expect(updates).toHaveLength(1);
   });
 });
 

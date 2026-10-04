@@ -148,6 +148,31 @@ create table if not exists public.room_members (
   model_label text check (model_label is null or length(model_label) between 1 and 60),
   model_specialty text check (model_specialty is null or length(model_specialty) between 1 and 60),
 
+  -- ## A member's model is a participant, and these are what they agreed to about it
+  --
+  -- Bringing a model into a room is not the same as agreeing to be asked anything, by
+  -- anyone, for the life of the room. `model_sharing` is that agreement and it defaults to
+  -- `silent`, so a member who registers a model and changes nothing has agreed to
+  -- nothing. Being invited into other people's conversation and answering with your own key
+  -- should require a deliberate act.
+  --
+  -- `model_slot` is the public handle a member targets. Two members may register the same
+  -- provider model, and a target has to name one *owner*, because one owner pays for one
+  -- model. A model id cannot be that handle: it is not unique in a room.
+  model_slot uuid,
+  model_sharing text not null default 'silent'
+    check (model_sharing in ('silent', 'on_request', 'always')),
+  -- Null means no ceiling, which is a real choice and not a missing setting.
+  model_call_limit integer
+    check (model_call_limit is null or model_call_limit between 1 and 10000),
+  model_daily_limit integer
+    check (model_daily_limit is null or model_daily_limit between 1 and 10000),
+  -- Counters, so a ceiling is checked before a call rather than after one. A budget the
+  -- owner cannot see being spent is not a budget.
+  model_calls_total integer not null default 0 check (model_calls_total >= 0),
+  model_calls_on date,
+  model_calls_today integer not null default 0 check (model_calls_today >= 0),
+
   -- All three or none. A row with an id and no label would render as an unnamed model, and a
   -- label with no id would let a member claim to be a model that does not exist.
   check (
@@ -209,6 +234,41 @@ alter table public.room_members add column if not exists user_id uuid references
 alter table public.room_members add column if not exists model_id text;
 alter table public.room_members add column if not exists model_label text;
 alter table public.room_members add column if not exists model_specialty text;
+alter table public.room_members add column if not exists model_slot uuid;
+alter table public.room_members add column if not exists model_sharing text not null default 'silent';
+alter table public.room_members add column if not exists model_call_limit integer;
+alter table public.room_members add column if not exists model_daily_limit integer;
+alter table public.room_members add column if not exists model_calls_total integer not null default 0;
+alter table public.room_members add column if not exists model_calls_on date;
+alter table public.room_members add column if not exists model_calls_today integer not null default 0;
+
+-- The public handle a member is named by. Partial: only rows that brought a model have
+-- one, so the index stays small however long a room runs.
+create unique index if not exists room_members_model_slot
+  on public.room_members(room_id, model_slot) where model_slot is not null;
+
+-- Every targeting read filters on the slot, and a room with several models answers that
+-- question once per member pressing ask.
+create index if not exists room_members_room_models_idx
+  on public.room_members(room_id) where model_id is not null;
+
+-- The sharing control is only meaningful in a panel, where a model belongs to the member
+-- who registered it. On an ordinary room the host's own model is the room's, and there is
+-- nothing for a member to consent to.
+alter table public.room_members drop constraint if exists room_members_sharing_values;
+alter table public.room_members
+  add constraint room_members_sharing_values
+  check (model_sharing in ('silent', 'on_request', 'always'));
+
+alter table public.room_members drop constraint if exists room_members_call_limit_bounds;
+alter table public.room_members
+  add constraint room_members_call_limit_bounds
+  check (model_call_limit is null or model_call_limit between 1 and 10000);
+
+alter table public.room_members drop constraint if exists room_members_daily_limit_bounds;
+alter table public.room_members
+  add constraint room_members_daily_limit_bounds
+  check (model_daily_limit is null or model_daily_limit between 1 and 10000);
 
 -- A panel room with no specialities is refused, so the constraint is added rather than
 -- carried in the table definition above: an existing `rooms` table would otherwise never
@@ -281,6 +341,31 @@ create table if not exists public.room_messages (
   -- member present their own words as the model's opinion.
   model_label text check (model_label is null or length(model_label) between 1 and 60),
   model_specialty text check (model_specialty is null or length(model_specialty) between 1 and 60),
+
+  -- ## A member's model is a participant, and these are what they agreed to about it
+  --
+  -- Bringing a model into a room is not the same as agreeing to be asked anything, by
+  -- anyone, for the life of the room. `model_sharing` is that agreement and it defaults to
+  -- `silent`, so a member who registers a model and changes nothing has agreed to
+  -- nothing. Being invited into other people's conversation and answering with your own key
+  -- should require a deliberate act.
+  --
+  -- `model_slot` is the public handle a member targets. Two members may register the same
+  -- provider model, and a target has to name one *owner*, because one owner pays for one
+  -- model. A model id cannot be that handle: it is not unique in a room.
+  model_slot uuid,
+  model_sharing text not null default 'silent'
+    check (model_sharing in ('silent', 'on_request', 'always')),
+  -- Null means no ceiling, which is a real choice and not a missing setting.
+  model_call_limit integer
+    check (model_call_limit is null or model_call_limit between 1 and 10000),
+  model_daily_limit integer
+    check (model_daily_limit is null or model_daily_limit between 1 and 10000),
+  -- Counters, so a ceiling is checked before a call rather than after one. A budget the
+  -- owner cannot see being spent is not a budget.
+  model_calls_total integer not null default 0 check (model_calls_total >= 0),
+  model_calls_on date,
+  model_calls_today integer not null default 0 check (model_calls_today >= 0),
   check (kind <> 'ai' or model_label is not null),
   check (kind = 'ai' or model_label is null),
   phase int check (phase is null or phase between 0 and 9),

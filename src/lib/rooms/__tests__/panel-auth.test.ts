@@ -175,9 +175,12 @@ describe("a guest room is unchanged", () => {
     expect(access?.aiModel).toBe(HOST_MODEL);
   });
 
-  it("ignores a member row that names a model on a guest room", async () => {
-    // A guest room has one model. A member row naming another is unreachable by any code path,
-    // and if it somehow appeared, the room's model must still win.
+  it("reports a member's own model in a guest room too", async () => {
+    // This said a guest room ignores a member's model. Wrong for the same reason as the
+    // registration test: it read the host's single model as a cap on the room's models rather
+    // than as one of them. The host's model is still the fallback for anyone who has none —
+    // which is what keeps an ordinary room working for the guest who never signed in — but a
+    // member who did sign in and brought a model is answered by their own.
     install({
       roomKind: "guest",
       ownModel: { modelId: MY_MODEL, modelLabel: "Gemma", specialty: "Critique" },
@@ -185,7 +188,9 @@ describe("a guest room is unchanged", () => {
 
     const access = await resolveAiAccess({ roomId: ROOM, memberToken: TOKEN });
 
-    expect(access?.callerModel).toBeNull();
+    expect(access?.callerModel?.modelId).toBe(MY_MODEL);
+    // Still on the object, and still the fallback the route uses when there is no caller model.
+    expect(access?.aiModel).toBe(HOST_MODEL);
   });
 });
 
