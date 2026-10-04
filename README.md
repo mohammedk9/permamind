@@ -25,22 +25,108 @@ PermaMind is a privacy-focused AI memory workspace. Conversations stay in the br
 - Optional web search with three independent providers — Exa (default), AnySearch, and Gemini Grounding — plus Groq voice transcription, storage quotas, and multi-network storage purchases.
 - Read-only MCP access to summaries and decisions the user explicitly allows, including `search_memory`, `get_memory`, and `list_decisions`. `save_memory` is visible but every call is rejected and audited. See `mcp/README.md`.
 - A bilingual interface, English and Arabic, with the landing page and the app sharing one translation bundle.
+- Encrypted rooms with two kinds — a guest room where the host's model answers, and a panel room where each member brings their own model and pays for it. See [Encrypted rooms](#encrypted-rooms).
+- Panel members set a sharing mode and a ceiling — silent, on request, or unprompted, plus a room limit and a daily one — before their model can be addressed. Sharing is consent, not an automatic reply.
+- Room files are read in the browser and shared as their extracted text, so no document, photograph, or spreadsheet is uploaded anywhere.
+- Room ideas with one vote each and host-only acceptance, plus a bilingual printable report the host creates explicitly. A room never writes itself into permanent memory.
+- Projects can be renamed and deleted, and keep their URL across a reload. Deleting a project unfiles its conversations rather than deleting them.
 
 ## Encrypted rooms
 
-A third conversation type: a short-lived encrypted room where several people and one AI model hold the same conversation. The design record, including the options that were considered and discarded, is `docs/group-rooms-design.md`.
+A third conversation type: a short-lived encrypted room where several people and one or more AI
+models hold the same conversation. The server relays ciphertext it cannot open. It never learns the
+room key, and it never learns what anyone said.
 
-- **Guests need no account.** A link plus a six-digit code. The code is exchanged for a random member token, and the room key is unwrapped on the guest's own device.
-- **The server stores ciphertext it cannot read.** Messages are sealed with AES-256-GCM under a room key that never leaves the host's device. A leaked database is not a readable transcript.
-- **The model reads the room and nothing else.** The request is assembled in `lib/rooms/ai-bridge.ts`, which imports nothing from the memory ledger, the private chat, or local storage. A test asserts the built request carries no text from outside the room, using private text that deliberately overlaps the room's own subject. Do not add an import to that file without changing the design first.
-- **The host decides who spends their key.** A `guest` may read and write but cannot invoke the model; the host promotes members to `trusted`. Only the host and trusted members can ask it anything.
-- **Realtime carries a signal, not content.** No room table is in the `supabase_realtime` publication. The server announces "something changed" on a channel named after a 128-bit `feed_id`, and the subscriber re-reads through the member-token API. A subscriber who guesses the channel learns that a room exists and nothing else.
-- **Two key modes.** Option A: the host's browser signs each request with a key that never reaches our servers, and the model stops when they leave. Option B: the key is sealed with envelope encryption — a per-host data key, itself sealed under `ROOM_KEY_MASTER_SECRET` from the environment — so a database dump on its own cannot open it. B requires `ROOM_KEY_MASTER_SECRET`; without it, storage refuses rather than falling back to plaintext.
-- **Every stored key has an end date.** There is no "forever" at the schema, the API boundary, or the store. An expired row is deleted on the next read.
-- **A room is not an archive.** The host sets an expiry, and closing a room deletes it and its transcript. The quota is two active rooms per host.
-- **A room never touches the free tier.** `isValidModelId` accepts a `:free` id, so room creation separately requires a BYOK-tier model; otherwise the room would be billed to PermaMind instead of to the host.
+### The four secrets
 
-Apply the schema with `supabase/bootstrap-production.sql`, which is generated from the files in `supabase/` — edit the source, then run `powershell -File scripts/rebuild-bootstrap.ps1`.
+The design keeps four secrets apart, because collapsing any two of them creates a vulnerability.
+
+| Secret | Who holds it | Grants |
+| --- | --- | --- |
+| **Room key** | Generated in the host's browser, never transmitted | Read and write every message, idea, and name |
+| **Invite code** | Shared with guests | Entry. Exchanges for a wrapped key, never for the room key |
+| **Member token** | Stored hashed; each guest holds their own | Identity inside the room. Revoking a member deletes the row |
+| **Host code** | Host only, stored hashed | Administration: pin, kick, promote, close. Never sent to a guest |
+
+### A leaked invite code does not open the room
+
+The guest never receives the room key. On joining, the server releases a **wrapped key** — the room
+key encrypted under a key derived from that guest's member token — so a stolen invite code alone
+cannot decrypt a transcript.
+
+Host codes are required to start with a letter. An earlier version allowed any character, which
+made a host code and an invite code possible values for each other; requiring a leading letter
+removes the overlap entirely.
+
+### Two room kinds
+
+| | Guest room | Panel room |
+| --- | --- | --- |
+| Who may join | Anyone with the link | Host and registered accounts only |
+| Whose model answers | The host's, only | Each member's own |
+| Who may invoke the AI | Host and members the host promotes to `trusted` | Any participant, by naming the model |
+| Who pays | The host, on their key | Whichever member addresses the model |
+
+A guest-room member row naming a different model would mean nothing — there is exactly one model,
+the room's own — so the join route refuses to write one anywhere outside a panel room.
+
+### Model sharing is consent, not auto-replies
+
+Registering a model and agreeing to be asked are two different promises. `model_sharing` defaults to
+`silent`, so a member who registers a model and changes nothing has agreed to nothing. Being
+invited into other people's conversation and answering with your own key should take a deliberate
+act.
+
+| Setting | Meaning |
+| --- | --- |
+| `silent` | The model never answers. The default, and a real choice rather than a missing setting |
+| `on_request` | The model answers when a member addresses it by name |
+| `always` | The model may speak when the discussion calls for it — still inside the ceiling |
+
+`model_call_limit` and `model_daily_limit` are the ceilings. Null means no limit, which is a value
+rather than an absent setting, so "no limit" is never mistaken for "not configured".
+`model_calls_total` and `model_calls_today` sit next to the control that changes them: a budget the
+owner cannot watch being spent is a hope, not a budget.
+
+`model_slot` is the public handle a member is addressed by. A provider `model_id` cannot serve as
+one — two members may register the same model, and a target has to name one *owner*, because one
+owner pays for one model.
+
+### Files are shared as their words
+
+A PDF, a document, a spreadsheet or a photographed page is read **in the browser** — text extraction
+for documents, OCR for images — and only the extracted text is folded into the message and sealed
+under the room key. The file itself is never uploaded.
+
+This is a trade rather than a limitation to apologise for. The room key never reaches the server,
+so keeping files as bytes would need a separate encrypted store and its own deletion sweep.
+Text-in-the-payload needs neither, and a database dump stays as opaque as everything else.
+
+### Ideas, voting, and reports
+
+Members propose ideas, vote one time each, and only the host may accept or drop one. Accepted ideas
+and approved decisions are summarised out of the room into an explicit host-created report —
+bilingual, self-contained HTML, printable to PDF. **Nothing is written into permanent chat memory
+unless the host chooses to**, because a room that leaves and re-enters your memory is not a room
+that ended.
+
+### Not open-ended
+
+- **The host sets an expiry at creation.** There is no open-ended option.
+- **Two active rooms per host per rolling calendar month.** Closing a room returns its slot at once,
+  so the limit is not punitive.
+- **Closing a room deletes it**, cascading to messages, members, ideas, and votes. Export first.
+- **Every stored key has an end date**, at the schema, the API boundary, and the store. An expired
+  key stops answering rather than continuing on a promise nobody can check.
+- **A room never touches the free tier.** A `:free` model id is rejected for room creation.
+
+Apply the schema with `supabase/bootstrap-production.sql`, generated from the files in `supabase/` —
+edit the sources, regenerate, and run it. Run it with **"Run without RLS"** in the Supabase SQL
+editor: the file enables RLS in separate statements, and the editor's warning is a false positive
+that would otherwise add nothing.
+
+Two designs are kept beside it in `docs/`: `group-rooms-design.md` for the original room, and
+`panel-rooms-proposal.md` for the panel extension.
 
 ## Stack
 
@@ -151,6 +237,9 @@ Managed storage defaults are 15 MB of free quota, a 50 MB maximum upload, 10 upl
 | `/` | Landing page |
 | `/chat` | Streaming chat workspace |
 | `/memory` | Memory browser and decision ledger |
+| `/rooms/new` | Create a room: guest or panel, with its expiry |
+| `/r/[roomId]` | The room itself — encrypted transcript, members, ideas, AI |
+| `/project/[id]` | A project's workspace, addressable and reload-safe |
 | `/backup` | Encrypted snapshot and storage management |
 | `/settings` | API mode, provider, and preferences |
 | `/storage` | How local, cloud, and Arweave storage relate |
@@ -192,6 +281,13 @@ Notable modules:
 | `lib/storage/download.ts` | The single download path. Revoking the object URL in the same task as `click()` tears the blob down before the browser reads it, which makes an export button intermittently produce no file. |
 | `lib/storage/full-export.ts` | Builds the portable archive and validates an import before a single byte is written. |
 | `lib/storage/storage-health.ts` | Measures real per-origin usage and broadcasts write failures, because the browser only signals exhaustion by throwing. |
+| `lib/rooms/crypto.ts` | Sealing, opening, and key wrapping for rooms. A fresh IV per call; AES-GCM fails on a wrong key, a tampered body, and a modified IV alike. |
+| `lib/rooms/access.ts` | Room ids, codes, tokens, and the strict shape of each. A host code must start with a letter, which removes its overlap with an invite code. |
+| `lib/rooms/ai-bridge.ts` | Assembles the model request from the room and nothing else, so no account context can leak into a shared conversation. |
+| `lib/rooms/sharing.ts` | Whether a model may answer, and what it says when it may not. Arabic and English refusals. |
+| `lib/rooms/attachments.ts` | Turns a picked file into the text that joins the sealed message. Bytes never leave the browser. |
+| `lib/rooms/report.ts` | The bilingual, self-contained HTML report a host creates explicitly. |
+| `components/rooms/model-sharing-controls.tsx` | The owner's sharing mode and both ceilings, with the running count beside them. |
 
 ## Export, import, and downloads
 
@@ -235,6 +331,9 @@ npm run build
 - Queue status changes and purchase confirmation are reserved for trusted server code.
 - MCP tokens are stored as hashes, expire, can be revoked, and can only read summaries and decisions marked as allowed. Writes through MCP are rejected. Full messages, ciphertext, Arweave snapshots, and other users' data are never returned.
 - Put the deployment behind HTTPS and configure rate limits and monitoring before sharing server-side AI keys.
+- A room's server row holds ciphertext, but the server still learns **who joined and when**. Membership, role, and expiry are not private to each other.
+- A member token, not an account, identifies a guest. Revoking it deletes the row and the guest loses the room; it is not a session that can be resumed.
+- Realtime carries only a signal that *something* changed. No room table is in the `supabase_realtime` publication, so content never rides the socket.
 
 ## Known limitations
 
@@ -242,13 +341,20 @@ npm run build
 - An Arweave upload is permanent. Losing the passphrase means that copy cannot be decrypted by anyone, including you.
 - Search providers are configured server-side, so the chat composer can only offer providers that currently have a key. AnySearch's free tier is time-limited rather than permanent.
 - The app renders in English on the server and corrects the language on the client, because the chosen locale lives in `localStorage`.
+- **A panel member's model is not yet invocable by another member.** The picker, the ownership, the consent controls, and the budget columns are in place, and the schema is written, but the AI route does not yet load the *addressed owner's* stored key — so naming another member's model does not yet reach their provider. Until it does, a panel model can be registered, configured, and seen, but should not be treated as addressable in production.
+- **Budget checks are not yet atomic.** The ceiling is read and then incremented in two steps, so concurrent requests can exceed a limit. The counter is also charged before the provider call is known to have succeeded. Treat a limit as a guard against accident, not as a hard financial boundary.
+- Rooms have no message cap, no host-configurable rate limit, and no cross-room session summary yet.
+- No real two-browser test has been run against the panel flow. The automated suite covers the schema, authorization, and the pure helpers; the end-to-end behaviour of a second member addressing a first member's model is unverified.
+- `model_slot` is generated on registration, but withdrawing and re-registering a model does not yet reuse a stable slot, so an old invite naming a withdrawn model resolves to nothing rather than to the new registration.
 
 ## Roadmap
 
 - Stronger multi-device synchronization.
 - Clearer backup discovery and recovery.
 - Expanded provider and model policy controls.
+- Making a panel member's model genuinely addressable: load the addressed owner's key, enforce consent and both ceilings atomically, and record usage against the owner rather than the caller.
 - Migrating local storage to IndexedDB to escape the localStorage quota.
+- A 250-message room cap, a host-configurable AI rate limit, room session context and summary, and idea-to-task creation.
 - Deployment monitoring, audit visibility, and operational runbooks.
 
 ## License
