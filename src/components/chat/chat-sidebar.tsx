@@ -1,6 +1,6 @@
 "use client";
 
-import { FolderKanban, MessageSquarePlus } from "lucide-react";
+import { FolderKanban, MessageSquarePlus, Pencil, Trash2 } from "lucide-react";
 
 import { ConversationItem } from "@/components/chat/conversation-item";
 import { SearchResultItem } from "@/components/chat/search-result-item";
@@ -23,6 +23,8 @@ interface ChatSidebarProps {
   projects?: Project[];
   activeProjectId?: string | null;
   onSelectProject?: (id: string) => void;
+  onRenameProject?: (id: string) => void;
+  onDeleteProject?: (id: string) => void;
   onRename: (id: string, title: string) => void;
   onDelete: (id: string) => void;
   onUpdateConversation?: (id: string, updater: (conversation: Conversation) => Conversation) => void;
@@ -39,6 +41,8 @@ export function ChatSidebar({
   projects = [],
   activeProjectId,
   onSelectProject,
+  onRenameProject,
+  onDeleteProject,
   onRename,
   onDelete,
   onUpdateConversation,
@@ -95,34 +99,6 @@ export function ChatSidebar({
         />
       </div>
 
-      <Separator className="my-3 shrink-0" />
-
-      {projects.length > 0 && (
-        <div className="mb-3 shrink-0">
-          <p className="px-2 pb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-            {ar ? "المشاريع" : "Projects"}
-          </p>
-          <nav className="space-y-1">
-            {projects.map((project) => (
-              <button
-                key={project.id}
-                type="button"
-                onClick={() => onSelectProject?.(project.id)}
-                className={cn(
-                  "flex w-full items-center gap-2 rounded-lg px-3 py-2 text-start text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sidebar-ring/50",
-                  activeProjectId === project.id
-                    ? "bg-sidebar-accent text-sidebar-accent-foreground"
-                    : "text-sidebar-foreground/90 hover:bg-sidebar-accent/60"
-                )}
-              >
-                <FolderKanban className={cn("size-4 shrink-0", activeProjectId === project.id ? "text-sidebar-primary" : "text-sidebar-primary/80")} />
-                <span className="truncate">{project.name}</span>
-              </button>
-            ))}
-          </nav>
-        </div>
-      )}
-
       <ScrollArea
         aria-label={ar ? "قائمة المحادثات" : "Conversation list"}
         className="min-h-0 flex-1 overflow-hidden px-2"
@@ -163,6 +139,60 @@ export function ChatSidebar({
           </nav>
         )}
       </ScrollArea>
+
+      {/* Projects sit *below* the conversation list, not above it.
+
+          Conversations are the thing people open this app to do; a project is a filing label
+          over them. Putting the labels first inverted the hierarchy and pushed the actual
+          history off the top of the panel — and on a short list it pushed it off entirely. */}
+      {projects.length > 0 && (
+        <div className="shrink-0 px-2 pb-3">
+          <Separator className="my-3" />
+          <p className="px-2 pb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            {ar ? "المشاريع" : "Projects"}
+          </p>
+          <nav className="space-y-1">
+            {projects.map((project) => (
+              <div
+                key={project.id}
+                className={cn(
+                  "group relative flex items-center rounded-lg transition-colors focus-within:ring-2 focus-within:ring-sidebar-ring/50",
+                  activeProjectId === project.id
+                    ? "bg-sidebar-accent text-sidebar-accent-foreground"
+                    : "text-sidebar-foreground/90 hover:bg-sidebar-accent/60"
+                )}
+              >
+                <button
+                  type="button"
+                  onClick={() => onSelectProject?.(project.id)}
+                  aria-current={activeProjectId === project.id ? "true" : undefined}
+                  className="flex min-w-0 flex-1 items-center gap-2 rounded-lg px-3 py-2 text-start text-sm font-medium"
+                >
+                  <FolderKanban className={cn("size-4 shrink-0", activeProjectId === project.id ? "text-sidebar-primary" : "text-sidebar-primary/80")} />
+                  <span className="truncate">{project.name}</span>
+                </button>
+                {/* The same hover-reveal pattern the conversation rows use. `stopPropagation`
+                    matters: without it the click would also fire the row's open handler, so
+                    renaming would double as navigating. */}
+                {onRenameProject || onDeleteProject ? (
+                  <div className="absolute end-1 flex gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
+                    {onRenameProject ? (
+                      <Button variant="ghost" size="icon-xs" onClick={(event) => { event.stopPropagation(); onRenameProject(project.id); }} aria-label={ar ? `إعادة تسمية ${project.name}` : `Rename ${project.name}`}>
+                        <Pencil className="size-3" />
+                      </Button>
+                    ) : null}
+                    {onDeleteProject ? (
+                      <Button variant="ghost" size="icon-xs" className="text-destructive hover:bg-destructive/10 hover:text-destructive" onClick={(event) => { event.stopPropagation(); onDeleteProject(project.id); }} aria-label={ar ? `حذف ${project.name}` : `Delete ${project.name}`}>
+                        <Trash2 className="size-3" />
+                      </Button>
+                    ) : null}
+                  </div>
+                ) : null}
+              </div>
+            ))}
+          </nav>
+        </div>
+      )}
 
     </aside>
   );

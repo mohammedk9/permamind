@@ -96,6 +96,35 @@ export function useConversations(options: UseConversationsOptions = {}) {
     setProjects((previous) => previous.map((project) => project.id === projectId ? updater(project) : project));
   }, []);
 
+  /**
+   * Renaming a project touches only its own name.
+   *
+   * The `id` is deliberately left alone: it is what `/project/<id>` addresses, and changing it
+   * would break every bookmark and every open tab. The name is the label, so it can move.
+   */
+  const renameProject = useCallback((projectId: string, name: string) => {
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    setProjects((previous) => previous.map((project) => (
+      project.id === projectId ? { ...project, name: trimmed, updatedAt: new Date() } : project
+    )));
+  }, []);
+
+  /**
+   * Deleting a project removes the container, never the conversations inside it.
+   *
+   * A conversation belongs to the person who wrote it; the project is a filing label they chose.
+   * So the conversations survive with `projectId` cleared rather than going with the project —
+   * otherwise deleting a folder would quietly destroy the work filed in it, which is the one
+   * outcome a "delete" button should never have.
+   */
+  const deleteProject = useCallback((projectId: string) => {
+    setProjects((previous) => previous.filter((project) => project.id !== projectId));
+    setConversations((previous) => previous.map((conversation) => (
+      conversation.projectId === projectId ? { ...conversation, projectId: undefined } : conversation
+    )));
+  }, []);
+
   const renameConversation = useCallback((id: string, title: string) => {
     const trimmed = title.trim();
     if (!trimmed) return;
@@ -187,5 +216,7 @@ export function useConversations(options: UseConversationsOptions = {}) {
     projects,
     createProject,
     updateProject,
+    renameProject,
+    deleteProject,
   };
 }

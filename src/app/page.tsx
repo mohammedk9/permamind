@@ -20,6 +20,7 @@ import { HowItWorks } from "@/components/landing/how-it-works";
 import { SecurityStrip } from "@/components/landing/security-strip";
 import { OwnershipMarks, ProductStage, ProviderRail } from "@/components/landing/provider-showcase";
 import { SearchRail } from "@/components/landing/search-rail";
+import { RoomsSection } from "@/components/landing/rooms-section";
 import { Button } from "@/components/ui/button";
 import {
   Sheet,
@@ -50,10 +51,13 @@ const featureIcons = {
  * is `as const`, so a parameter typed as the English entry alone would reject
  * the Arabic one on the very first property.
  */
-function sectionAnchors(t: { howItWorksTitle: string; featuresTitle: string; searchTitle: string; securityTitle: string }) {
+function sectionAnchors(t: { howItWorksTitle: string; featuresTitle: string; searchTitle: string; securityTitle: string; roomsTitle: string }) {
   return [
     { href: "#how", label: t.howItWorksTitle },
     { href: "#features", label: t.featuresTitle },
+    // Rooms sit after features in the reading order, so the anchor follows. Putting it last
+    // here matches where the section actually lives rather than promoting it in the nav.
+    { href: "#rooms", label: t.roomsTitle },
     { href: "#search", label: t.searchTitle },
     { href: "#security", label: t.securityTitle },
   ] as const;
@@ -354,6 +358,11 @@ export default function LandingPage() {
           </div>
         </div>
       </section>
+
+      {/* Rooms come after the feature grid and before MCP. The order is deliberate: rooms are
+          the newest and most capable surface, so they sit where a returning reader meets them
+          while still scrolling rather than buried at the end. */}
+      <RoomsSection t={t} isRTL={isRTL} />
 
       {/* MCP integration section */}
       <section className="border-t border-border/50 py-16 sm:py-24">

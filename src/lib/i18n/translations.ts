@@ -247,6 +247,36 @@ export const translations = {
         body: "Optional and separate from cloud storage. After you turn it on, choose which conversations a permanent backup may include. The copy is encrypted in this browser before upload. After upload it cannot be deleted. Losing the passphrase means that copy cannot be decrypted.",
       },
     ],
+    /**
+     * The rooms section.
+     *
+     * These describe the two room kinds as they actually behave rather than as one feature.
+     * "Who pays" is stated outright in both: it is the single thing a reader cannot infer from a
+     * screenshot, and getting it wrong is what makes a panel room look like an ordinary one.
+     */
+    roomsTitle: "Rooms, where the key never leaves",
+    roomsDescription:
+      "A room is its own encrypted conversation with its own key, its own membership and its own lifetime. The server stores ciphertext it cannot read — not your key, not your files, not your transcript.",
+    roomsBadge: "End-to-end encrypted",
+    roomsGuestTitle: "An ordinary room",
+    roomsGuestBody:
+      "The host's model answers. Everyone can read it; only the host and members they trust can ask it a question. Guests without accounts can join the conversation but cannot spend the host's key.",
+    roomsPanelTitle: "A panel room",
+    roomsPanelBody:
+      "Several models, one conversation. Each member registers their own model, sets what it may be asked and how often — and the model owner pays. No room spends anybody else's key.",
+    roomsControlTitle: "Consent and budget, not auto-replies",
+    roomsControlBody:
+      "Every member chooses whether their model speaks silently, only when addressed by name, or on its own — and sets a ceiling for the room and for each day. When the ceiling is reached, the model stops.",
+    roomsFilesTitle: "Files, shared as their words",
+    roomsFilesBody:
+      "A PDF, a document or a photographed page is read in your browser and only its text joins the encrypted message. The file itself is never uploaded anywhere.",
+    roomsReportTitle: "A report you keep, not a memory",
+    roomsReportBody:
+      "The host can turn a finished room into a self-contained bilingual document or print it to PDF. Nothing is added to your permanent memory unless you choose to.",
+    roomsCta: "Create a room",
+    roomsCostLabel: "Who pays",
+    roomsCostGuest: "The host, on their own key",
+    roomsCostPanel: "Whoever addresses the model",
   },
 
   ar: {
@@ -494,6 +524,36 @@ export const translations = {
         body: "اختياري ومنفصل عن التخزين السحابي. بعد تشغيله تختار المحادثات التي قد تدخل النسخة الدائمة. تُشفَّر النسخة داخل هذا المتصفح قبل الرفع. بعد الرفع لا يمكن حذفها. فقدان عبارة المرور يعني عدم القدرة على فك تلك النسخة.",
       },
     ],
+    /**
+     * The rooms section, Arabic.
+     *
+     * Written as Arabic rather than translated word-for-word from the English above: "panel room"
+     * has no mechanical equivalent, and a literal rendering would read as a mistranslation even
+     * where every word was correct.
+     */
+    roomsTitle: "غرف لا يخرج مفتاحها من جهازك",
+    roomsDescription:
+      "الغرفة محادثة مشفرة لها مفتاحها وأعضاؤها وعمرها. الخادم يخزن نصا مشفرا لا يستطيع قراءته — لا مفتاحك ولا ملفاتك ولا transcript محادثتك.",
+    roomsBadge: "مشفرة من الطرف إلى الطرف",
+    roomsGuestTitle: "غرفة عادية",
+    roomsGuestBody:
+      "نموذج المضيف هو من يرد. الجميع يقرأ ردوده والمضيف وأعضاؤه الموثوقون وحدهم من يسأله. أما الضيوف بلا حساب فيشاركون في الحديث دون أن ينفقوا مفتاح المضيف.",
+    roomsPanelTitle: "غرفة لوحات",
+    roomsPanelBody:
+      "عدة نماذج في محادثة واحدة. يسجل كل عضو نموذجه ويحدد ما يسأل عنه وكم مرة — وصاحب النموذج هو من يدفع. لا تنفق غرفة اللوحات مفتاح أحد.",
+    roomsControlTitle: "موافقة وميزانية لا ردودا تلقائية",
+    roomsControlBody:
+      "يختار كل عضو: يصمت نموذجه أم يجيب فقط عند مناداته بالاسم أم يحضر وحده — ويضع حدا للغرفة وآخر لكل يوم. عند بلوغ الحد يتوقف النموذج.",
+    roomsFilesTitle: "ملفات تشارك بنصها",
+    roomsFilesBody:
+      "يقرأ ملف PDF أو مستند أو صورة ملتقطة داخل متصفحك ويدخل نصه فقط الرسالة المشفرة. الملف نفسه لا يرفع إلى أي مكان.",
+    roomsReportTitle: "تقرير تحتفظ به لا ذكرى دائمة",
+    roomsReportBody:
+      "يستطيع المضيف تحويل غرفة منتهية إلى وثيقة ثنائية اللغة مكتفية بذاتها أو طباعتها PDF. ولا شيء يضاف إلى ذاكرتك الدائمة إلا إذا اخترت ذلك.",
+    roomsCta: "أنشئ غرفة",
+    roomsCostLabel: "من يدفع",
+    roomsCostGuest: "المضيف من مفتاحه هو",
+    roomsCostPanel: "من ينادي النموذج",
   },
 } as const;
 

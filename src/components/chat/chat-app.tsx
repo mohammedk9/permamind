@@ -12,6 +12,7 @@ import { isPreviousConversationQuery, previousConversationSearchQuery, retrieveR
 import { ChatMain } from "@/components/chat/chat-main";
 import { ChatSidebar } from "@/components/chat/chat-sidebar";
 import { ProjectWorkspace } from "@/components/chat/project-workspace";
+import { ProjectNameDialog } from "@/components/chat/project-name-dialog";
 import { WorkspaceStartDialog } from "@/components/chat/workspace-start-dialog";
 import { AppShell, type ProductArea } from "@/components/layout/app-shell";
 import { HelpSheet } from "@/components/help/how-permamind-works";
@@ -82,6 +83,8 @@ export function ChatApp() {
     projects,
     createProject,
     updateProject,
+    renameProject,
+    deleteProject,
     reload: reloadConversations,
   } = useConversations();
 
@@ -144,11 +147,31 @@ export function ChatApp() {
   useEffect(() => {
     const fromPath = () => (window.location.pathname.split("/")[1] as ProductArea) || "chat";
     const initial = fromPath();
-    if (["chat", "memory", "backup", "settings", "rooms"].includes(initial)) setArea(initial);
+    if (["chat", "memory", "backup", "settings", "rooms", "project"].includes(initial)) setArea(initial);
     const onPopState = () => setArea(fromPath());
     window.addEventListener("popstate", onPopState);
     return () => window.removeEventListener("popstate", onPopState);
   }, []);
+
+  /**
+   * Restores the project named in the address bar.
+   *
+   * `/project/<id>` carries the id in the second path segment, which `fromPath` cannot express —
+   * it returns `"project"` and stops. Without reading that id back, reloading a project URL left
+   * `activeProjectId` null while the bar still said "project": the page rendered nothing and Back
+   * had nothing to return to.
+   *
+   * This waits on `isHydrated` because the project list lives in local storage and is still empty
+   * on the first render; restoring an id against an empty list would silently resolve to nothing,
+   * which is the same blank page by a slower route.
+   */
+  useEffect(() => {
+    if (!isHydrated || area !== "project") return;
+    const segments = window.location.pathname.split("/").filter(Boolean);
+    const id = segments[0] === "project" ? segments[1] : null;
+    if (id && !projects.some((project) => project.id === id)) return;
+    if (id) setActiveProjectId(id);
+  }, [isHydrated, area, projects]);
   const navigate = useCallback((next: ProductArea) => {
     // A full page load, like Backup. Rooms are not a view inside this shell: they carry their
     // own key, their own membership and their own lifetime, and the room page has to start
@@ -317,15 +340,57 @@ export function ChatApp() {
     }));
   }, [activeId, activeProjectId, conversations, createAndSelect, projects, updateConversation]);
 
+  /**
+   * Which project the name dialog is acting on.
+   *
+   * `null` is closed. The id — rather than a boolean — is carried here so the dialog can show the
+   * current name when renaming; a bare `isOpen` flag would leave the rename form starting blank,
+   * and a user confirming an empty field would learn nothing.
+   */
+  const [nameDialog, setNameDialog] = useState<{ mode: "create" | "rename"; projectId: string | null } | null>(null);
+
   const handleNewProject = useCallback(() => {
-    const name = window.prompt("Project name", "New project")?.trim();
-    if (!name) return;
+    setNameDialog({ mode: "create", projectId: null });
+  }, []);
+
+  const handleSubmitProjectName = useCallback((name: string) => {
+    if (nameDialog?.mode === "rename" && nameDialog.projectId) {
+      renameProject(nameDialog.projectId, name);
+      setNameDialog(null);
+      return;
+    }
     const project: Project = { id: createId(), name, summary: "", goals: [], tasks: [], decisions: [], openQuestions: [], createdAt: new Date(), updatedAt: new Date() };
     createProject(project);
     setActiveProjectId(project.id);
     setArea("project");
     window.history.pushState({}, "", `/project/${project.id}`);
-  }, [createProject]);
+    setNameDialog(null);
+  }, [createProject, nameDialog, renameProject]);
+
+  /**
+   * Deleting a project asks first, and says exactly what survives.
+   *
+   * The conversations keep their text and lose only their link to the project, so the confirmation
+   * states that rather than the generic "are you sure" — a user who believes the delete will take
+   * their conversations with it will not confirm if told plainly, and should not have to guess.
+   */
+  const handleDeleteProject = useCallback((projectId: string) => {
+    const target = projects.find((item) => item.id === projectId);
+    if (!target) return;
+    const linkedCount = conversations.filter((conversation) => conversation.projectId === projectId).length;
+    const confirmed = window.confirm(
+      locale === "ar"
+        ? `حذف «${target.name}»${linkedCount > 0 ? ` ستبقى ${linkedCount} محادثة لكنها ستصبح خارج أي مشروع.` : ""}`
+        : `Delete "${target.name}"?${linkedCount > 0 ? ` Its ${linkedCount} conversation${linkedCount === 1 ? "" : "s"} will stay, just unfiled.` : ""}`
+    );
+    if (!confirmed) return;
+    deleteProject(projectId);
+    if (activeProjectId === projectId) {
+      setActiveProjectId(null);
+      setArea("chat");
+      if (window.location.pathname.startsWith("/project/")) window.history.pushState({}, "", "/chat");
+    }
+  }, [projects, conversations, deleteProject, activeProjectId, locale]);
 
   const handleSelect = useCallback(
     (id: string) => {
@@ -684,8 +749,17 @@ export function ChatApp() {
         />
         </div>
         {area === "memory" && <MemoryExperience conversations={conversations} records={memoryRecords} onPin={(id, pinned) => changeMemory(() => updateMemoryRecord(id, { pinned }))} onCorrect={(id, text) => changeMemory(() => updateMemoryRecord(id, { text }))} onForget={(id) => changeMemory(() => forgetMemoryRecord(id))} onRestore={(id) => changeMemory(() => updateMemoryRecord(id, { status: "active" }))} onAddDecision={(record) => changeMemory(() => addMemoryRecord(record))} onOpenConversation={(id) => { selectConversation(id); navigate("chat"); }} />}
-        {area === "project" && activeProjectId && (() => { const project = projects.find((item) => item.id === activeProjectId); return project ? <ProjectWorkspace project={project} conversations={conversations.filter((conversation) => conversation.projectId === project.id)} unlinkedConversations={conversations.filter((conversation) => conversation.projectId !== project.id)} onOpenConversation={(id) => { selectConversation(id); navigate("chat"); }} onLinkConversation={(id) => updateConversation(id, (conversation) => ({ ...conversation, projectId: project.id, updatedAt: new Date() }))} onAddTask={(task) => updateProject(project.id, (current) => ({ ...current, tasks: [...current.tasks, task.trim()].filter((item, index, all) => item && all.indexOf(item) === index).slice(0, 12), updatedAt: new Date() }))} /> : null; })()}
-        {area === "settings" && <SettingsShell conversations={conversations} apiKey={apiKey} provider={provider} onProviderChange={setProvider} baseUrl={baseUrl} onBaseUrlChange={setBaseUrl} modelName={modelName} onModelNameChange={setModelName} connectionStatus={connectionStatus} onApiKeyChange={setApiKey} onValidate={validateKey} onClearKey={clearKey} onClearAnalytics={clearAnalytics} />}
+        {area === "project" && activeProjectId && (() => { const project = projects.find((item) => item.id === activeProjectId); return project ? <ProjectWorkspace project={project} conversations={conversations.filter((conversation) => conversation.projectId === project.id)} unlinkedConversations={conversations.filter((conversation) => conversation.projectId !== project.id)} onOpenConversation={(id) => { selectConversation(id); navigate("chat"); }} onLinkConversation={(id) => updateConversation(id, (conversation) => ({ ...conversation, projectId: project.id, updatedAt: new Date() }))} onAddTask={(task) => updateProject(project.id, (current) => ({ ...current, tasks: [...current.tasks, task.trim()].filter((item, index, all) => item && all.indexOf(item) === index).slice(0, 12), updatedAt: new Date() }))} onRename={(name) => renameProject(project.id, name)} onDelete={() => handleDeleteProject(project.id)} /> : null; })()}
+              {nameDialog ? (
+        <ProjectNameDialog
+          open
+          mode={nameDialog.mode}
+          initialName={nameDialog.projectId ? (projects.find((p) => p.id === nameDialog.projectId)?.name ?? "") : ""}
+          onOpenChange={(nextOpen) => { if (!nextOpen) setNameDialog(null); }}
+          onSubmit={handleSubmitProjectName}
+        />
+      ) : null}
+{area === "settings" && <SettingsShell conversations={conversations} apiKey={apiKey} provider={provider} onProviderChange={setProvider} baseUrl={baseUrl} onBaseUrlChange={setBaseUrl} modelName={modelName} onModelNameChange={setModelName} connectionStatus={connectionStatus} onApiKeyChange={setApiKey} onValidate={validateKey} onClearKey={clearKey} onClearAnalytics={clearAnalytics} />}
       </AppShell>
     </>
   );
