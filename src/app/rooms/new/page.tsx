@@ -41,6 +41,22 @@ export default function NewRoomPage() {
   const [topic, setTopic] = useState("");
   const [hours, setHours] = useState(24);
   const [keyMode, setKeyMode] = useState<"browser" | "server">("browser");
+  /**
+   * The roles this room's model may be asked for, as one comma-separated line.
+   *
+   * Free text on purpose, and bounded on the way in: a host should be able to write "نقد
+   * وتصحيح, تسويق, شرح" without learning a control. The server de-duplicates and bounds it,
+   * and the room renders the result as a fixed picker rather than as this string.
+   */
+  const [specialtyDraft, setSpecialtyDraft] = useState("");
+  // Which kind of room to create. Defaults to `guest`, so a host who never looks at the
+  // control gets exactly the room they got before panels existed.
+  const [roomKind, setRoomKind] = useState<"guest" | "panel">("guest");
+  const parsedSpecialties = specialtyDraft
+    .split(",")
+    .map((value) => value.trim())
+    .filter(Boolean)
+    .slice(0, 8);
   const [keyDays, setKeyDays] = useState(7);
   const [allowGuestWrite, setAllowGuestWrite] = useState(true);
   const [requireDisplayName, setRequireDisplayName] = useState(true);
@@ -85,6 +101,15 @@ export default function NewRoomPage() {
           expiresAt: new Date(Date.now() + hours * 3_600_000).toISOString(),
           aiProvider: provider,
           aiModel: model,
+          // Roles, as an ordered list rather than a joined string: the server stores an
+          // array and the order is what the room's picker renders in.
+          aiSpecialties: parsedSpecialties,
+          // No roles means no panel, so the cap is null rather than a number nothing
+          // enforces. With roles, the cap is the number of them.
+          aiMaxModels: parsedSpecialties.length > 0 ? parsedSpecialties.length : null,
+          // Only meaningful for a panel. The server defaults anything else to `guest`, so a
+          // stale client sending no value produces the room it always did.
+          roomKind,
           keyMode,
           keyExpiresAt:
             keyMode === "server"
@@ -238,6 +263,84 @@ export default function NewRoomPage() {
                   rows={3}
                   className="w-full rounded-lg border border-input bg-transparent px-2.5 py-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
                 />
+              </div>
+              {/* Which kind of room this is. The two are not a setting of the same room:
+                  a panel room requires accounts and members bring their own models, and
+                  folding that into an ordinary room would make section 13 of the design —
+                  "guests need no account" — false for every room rather than true for
+                  most of them. */}
+              <div>
+                <span className="mb-1.5 block text-sm font-medium">
+                  {ar ? "نوع الغرفة" : "Room kind"}
+                </span>
+                <div className="grid gap-2 sm:grid-cols-2">
+                  <label
+                    className={`cursor-pointer rounded-lg border p-3 text-sm ${
+                      roomKind === "guest" ? "border-primary bg-primary/5" : "border-input"
+                    }`}
+                  >
+                    <input
+                      type="radio"
+                      name="room-kind"
+                      className="sr-only"
+                      checked={roomKind === "guest"}
+                      onChange={() => setRoomKind("guest")}
+                      disabled={busy}
+                    />
+                    <span className="block font-medium">{ar ? "غرفة عادية" : "Ordinary room"}</span>
+                    <span className="mt-1 block text-xs text-muted-foreground">
+                      {ar
+                        ? "لا حسابات. ينضم الضيوف برمز الدعوة فقط."
+                        : "No accounts. Guests join with an invite code."}
+                    </span>
+                  </label>
+                  <label
+                    className={`cursor-pointer rounded-lg border p-3 text-sm ${
+                      roomKind === "panel" ? "border-primary bg-primary/5" : "border-input"
+                    }`}
+                  >
+                    <input
+                      type="radio"
+                      name="room-kind"
+                      className="sr-only"
+                      checked={roomKind === "panel"}
+                      onChange={() => setRoomKind("panel")}
+                      disabled={busy}
+                    />
+                    <span className="block font-medium">{ar ? "غرفة لوحات" : "Panel room"}</span>
+                    <span className="mt-1 block text-xs text-muted-foreground">
+                      {ar
+                        ? "حسابات مسجَّلة، وكل عضو يجلب نموذجه ويدفع بمفتاحه."
+                        : "Registered accounts. Each member brings their own model and spends their own key."}
+                    </span>
+                  </label>
+                </div>
+              </div>
+
+              {/* Optional in an ordinary room, required in a panel: a panel whose members may
+                  only pick "nothing" is an ordinary room with a sign-in requirement. The hint
+                  says so rather than leaving the host to discover it as a server error. */}
+              <div>
+                <label htmlFor="room-specialties" className="mb-1.5 block text-sm font-medium">
+                  {ar ? "أدوار النموذج" : "Roles for the model"}
+                </label>
+                <Input
+                  id="room-specialties"
+                  value={specialtyDraft}
+                  onChange={(event) => setSpecialtyDraft(event.target.value.slice(0, 200))}
+                  placeholder={ar ? "نقد وتصحيح، تسويق، شرح" : "Critique, marketing, explain"}
+                  disabled={busy}
+                  autoComplete="off"
+                />
+                <p className="mt-1.5 text-xs text-muted-foreground">
+                  {roomKind === "panel"
+                    ? ar
+                      ? "مطلوب في غرفة اللوحات. كل عضو يختار دوراً واحداً لنموذجه."
+                      : "Required for a panel room. Each member picks one role for their model."
+                    : ar
+                      ? "افصل بينها بفاصلة. يختار الأعضاء الدور عند السؤال، ولا يظهر شيء إن تركتها فارغة."
+                      : "Separate them with commas. Members pick a role when they ask. Leave it empty and nothing is shown."}
+                </p>
               </div>
               <div>
                 <span className="mb-1.5 block text-sm font-medium">

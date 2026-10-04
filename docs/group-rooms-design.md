@@ -514,6 +514,7 @@ the UI says so rather than implying the room is sealed end to end in a way it is
 | The model reads only the room | It cannot use the host's history, so it knows less than the host | The host asked for this explicitly, and it is the only version that cannot leak |
 | No AI key means no room | A host without a key cannot open one | Otherwise the feature is a group chat, and the value is the model |
 | Guests need no account | No durable identity for a guest | Collecting one would put personal data in a room designed to collect none |
+| A panel room is a separate room kind, not a change to this one | Two room types to maintain | Registered members bringing their own models would otherwise dilute the row above. See `docs/panel-rooms-proposal.md`. |
 | Rooms expire | No permanent archive unless exported | A memory system that stores everything eventually stores noise; the ledger is for decisions, not conversations |
 | Phase 4 before phase 5 | Roles arrive after the model works | A model that no one can invoke is inert, so the risk is in phase 4, not phase 5 |
 
@@ -572,6 +573,7 @@ discovery.
 
 ```text
 docs/group-rooms-design.md          this document
+docs/panel-rooms-proposal.md        agreed next direction; not started
 supabase/rooms.sql                   generated, folded into bootstrap-production.sql
 src/types/room.ts                    room, member, message, idea types
 src/lib/rooms/crypto.ts              room key, wrapping, message encryption
@@ -588,3 +590,17 @@ src/app/r/[roomId]/page.tsx
 `hooks/use-conversations`. The test in phase 4 checks that, so the constraint survives a
 future change that would otherwise be reasonable to someone in a hurry.
 
+
+15. **Spend is reported as calls, not money.** The host sees how many model invocations the
+    room has made, by whom, and which model answered. It is not shown a currency figure,
+    because the server cannot know one: what a call costs depends on the host's provider
+    contract and on token counts the provider alone measures. A panel that printed a price
+    would be printing a guess, and a host budgeting from a guess would be misled by it. The
+    limit this leaves is stated in the UI rather than papered over.
+16. **The host is exempt from read-only.** The switch locks guests out of writing; it does not
+    lock the host out of their own room. A room the host can read but not close is not what
+    "read-only" is meant to mean.
+17. **Only the host sees spend.** A `trusted` member may spend the host's key but does not get
+    a view of the total. Making the host's bill legible to the people drawing it down is the
+    opposite of what the trust grant is for, and it would turn a quiet limit into a social
+    contest.

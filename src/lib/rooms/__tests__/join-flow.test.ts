@@ -269,3 +269,27 @@ async function deriveHostProbeKey(code: string, salt: Uint8Array) {
     ["encrypt", "decrypt"],
   ) as Promise<CryptoKey>;
 }
+
+it("starts every host code with a letter, so the two shapes cannot overlap at all", () => {
+  // Not a probability argument. `ID_ALPHABET` contains every character in `CODE_ALPHABET`, so
+  // drawing a host code from it independently produced an all-digit one -- a valid invite
+  // code -- about once in every 350 rooms. That made the property asserted above true
+  // *usually*, which is the same as saying the host could be misidentified in the field.
+  // This pins it to always.
+  for (let attempt = 0; attempt < 200; attempt += 1) {
+    const host = createHostCode();
+    expect(host).toHaveLength(6);
+    expect(host.slice(0, 1)).toMatch(/^[BCDFGHJKMNPQRTWXYZ]$/);
+  }
+});
+
+it("still spreads a host code across the whole alphabet after the first character", () => {
+  // Forcing a leading letter must not collapse the keyspace. Five characters at full
+  // alphabet width is what makes guessing impractical; a fixed prefix would not.
+  const firsts = new Set<string>();
+  for (let attempt = 0; attempt < 300; attempt += 1) {
+    firsts.add(createHostCode().slice(0, 1));
+  }
+  // The letter half of `ID_ALPHABET`: 24 characters, 6 of them digits.
+  expect(firsts.size).toBe(18);
+});

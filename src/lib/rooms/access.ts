@@ -51,9 +51,21 @@ export function createInviteCode(): string {
  *
  * Separate from the invite code and never sent to anyone. Sharing an invite therefore
  * never confers administrative rights over the room.
+ *
+ * The first character is forced to be a **letter**. `ID_ALPHABET` contains every character in
+ * `CODE_ALPHABET`, so a host code drawn from it independently would land inside the invite
+ * code's shape roughly once in every 350 rooms — all six characters digits. That is the one
+ * case where pasting the wrong code hands over the wrong half of the authority, which is
+ * precisely what this function exists to prevent, so it is made impossible rather than
+ * unlikely. The remaining five characters still come from the full alphabet, which is far
+ * more than the 100k invite codes this must not collide with.
  */
 export function createHostCode(): string {
-  return randomFrom(ID_ALPHABET, CODE_LENGTH);
+  const letters = ID_ALPHABET.replace(/[0-9]/g, "");
+  const bytes = crypto.getRandomValues(new Uint8Array(CODE_LENGTH));
+  const first = letters[bytes[0] % letters.length];
+  const rest = randomFrom(ID_ALPHABET, CODE_LENGTH - 1);
+  return first + rest;
 }
 
 /** A member token. High entropy, because it is the guest's only credential. */

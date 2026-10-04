@@ -18,6 +18,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
  */
 
 const resolveAiAccess = vi.fn();
+const recordRoomAiUsage = vi.fn(async (_input: { roomId: string; memberToken: string; model: string }) => undefined);
 const resolveRequestAuth = vi.fn();
 const createProviderStream = vi.fn();
 const checkRateLimit = vi.fn();
@@ -28,6 +29,11 @@ vi.mock("server-only", () => ({}));
 
 vi.mock("@/lib/rooms/server", () => ({
   resolveAiAccess: (...args: unknown[]) => resolveAiAccess(...args),
+  // The spend record. Mocked to a resolved no-op so these tests can keep asserting what the
+  // route *returns* without a database; `spend.test.ts` covers the recording itself. The
+  // parameter is an object, matching `recordRoomAiUsage` in `server.ts`.
+  recordRoomAiUsage: (input: { roomId: string; memberToken: string; model: string }) =>
+    recordRoomAiUsage(input),
 }));
 const loadHostKey = vi.fn();
 

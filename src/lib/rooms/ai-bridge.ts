@@ -65,6 +65,16 @@ export interface RoomContextMessage {
   body: string;
   /** True for a message the model itself wrote, so it is not fed back as a human turn. */
   isAi: boolean;
+  /**
+   * Which model wrote an `ai` message, and the role the host gave it.
+   *
+   * Attribution, and nothing else. It names the assistant turn, so the room reads
+   * "GPT-4o — critique" rather than an unattributed reply. It is added as a fixed prefix
+   * rather than merged into the text, so a member cannot write a model name inside a message
+   * body and have it read as one.
+   */
+  modelLabel?: string | null;
+  modelSpecialty?: string | null;
 }
 
 export interface RoomQuestion {
@@ -114,6 +124,23 @@ function systemPrompt(topic: string, participantCount: number): ChatCompletionMe
 }
 
 /**
+ * Prefixes a model answer with the model that wrote it and the role it was given.
+ *
+ * Returns the body untouched when there is no attribution, which is every room whose host
+ * never offered a role. A missing label must not become a visible "unknown model" in the
+ * prompt — the room renders attribution itself, and this only tells the model who it has
+ * already been in this conversation.
+ */
+function withAttribution(message: RoomContextMessage, body: string): string {
+  const label = clean(message.modelLabel ?? "", MAX_ALIAS_LENGTH);
+  if (!label) return body;
+  const specialty = clean(message.modelSpecialty ?? "", MAX_ALIAS_LENGTH);
+  // An em dash rather than a colon, because a member's own message body is rendered as
+  // "Name: text". Brackets read as structure rather than as part of the sentence.
+  return `[${label}${specialty ? ` — ${specialty}` : ""}]\n${body}`;
+}
+
+/**
  * Builds the request the room sends to the model.
  *
  * Takes room data and returns messages. There is no other input, no ambient state, and
@@ -142,9 +169,16 @@ export function buildRoomRequest(room: RoomQuestion): ChatCompletionMessage[] {
   // The model's own answers keep the assistant role rather than impersonating a member.
   // Without this a follow-up question reads its earlier answer as something a human said,
   // and a room that argues with the model ends up arguing with itself.
+  //
+  // The label goes in as a prefix on the assistant's own turn rather than as a system
+  // instruction: a system instruction is something the room could talk the model out of,
+  // while a prefix on its own turn is text it is already repeating back to itself.
   for (const [index, message] of recent.entries()) {
     if (message.isAi) {
-      turns[index] = { role: "assistant", content: clean(message.body, MAX_QUESTION_LENGTH) };
+      turns[index] = {
+        role: "assistant",
+        content: withAttribution(message, clean(message.body, MAX_QUESTION_LENGTH)),
+      };
     }
   }
 

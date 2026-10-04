@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { isValidRoomId, isValidMemberToken } from "@/lib/rooms/access";
-import { postMessage, readMessages, RoomError } from "@/lib/rooms/server";
+import { postMessage, readMessages, setMessagePinned, RoomError } from "@/lib/rooms/server";
 
 export const runtime = "nodejs";
 
@@ -86,8 +86,70 @@ export async function POST(request: Request) {
       contentHash,
       replyToId,
       threadRootId,
+      // `kind` is narrowed here rather than passed through, so no caller can write a value
+      // the schema's own check would refuse. The server still decides what is *valid* for
+      // that kind — this only removes a shape that never was one.
+      kind: body.kind === "ai" ? "ai" : "human",
+      modelLabel: typeof body.modelLabel === "string" ? body.modelLabel : null,
+      modelSpecialty:
+        typeof body.modelSpecialty === "string" ? body.modelSpecialty : null,
     });
     return NextResponse.json({ message }, { status: 201 });
+  } catch (error) {
+    return fail(error);
+  }
+}
+
+/**
+ * PATCH /api/rooms/messages — pins or unpins a message. Host only.
+ *
+ * PATCH rather than a `/pin` subroute, because pinning is a field on a message and this is
+ * the message resource. The body names one message and one boolean; there is no bulk form,
+ * because "pin everything" is not a thing the design wants and a shape that does not exist
+ * cannot be called by a future caller who assumed it did.
+ *
+ * The room id travels in the body here, as it does in POST, so that this verb and the one
+ * that appends to the same table read the same way. It authorises nothing: the caller's role
+ * comes from the member token in the header.
+ */
+export async function PATCH(request: Request) {
+  const memberToken = request.headers.get("x-room-member") ?? "";
+  const body = (await request.json().catch(() => null)) as Record<string, unknown> | null;
+
+  if (!body || !isValidRoomId(body.roomId) || !isValidMemberToken(memberToken)) {
+    return NextResponse.json(
+      { error: "This invite is not valid", code: "INVITE_INVALID" },
+      { status: 404 },
+    );
+  }
+
+  const messageId = typeof body.messageId === "string" ? body.messageId : "";
+  if (!UUID.test(messageId)) {
+    // Same reasoning as the reply target: a malformed id is the client's mistake, and
+    // answering 404 keeps it indistinguishable from a message that is genuinely gone.
+    return NextResponse.json(
+      { error: "That message is not in this room", code: "MESSAGE_NOT_FOUND" },
+      { status: 404 },
+    );
+  }
+
+  // `pinned` must be an actual boolean. A truthy string would otherwise pin when the caller
+  // meant to unpin, and this is a toggle where the two directions must not be guessed at.
+  if (typeof body.pinned !== "boolean") {
+    return NextResponse.json(
+      { error: "That message could not be pinned", code: "PIN_INVALID" },
+      { status: 400 },
+    );
+  }
+
+  try {
+    const result = await setMessagePinned({
+      roomId: body.roomId,
+      memberToken,
+      messageId,
+      pinned: body.pinned,
+    });
+    return NextResponse.json(result);
   } catch (error) {
     return fail(error);
   }

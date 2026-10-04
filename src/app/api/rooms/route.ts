@@ -125,6 +125,15 @@ export async function POST(request: Request) {
       expiresAt: expiry.toISOString(),
       aiProvider,
       aiModel,
+      // Forwarded as-is. Shape, length, and de-duplication are decided by
+      // `normaliseSpecialities` in the server module rather than here, so the rules live in one
+      // place and a second caller cannot get a laxer answer than this route.
+      aiSpecialties: Array.isArray(body.aiSpecialties) ? body.aiSpecialties : [],
+      aiMaxModels: typeof body.aiMaxModels === "number" ? body.aiMaxModels : null,
+      // Only the literal "panel" selects the other kind. Anything else — an absent field from
+      // an older client, a typo, a forged value — produces a guest room, which is the kind
+      // that promises no identity and collects none.
+      roomKind: body.roomKind === "panel" ? "panel" : "guest",
       keyMode,
       keyExpiresAt,
       allowGuestWrite: body.allowGuestWrite !== false,

@@ -10,6 +10,27 @@
 /** Who a member is, which decides what they may do. */
 export type RoomRole = "host" | "trusted" | "guest";
 
+/**
+ * One row of the host's member list.
+ *
+ * Declared here rather than in `lib/rooms/members` because that module carries the
+ * `server-only` marker while the panel that renders these rows is a client component.
+ *
+ * `label` is a short prefix of the member's stored token hash. It is a selector for the
+ * host's click and nothing more: every authorisation on that endpoint is checked against
+ * the caller's own token, so guessing or copying a label grants nothing.
+ *
+ * There is deliberately no `memberTokenHash` field. A host holding every hash could
+ * recognise the same person in a second room, which is the correlation this design
+ * refuses to make possible.
+ */
+export interface RoomMemberView {
+  label: string;
+  role: RoomRole;
+  joinedAt: string;
+  lastSeenAt: string | null;
+}
+
 /** Where the host's AI key lives. See section 5 of the design document. */
 export type RoomKeyMode = "browser" | "server";
 
@@ -71,6 +92,9 @@ export interface RoomMessage {
   kind: RoomMessageKind;
   phase: number | null;
   pinnedAt: string | null;
+  /** Which model wrote an `ai` row, and the job the host gave it. Null otherwise. */
+  modelLabel: string | null;
+  modelSpecialty: string | null;
   replyToId: string | null;
   threadRootId: string | null;
   createdAt: string;

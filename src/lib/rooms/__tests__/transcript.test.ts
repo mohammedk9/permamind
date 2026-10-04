@@ -241,3 +241,45 @@ async function captureBroadcast(run: () => Promise<void>) {
   expect(captured, "the broadcast was never sent").not.toBeNull();
   return captured as unknown as { url: string; body: unknown };
 }
+
+describe("a display name travels encrypted and never as a column", () => {
+  // Section 4: a room of "Guest 4f2" cannot be moderated, so every guest is asked for a name
+  // and it is required by default. The design is equally explicit about where the name
+  // lives: inside the encrypted payload, never in a column, so the server can enforce that
+  // one was supplied without ever learning what it was.
+
+  it("round trips the name through encryption", async () => {
+    const roomKey = await createRoomKey();
+    const sealed = await sealMessage({ body: "on my way", alias: "Yara" }, roomKey);
+    expect((await openMessage(sealed.ciphertext, roomKey)).alias).toBe("Yara");
+  });
+
+  it("keeps the name out of the ciphertext payload a reader can see", async () => {
+    // The name is inside the ciphertext, not beside it. A dump of the row shows the sealed
+    // bytes and nothing that names a person.
+    const roomKey = await createRoomKey();
+    const sealed = await sealMessage({ body: "on my way", alias: "Yara" }, roomKey);
+
+    expect(sealed.ciphertext).not.toContain("Yara");
+    expect(JSON.stringify(sealed)).not.toContain("Yara");
+    // And it is unreadable without the room key, so it cannot be harvested from storage.
+    const other = await createRoomKey();
+    await expect(openMessage(sealed.ciphertext, other)).rejects.toThrow();
+  });
+
+  it("omits the field entirely when no name was given", async () => {
+    // A nameless member falls back to the generated "Guest xxxx" label at render time, so an
+    // empty string must not become a stored alias that overrides that fallback.
+    const roomKey = await createRoomKey();
+    const named = await sealMessage({ body: "x", alias: undefined }, roomKey);
+    expect((await openMessage(named.ciphertext, roomKey)).alias).toBeUndefined();
+  });
+
+  it("carries Arabic names unchanged", async () => {
+    // The name is the one field a person types in their own script, so encoding a round trip
+    // that mangles it would make the feature useless in the Arabic interface.
+    const roomKey = await createRoomKey();
+    const sealed = await sealMessage({ body: "قريبا", alias: "سارة" }, roomKey);
+    expect((await openMessage(sealed.ciphertext, roomKey)).alias).toBe("سارة");
+  });
+});

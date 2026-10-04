@@ -5,12 +5,25 @@ import { useCallback, useState } from "react";
 import { KeyRound, Loader2, ShieldCheck, Sparkles } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { RoomMembersPanel } from "@/components/rooms/room-members-panel";
+import { RoomHostControls } from "@/components/rooms/room-host-controls";
+import { PanelModelControls } from "@/components/rooms/panel-model-controls";
+import { IdeasBoard } from "@/components/rooms/ideas-board";
+import {
+  RoomPresenceStrip,
+  sealAliasAtJoin,
+} from "@/components/rooms/room-presence-strip";
 import { Input } from "@/components/ui/input";
 import { Logo } from "@/components/ui/logo";
 import { useApiSettings } from "@/hooks/use-api-settings";
 import { useLocale } from "@/hooks/use-locale";
-import { useRoomTranscript } from "@/hooks/use-room-transcript";
+import { useRoomTranscript, type DecryptedMessage } from "@/hooks/use-room-transcript";
+import { useRoomIdeas } from "@/hooks/use-room-ideas";
 import { isValidInviteCode, isValidRoomId } from "@/lib/rooms/access";
+// The context window, imported rather than repeated. The route enforces the same bound and
+// refused longer requests, so two independent numbers here is what broke "Ask the model" in
+// long rooms.
+import { ROOM_CONTEXT_MESSAGES } from "@/lib/rooms/ai-bridge";
 import { joinWithCode, type RoomKeyHandle } from "@/lib/rooms/client";
 
 /**
@@ -25,6 +38,21 @@ import { joinWithCode, type RoomKeyHandle } from "@/lib/rooms/client";
  * ends up in chat logs, in the browser history, and in the referrer of any image the
  * page loads. Keeping it in a field means the only place it exists is this screen.
  */
+
+/**
+ * Shortens a body for a quote strip.
+ *
+ * The quoted text is the reader's own decrypted plaintext, so there is nothing to protect
+ * here; the reason to cut it is that a reply to a long message would otherwise reprint the
+ * whole thing above the reply and push the conversation off screen. The cut is on characters
+ * rather than words because a mid-word cut inside a quoted line reads as a deliberate
+ * ellipsis, while a word-boundary cut of a single very long word would not.
+ */
+function truncate(body: string, limit: number): string {
+  const collapsed = body.replace(/\s+/g, " ").trim();
+  return collapsed.length > limit ? `${collapsed.slice(0, limit)}…` : collapsed;
+}
+
 export default function RoomDoorPage() {
   const params = useParams<{ roomId: string }>();
   const router = useRouter();
@@ -33,20 +61,35 @@ export default function RoomDoorPage() {
 
   const roomId = typeof params?.roomId === "string" ? params.roomId : "";
   const [code, setCode] = useState("");
+  // Section 4: a display name is asked of every guest, because a room full of "Guest 4f2"
+  // cannot be moderated. It is not sent to the server as a field; it is encrypted into each
+  // message payload, which is what lets the server be told a name exists without reading it.
+  // The host is never asked for one: they own the room and do not choose a name for themselves.
+  const [alias, setAlias] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [session, setSession] = useState<{
     token: string;
     key: RoomKeyHandle;
+    // Held in the tab and joined to every message payload, so the name travels encrypted
+    // rather than as a column the server could read.
+    alias: string;
   } | null>(null);
 
   const roomKnown = isValidRoomId(roomId);
 
   if (session) {
     return (
-      <RoomTranscript roomId={roomId} token={session.token} roomKey={session.key} ar={ar} />
+      <RoomTranscript
+        roomId={roomId}
+        token={session.token}
+        roomKey={session.key}
+        alias={session.alias}
+        ar={ar}
+      />
     );
   }
+
 
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -73,7 +116,24 @@ export default function RoomDoorPage() {
     // The key unwrapped successfully, so hold it and show the transcript. Staying on
     // this page rather than navigating matters: the room key lives in memory and would
     // not survive a route change.
-    setSession({ token: result.memberToken, key: result.key });
+    setSession({
+      token: result.memberToken,
+      key: result.key,
+      // Trimmed here rather than on every message: an empty name falls back to the
+      // generated "Guest xxxx" label at render time, per section 4's optional alias.
+      alias: alias.trim().slice(0, 40),
+    });
+
+    // The name is sealed once, here, and never again: a member keeps the name they chose at
+    // the door until they leave. Sealing at join rather than at first speech is what lets the
+    // host see who is in the room, not only who has spoken. Fire-and-forget — the room is
+    // already open, and a failed seal costs the host a display name and nothing else.
+    void sealAliasAtJoin({
+      roomId,
+      memberToken: result.memberToken,
+      roomKey: result.key,
+      alias,
+    });
   };
 
   return (
@@ -140,6 +200,40 @@ export default function RoomDoorPage() {
                 />
               </div>
 
+              {/* Section 4: a display name is required by default, and it is asked here
+                  rather than on the first message. The design's reason is that a room of
+                  "Guest 4f2" cannot be moderated, and a brainstorm needs to know who argued what;
+                  asking inside the composer would leave the opening messages under a
+                  placeholder while everyone waits.
+
+                  It is not submitted as a field. It is encrypted into each message payload, which
+                  is what lets the server be told a name exists without ever reading it. */}
+              <div>
+                <label
+                  htmlFor="room-alias"
+                  className="mb-1.5 block text-sm font-medium"
+                >
+                  {ar ? "اسمك في الغرفة" : "Your name in the room"}
+                </label>
+                <Input
+                  id="room-alias"
+                  value={alias}
+                  onChange={(event) => {
+                    setAlias(event.target.value.slice(0, 40));
+                    setError("");
+                  }}
+                  placeholder={ar ? "مثال: سارة" : "e.g. Sarah"}
+                  maxLength={40}
+                  autoComplete="nickname"
+                  disabled={busy}
+                />
+                <p className="mt-1.5 text-xs text-muted-foreground">
+                  {ar
+                    ? "يظهر لأعضاء الغرفة فقط ومشفر مع رسائلك."
+                    : "Visible to the room only, and encrypted together with your messages."}
+                </p>
+              </div>
+
               {error ? (
                 <p
                   id="room-code-error"
@@ -180,19 +274,90 @@ function RoomTranscript({
   roomId,
   token,
   roomKey,
+  alias,
   ar,
 }: {
   roomId: string;
   token: string;
   roomKey: RoomKeyHandle;
+  /** The display name this member chose, encrypted into every payload they send. */
+  alias: string;
   ar: boolean;
 }) {
-  const { messages, role, allowGuestWrite, loading, error, live, send, sending } =
-    useRoomTranscript(roomId, roomKey, token);
+  const {
+    messages,
+    role,
+    allowGuestWrite,
+    loading,
+    error,
+    live,
+    presence,
+    aiSpecialties,
+    aiMaxModels,
+    specialty,
+    setSpecialty,
+    roomKind,
+    callerModel,
+    registerModel,
+    withdrawModel,
+    panelBusy,
+    panelError,
+    send,
+    sending,
+    sendModelAnswer,
+    setPinned,
+  } = useRoomTranscript(roomId, roomKey, token, alias);
+
+  // The ideas board. Separate from the transcript hook because it has its own lifecycle:
+  // ideas are sealed and opened on their own schedule, and a board that failed to load
+  // must not take the conversation with it.
+  const ideas = useRoomIdeas(roomId, token, roomKey);
+
+  // Section 4: a member who gave no name is shown as "Guest xxxx", where the suffix is
+  // derived from their own member token. It is shown to the same room that already sees
+  // their messages, it is never sent anywhere, and it is not the stored hash — so it
+  // identifies nothing outside this conversation.
+  const memberLabel = `${ar ? "ضيف" : "Guest"} ${token.slice(0, 4)}`;
   const [draft, setDraft] = useState("");
   const [question, setQuestion] = useState("");
   const [asking, setAsking] = useState(false);
   const [askError, setAskError] = useState("");
+
+  /**
+   * The message the composer is replying to, and the thread it belongs to.
+   *
+   * Two ids, because they answer different questions. `replyToId` is the message directly
+   * above, which is what the quote strip shows. `threadRootId` is the message that started
+   * the branch, which is what keeps a reply to a reply inside the same thread instead of
+   * nesting a new one. When the composer is set from a message that is already a reply, both
+   * are carried over; when it is set from a top-level message, the root is that message.
+   *
+   * The thread root is resolved on the client from the transcript rather than asked of the
+   * server, because the server stores both columns and the client already holds the whole
+   * decrypted page.
+   */
+  const [replyingTo, setReplyingTo] = useState<DecryptedMessage | null>(null);
+  /** Which message's pin request is in flight, so only that row disables. */
+  const [pinningId, setPinningId] = useState<string | null>(null);
+
+  const startReply = (message: DecryptedMessage) => {
+    setReplyingTo({
+      ...message,
+      // A reply to a reply stays in the original thread.
+      threadRootId: message.threadRootId ?? message.id,
+    });
+  };
+
+  const cancelReply = () => setReplyingTo(null);
+
+  const togglePin = async (message: DecryptedMessage) => {
+    setPinningId(message.id);
+    try {
+      await setPinned(message.id, !message.pinned);
+    } finally {
+      setPinningId(null);
+    }
+  };
 
   // The host's own key, when they are present and holding one. Sending it here is Option A,
   // and it is why the key never reaches our database on this path.
@@ -209,7 +374,13 @@ function RoomTranscript({
   // A guest may write but may not invoke the model, per section 4. The server enforces the
   // same rule; this only decides whether the button is usable, so a guest learns why it is
   // missing rather than pressing it and being refused.
-  const mayAsk = role === "host" || role === "trusted";
+  //
+  // In a panel room the rule is different and stricter: a member invokes **their own**
+  // registered model, so having no registration means there is nothing to invoke. The button
+  // is disabled rather than shown-then-refused, and the panel controls above explain why —
+  // "you can take part without spending your key" is a real answer, not a consolation.
+  const mayAsk =
+    roomKind === "panel" ? Boolean(callerModel) : role === "host" || role === "trusted";
   const askModel = async () => {
     if (asking || !question.trim()) return;
     setAsking(true);
@@ -221,10 +392,27 @@ function RoomTranscript({
         headers: { ...headers, "Content-Type": "application/json" },
         body: JSON.stringify({
           question: question.trim(),
-          messages: messages.map((message) => ({
+          // The role this question is asked under. Null when the host offered none, in which
+          // case the answer is simply unattributed by role.
+          specialty: specialty ?? undefined,
+          messages: messages
+            // The most recent window, not the whole page. `readMessages` serves up to a hundred
+            // messages and every one of them was being sent; the route's own cap then refused
+            // the request, so "Ask the model" stopped working in any room that had grown past
+            // sixty. Slicing here is what makes a long room answer from its recent end instead
+            // of failing outright.
+            //
+            // The bound is the bridge's, imported rather than repeated, because these two used
+            // to be independent numbers that disagreed.
+            .slice(-ROOM_CONTEXT_MESSAGES)
+            .map((message) => ({
             alias: message.alias,
             body: message.body,
             isAi: message.isAi,
+            // Which model wrote an earlier answer, so a follow-up can tell the room which of
+            // its models it is now arguing with. Carried as structure, never as prompt text.
+            modelLabel: message.modelLabel,
+            modelSpecialty: message.modelSpecialty,
           })),
         }),
       });
@@ -234,12 +422,17 @@ function RoomTranscript({
         setAskError(data.error ?? (ar ? "تعذّر سؤال النموذج." : "The model could not be asked."));
         return;
       }
-      const data = (await response.json()) as { answer: string };
+      const data = (await response.json()) as { answer: string; modelLabel: string };
       setQuestion("");
-      // The answer is posted as an ordinary message, which means it is encrypted like
-      // everything else and reaches the room through the same path a human's words do.
-      // The model is not a privileged speaker with a side channel.
-      await send(data.answer);
+      // The answer is encrypted like everything else and reaches the room through the same
+      // path a human's words do. The model is not a privileged speaker with a side channel —
+      // the one thing that makes it a privileged speaker, its name, is stored in the clear
+      // and is exactly what the room can already see it is talking to.
+      //
+      // `sendModelAnswer` rather than `send`, so the row is written as `ai` and the server
+      // refuses it if the label is missing. Posting it as a human message was possible until
+      // the schema began refusing a human row that named a model.
+      await sendModelAnswer(data.answer, data.modelLabel, specialty);
     } catch {
       setAskError(ar ? "تعذّر سؤال النموذج." : "The model could not be asked.");
     } finally {
@@ -247,15 +440,36 @@ function RoomTranscript({
     }
   };
 
-  // A guest writes by default, per the design; read-only is the host's switch. The
-  // server enforces the same rule, so this only decides whether the field is usable.
-  const readOnly = role === "guest" && !allowGuestWrite;
+  // The room's own read-only state, whatever the viewer can do. The host's switch writes it and
+  // `refresh` reads it back, so this is the value every other client converges on.
+  const roomReadOnly = !allowGuestWrite;
+
+  // The host's optimistic override.
+  //
+  // Without it, flipping the switch would not change this tab's own composer until the next
+  // transcript re-read, and a host who locks a room and can still type into it has been told
+  // something false. Null means "whatever the last read said", which is the state every other
+  // member is always in.
+  const [readOnlyOverride, setReadOnlyOverride] = useState<boolean | null>(null);
+  const effectiveReadOnly = readOnlyOverride ?? roomReadOnly;
+
+  // A guest writes by default, per the design; read-only is the host's switch. The server
+  // enforces the same rule, so this only decides whether the field is usable.
+  const readOnly = role === "guest" && effectiveReadOnly;
 
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
     if (sending || !draft.trim()) return;
-    const sent = await send(draft);
-    if (sent) setDraft("");
+    // Both ids travel together. The server defaults the root to the reply target when only
+    // one is given, so a plain reply works either way; sending both keeps a reply-to-a-reply
+    // in the thread it belongs to rather than starting a branch under its own parent.
+    const sent = await send(draft, replyingTo?.id ?? null, replyingTo?.threadRootId ?? null);
+    // The composer is only cleared once the server has the message. A failed send leaves the
+    // draft and the reply target in place so nothing has to be retyped.
+    if (sent) {
+      setDraft("");
+      setReplyingTo(null);
+    }
   };
 
   return (
@@ -277,6 +491,19 @@ function RoomTranscript({
           </span>
           <span>{role === "host" ? (ar ? "المضيف" : "Host") : ar ? "ضيف" : "Guest"}</span>
         </span>
+
+        {/* Who is here right now. The host sees names; everyone else sees a number. The
+            asymmetry is enforced on the server — `/api/rooms/roster` refuses a guest before
+            it queries — so this component is presentation, not the control itself. */}
+        <RoomPresenceStrip
+          roomId={roomId}
+          roomKey={roomKey}
+          memberToken={token}
+          labels={presence}
+          ar={ar}
+          isHost={role === "host"}
+          alias={alias}
+        />
       </header>
 
       <div className="flex-1 overflow-y-auto px-4 py-6">
@@ -292,30 +519,87 @@ function RoomTranscript({
                 : "No messages yet. Write the first one."}
             </p>
           ) : (
-            messages.map((message) => (
-              <article
-                key={message.id}
-                className={`max-w-[85%] rounded-2xl border px-4 py-3 ${
-                  message.isAi
-                    ? "border-primary/30 bg-primary/5"
-                    : message.isMine
-                      ? "border-primary/40 bg-primary/10"
-                      : "border-border bg-card"
-                } ${message.isMine ? "ms-auto" : ""}`}
-              >
-                {message.pinned ? (
-                  <p className="mb-1 text-[11px] font-semibold uppercase tracking-widest text-primary">
-                    {ar ? "مثبّت" : "Pinned"}
-                  </p>
-                ) : null}
-                {message.alias ? (
+            messages.map((message) => {
+              // The quoted message, found from the transcript this client already holds. A
+              // reply whose target is not in the loaded page renders without a quote rather
+              // than as an error: the target may simply be on an earlier page.
+              const quoted = message.replyToId
+                ? messages.find((candidate) => candidate.id === message.replyToId)
+                : undefined;
+
+              return (
+                <article
+                  key={message.id}
+                  className={`max-w-[85%] rounded-2xl border px-4 py-3 ${
+                    message.isAi
+                      ? "border-primary/30 bg-primary/5"
+                      : message.isMine
+                        ? "border-primary/40 bg-primary/10"
+                        : "border-border bg-card"
+                  } ${message.isMine ? "ms-auto" : ""} ${message.pinned ? "ring-1 ring-primary/40" : ""}`}
+                >
+                  {message.pinned ? (
+                    <p className="mb-1 text-[11px] font-semibold uppercase tracking-widest text-primary">
+                      {ar ? "مثبّت" : "Pinned"}
+                    </p>
+                  ) : null}
+                  {/* A nameless member renders as "Guest xxxx", derived from their own
+                      token rather than declared by them (section 4). Two guests stay
+                      distinguishable without either having to claim an identity, and the
+                      suffix leaks nothing: it is derived from a value the server already
+                      stores only as a hash, and this client never transmits it. */}
                   <p className="mb-1 text-xs font-semibold text-muted-foreground">
-                    {message.alias}
+                    {/* A model row is attributed by the server-validated columns rather than by
+                        the sealed payload, so the name shown is the name that was stored. A
+                        human row falls back to the member's own name. */}
+                    {message.isAi
+                      ? message.modelLabel ?? (ar ? "النموذج" : "The model")
+                      : message.alias ?? memberLabel}
+                    {/* The role the host gave the model. Nothing renders when the host offered no
+                        roles, which is the case for every room that predates this. */}
+                    {message.isAi && message.modelSpecialty ? (
+                      <span className="ms-1.5 font-normal opacity-70">
+                        {ar ? "— " : "· "}
+                        {message.modelSpecialty}
+                      </span>
+                    ) : null}
                   </p>
-                ) : null}
-                <p className="whitespace-pre-wrap text-sm leading-7">{message.body}</p>
-              </article>
-            ))
+                  {/* The quoted line is plaintext, because the reader has already decrypted the
+                      whole page. Only this client can read it, and only from what it holds. */}
+                  {quoted ? (
+                    <p className="mb-2 border-s-2 border-primary/40 ps-2 text-xs text-muted-foreground">
+                      {quoted.alias ?? memberLabel}: {truncate(quoted.body, 90)}
+                    </p>
+                  ) : null}
+                  <p className="whitespace-pre-wrap text-sm leading-7">{message.body}</p>
+
+                  {/* Reply is available to everyone who may write; pin is host-only, and is not
+                      rendered at all for anyone else rather than shown disabled. A member who
+                      cannot pin has no reason to be told the control exists. */}
+                  {!readOnly ? (
+                    <div className="mt-2 flex items-center gap-1">
+                      <button
+                        type="button"
+                        onClick={() => startReply(message)}
+                        className="rounded px-1.5 py-0.5 text-[11px] text-muted-foreground hover:text-foreground"
+                      >
+                        {ar ? "رد" : "Reply"}
+                      </button>
+                      {role === "host" ? (
+                        <button
+                          type="button"
+                          onClick={() => void togglePin(message)}
+                          disabled={pinningId === message.id}
+                          className="rounded px-1.5 py-0.5 text-[11px] text-muted-foreground hover:text-foreground disabled:opacity-50"
+                        >
+                          {message.pinned ? (ar ? "ألغِ التثبيت" : "Unpin") : ar ? "ثبّت" : "Pin"}
+                        </button>
+                      ) : null}
+                    </div>
+                  ) : null}
+                </article>
+              );
+            })
           )}
         </div>
       </div>
@@ -328,14 +612,78 @@ function RoomTranscript({
           <div className="flex items-start gap-2 rounded-lg border border-primary/20 bg-primary/5 px-3 py-2 text-xs text-muted-foreground">
             <ShieldCheck className="mt-0.5 size-3.5 shrink-0 text-primary" />
             <span>
-              {ar
-                ? "النموذج يعمل بمفتاح المضيف. يستطيع الجميع قراءة ردوده؛ المضيف وأعضاؤه الموثوقون فقط هم من يسألونه."
-                : "The model runs on the host's key. Everyone here can read its answers; only the host and members they trust can ask it questions."}
+              {/* The two room kinds must not share this sentence. In a panel room nobody's
+                  answers are paid for by the host: each member invokes their own model with
+                  their own key, and saying "the host's key" here would be the one place the
+                  room states something false about who is paying. */}
+              {roomKind === "panel"
+                ? ar
+                  ? "كل عضو يسأل بنموذجه وبمفتاحه. لا تُنفق غرفة اللوحات مفتاح أحد."
+                  : "Every member asks with their own model and their own key. A panel room never spends anyone else's."
+                : ar
+                  ? "النموذج يعمل بمفتاح المضيف. يستطيع الجميع قراءة ردوده؛ المضيف وأعضاؤه الموثوقون فقط هم من يسألونه."
+                  : "The model runs on the host's key. Everyone here can read its answers; only the host and members they trust can ask it questions."}
             </span>
           </div>
 
+          {/* The panel controls, for anyone in a panel room. Rendered above the composer
+              rather than inside it, so a member who has not registered a model still reads
+              the reason their button is missing. */}
+          {roomKind === "panel" ? (
+            <PanelModelControls
+              aiSpecialties={aiSpecialties}
+              aiMaxModels={aiMaxModels}
+              callerModel={callerModel}
+              registerModel={registerModel}
+              withdrawModel={withdrawModel}
+              busy={panelBusy}
+              error={panelError}
+              ar={ar}
+            />
+          ) : null}
+
+          {/* In a panel room a member with no model has nothing to invoke. The button is
+              absent rather than dead, and the controls above already said why — a member
+              taking part without spending their key is taking part. */}
+          {roomKind === "panel" && !callerModel ? (
+            <p className="text-xs text-muted-foreground">
+              {ar ? "اسأل بعد أن تسجّل نموذجاً." : "Ask a question once you have brought a model."}
+            </p>
+          ) : null}
+
           {mayAsk ? (
-            <div className="flex gap-2">
+            <div className="space-y-2">
+              {/* The role picker. Rendered only when the host offered roles, which is never in
+                  a room created before this feature and is left empty by a host who skips it.
+                  A member chooses who they are talking to; the host chooses what is on the
+                  list. Clicking the chosen role clears it. */}
+              {aiSpecialties.length > 0 && roomKind !== "panel" ? (
+                // Hidden in a panel room. There the role is not a per-question choice: a
+                // member registered their model *with* a role, and letting them pick a
+                // different one per question would let someone answer as the critic while
+                // being labelled as the marketer. The registration is the authority there.
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-xs text-muted-foreground">
+                    {ar ? "الدور:" : "Role:"}
+                  </span>
+                  {aiSpecialties.map((option) => (
+                    <button
+                      key={option}
+                      type="button"
+                      onClick={() => setSpecialty(specialty === option ? null : option)}
+                      className={`rounded-full border px-2.5 py-0.5 text-xs ${
+                        specialty === option
+                          ? "border-primary bg-primary/10 text-primary"
+                          : "border-border text-muted-foreground hover:text-foreground"
+                      }`}
+                    >
+                      {option}
+                    </button>
+                  ))}
+                </div>
+              ) : null}
+
+              <div className="flex gap-2">
               <Input
                 value={question}
                 onChange={(event) => setQuestion(event.target.value)}
@@ -357,6 +705,7 @@ function RoomTranscript({
                   <Sparkles className="size-4" />
                 )}
               </Button>
+              </div>
             </div>
           ) : (
             <p className="text-xs text-muted-foreground">
@@ -372,6 +721,26 @@ function RoomTranscript({
             </p>
           ) : null}
 
+          {replyingTo ? (
+            <div className="flex items-start justify-between gap-3 rounded-lg border border-border bg-muted/40 px-3 py-2">
+              <p className="min-w-0 text-xs text-muted-foreground">
+                <span className="font-semibold">
+                  {ar ? "ترد على " : "Replying to "}
+                  {replyingTo.alias ?? memberLabel}
+                </span>
+                <span className="block truncate">{truncate(replyingTo.body, 90)}</span>
+              </p>
+              <button
+                type="button"
+                onClick={cancelReply}
+                aria-label={ar ? "إلغاء الرد" : "Cancel reply"}
+                className="shrink-0 text-xs text-muted-foreground hover:text-foreground"
+              >
+                {ar ? "إلغاء" : "Cancel"}
+              </button>
+            </div>
+          ) : null}
+
           <form onSubmit={submit} className="flex gap-2">
             <Input
               value={draft}
@@ -381,9 +750,13 @@ function RoomTranscript({
                   ? ar
                     ? "هذه الغرفة للقراءة فقط"
                     : "This room is read-only"
-                  : ar
-                    ? "اكتب رسالة…"
-                    : "Write a message…"
+                  : replyingTo
+                    ? ar
+                      ? "اكتب ردك…"
+                      : "Write a reply…"
+                    : ar
+                      ? "اكتب رسالة…"
+                      : "Write a message…"
               }
               maxLength={4_000}
               disabled={sending || readOnly}
@@ -400,6 +773,38 @@ function RoomTranscript({
           ) : null}
         </div>
       </form>
+
+      {/* The board. Open to every member, a guest included: proposing an idea spends
+          nobody's key, so it is not gated the way invoking the model is. Accepting and
+          converting are host-only, and that split is section 9's boundary. */}
+      {role ? (
+      <IdeasBoard
+        ideas={ideas.ideas}
+        loading={ideas.loading}
+        error={ideas.error}
+        role={role}
+        addIdea={ideas.addIdea}
+        vote={ideas.vote}
+        setStatus={ideas.setStatus}
+        ar={ar}
+      />
+      ) : null}
+
+      {/* The host's only control over AI spending. Rendering it on `role === "host"`
+          rather than merely disabling it elsewhere is deliberate: a guest should not learn
+          who else is in the room, and the panel is the roster. */}
+      {role === "host" ? (
+        <>
+          <RoomHostControls
+            roomId={roomId}
+            memberToken={token}
+            readOnly={effectiveReadOnly}
+            onReadOnlyChange={setReadOnlyOverride}
+            ar={ar}
+          />
+          <RoomMembersPanel roomId={roomId} memberToken={token} ar={ar} />
+        </>
+      ) : null}
     </main>
   );
 }

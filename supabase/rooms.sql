@@ -1,4 +1,4 @@
-﻿-- Group rooms. Phase 1 of docs/group-rooms-design.md.
+-- Group rooms. Phase 1 of docs/group-rooms-design.md.
 -- Apply after supabase/mcp-tokens.sql.
 --
 -- The server stores ciphertext it cannot read. A guest has no Supabase account, so
@@ -42,6 +42,43 @@ create table if not exists public.rooms (
   ai_provider text,
   ai_model text,
 
+  -- What the room's model is *for*, chosen by the host at creation.
+  --
+  -- A room of several models is only useful if they disagree with each other, and they
+  -- only disagree if each is given a job: one to criticise, one to market, one to explain.
+  -- Without this the room gets several answers of the same kind and reads as noise.
+  --
+  -- The list is the host's and belongs to them, the same way `ai_model` does. A member
+  -- picks one entry from it; they cannot invent one, because a speciality nobody agreed to
+  -- is the same as no speciality at all.
+  --
+  -- The array is ordered and bounded so the client can render it as a fixed control rather
+  -- than as free text. `jsonb` rather than a join table because it is read whole, written
+  -- once, and never queried by element.
+  ai_specialties jsonb not null default '[]'::jsonb
+    check (jsonb_typeof(ai_specialties) = 'array' and jsonb_array_length(ai_specialties) <= 8),
+  -- How many models the room may run at once. Null means the host did not set a limit,
+  -- which is not the same as "unlimited": the API refuses a body that exceeds it and
+  -- treats null as "no panel feature enabled at all".
+  ai_max_models integer check (ai_max_models is null or ai_max_models > 0),
+
+  -- ## Which kind of room this is
+  --
+  -- `guest` is every room that has ever existed, and it keeps every promise section 13 makes:
+  -- no account, no email, no durable identity, nothing to collect. `panel` is the room where
+  -- registered members each bring their own model, and it is a *separate kind* rather than a
+  -- flag on the same room for the reason in `panel-rooms-proposal.md` section 1: bolting
+  -- identity onto the guest room would make section 13 false, and section 13 is the reason a
+  -- link is safe to hand to strangers.
+  --
+  -- The default is `guest`, so every existing room and every existing row of every other
+  -- table means exactly what it meant before this column existed.
+  room_kind text not null default 'guest' check (room_kind in ('guest', 'panel')),
+  -- A panel room is a panel only if members can bring models, so the host must have defined
+  -- at least one speciality to choose from. A `panel` room with an empty list would be a
+  -- panel whose members may only pick "nothing", which is an ordinary room with extra steps.
+  check (room_kind <> 'panel' or jsonb_array_length(ai_specialties) > 0),
+
   key_mode text not null default 'browser' check (key_mode in ('browser', 'server')),
   -- No 'forever'. A server-side credential with no end date is refused at the API
   -- boundary and disallowed here.
@@ -84,6 +121,60 @@ create table if not exists public.room_members (
   member_token_hash text not null check (member_token_hash ~ '^[0-9a-f]{64}$'),
   role text not null check (role in ('host', 'trusted', 'guest')),
   invited_by uuid references auth.users(id) on delete set null,
+
+  -- ## Panel members are accounts
+  --
+  -- Null for every guest of every guest room, which is the whole point: `null` *is* the
+  -- promise that this member left no durable identity behind. A non-null value appears only
+  -- in a `panel` room, and the join route refuses to write one anywhere else.
+  --
+  -- On delete cascade, deliberately. Unlike `invited_by` — which is a courtesy record of who
+  -- did the inviting and is set to null when that account goes — this is the member's own
+  -- identity, and if the account disappears the membership must go with it. Leaving the row
+  -- behind would leave a panel seat occupied by an account that no longer exists.
+  user_id uuid references auth.users(id) on delete cascade,
+
+  -- ## The model a member brought, if they brought one
+  --
+  -- All three are null together, enforced below. A member who registers no model simply
+  -- cannot invoke one: `panel-rooms-proposal.md` section 5 calls this the correct outcome
+  -- rather than a gap, because the alternative is a shared credential and a shared credential
+  -- is how one member ends up spending another's key.
+  --
+  -- `model_id` is a provider model id, not a credential. The *key* that signs the call is
+  -- never stored here: Option A sends it in a header and Option B has no stored host key in a
+  -- panel room at all.
+  model_id text check (model_id is null or length(model_id) between 1 and 200),
+  model_label text check (model_label is null or length(model_label) between 1 and 60),
+  model_specialty text check (model_specialty is null or length(model_specialty) between 1 and 60),
+
+  -- All three or none. A row with an id and no label would render as an unnamed model, and a
+  -- label with no id would let a member claim to be a model that does not exist.
+  check (
+    (model_id is null and model_label is null and model_specialty is null)
+    or (model_id is not null and model_label is not null and model_specialty is not null)
+  ),
+
+  -- A model is a panel concept. On a guest room there is exactly one model, the room's own,
+  -- so a member row naming a different one would mean nothing and only be reachable by a bug.
+  -- The room's kind lives on `rooms` and cannot be checked from here, so this half of the
+  -- invariant is asserted by the panel tests rather than by the schema.
+
+  -- The member's display name, sealed under the room key.
+  --
+  -- It is ciphertext the server cannot open, exactly like a message body, and that is the
+  -- point: section 4 promises the server never learns what anyone is called. Storing the name
+  -- in a cleartext column would break that promise for the sake of a nicer presence list, so
+  -- the name is sealed once at join and never updated.
+  --
+  -- One column, not two. `sealMessage` prefixes the IV to the ciphertext so a single column
+  -- round-trips, which makes a separate nonce column redundant rather than merely unused —
+  -- an earlier version of this file had one and nothing ever wrote it.
+  --
+  -- Null means no name was chosen, which is different from an empty name and is the only
+  -- honest way to record "this member did not say".
+  alias_ciphertext text,
+  alias_bytes integer check (alias_bytes is null or alias_bytes > 0 and alias_bytes <= 1024),
   joined_at timestamptz not null default now(),
   last_seen_at timestamptz,
   primary key (room_id, member_token_hash),
@@ -98,6 +189,72 @@ create unique index if not exists room_members_single_host
 create index if not exists room_members_recent_idx
   on public.room_members(room_id, last_seen_at desc);
 
+-- Idempotent column adds, for a database created before presence existed.
+--
+-- `create table if not exists` skips the whole definition when the table is already there,
+-- so a column added to the block above would silently not exist on an install that ran the
+-- file earlier. Each of these is written to be safe to re-run.
+alter table public.room_members add column if not exists alias_ciphertext text;
+alter table public.room_members add column if not exists alias_bytes integer;
+
+-- Panel columns, for a database created before panel rooms existed. `create table if not
+-- exists` skips the whole definition when the table is already there, so without these an
+-- install that ran an earlier revision would have no `user_id` for the join route to write.
+--
+-- Each is `add column if not exists`, so re-running is safe. The constraints on the new
+-- columns are added below rather than here, because a constraint can only be attached to a
+-- column that is known to exist.
+alter table public.rooms add column if not exists room_kind text not null default 'guest';
+alter table public.room_members add column if not exists user_id uuid references auth.users(id) on delete cascade;
+alter table public.room_members add column if not exists model_id text;
+alter table public.room_members add column if not exists model_label text;
+alter table public.room_members add column if not exists model_specialty text;
+
+-- A panel room with no specialities is refused, so the constraint is added rather than
+-- carried in the table definition above: an existing `rooms` table would otherwise never
+-- receive it.
+alter table public.rooms drop constraint if exists rooms_room_kind_specialties;
+alter table public.rooms
+  add constraint rooms_room_kind_specialties
+  check (room_kind <> 'panel' or jsonb_array_length(ai_specialties) > 0);
+
+alter table public.rooms drop constraint if exists rooms_room_kind_values;
+alter table public.rooms
+  add constraint rooms_room_kind_values
+  check (room_kind in ('guest', 'panel'));
+
+alter table public.room_members drop constraint if exists room_members_model_all_or_none;
+alter table public.room_members
+  add constraint room_members_model_all_or_none
+  check (
+    (model_id is null and model_label is null and model_specialty is null)
+    or (model_id is not null and model_label is not null and model_specialty is not null)
+  );
+
+-- Counting who has brought a model is the cap check in `registerPanelModel`, and it asks
+-- this question on every registration. Without the index that is a scan of the roster.
+create index if not exists room_members_models_idx
+  on public.room_members(room_id) where model_id is not null;
+
+-- A member may hold one seat per room per account. Without this the same person could join
+-- twice, occupy two panel seats, and consume two of the host's model slots.
+create unique index if not exists room_members_panel_account
+  on public.room_members(room_id, user_id) where user_id is not null;
+
+-- `alias_nonce` was added by an earlier revision of this file and never written by any code
+-- path. It is not dropped here, because this file is additive by contract and an unused
+-- nullable column costs nothing. A database that wants it gone can run
+--
+--   alter table public.room_members drop column if exists alias_nonce;
+--
+-- once, by hand. Leaving that to a maintainer rather than to every re-run of the bootstrap is
+-- the whole point of the rule.
+
+alter table public.room_members drop constraint if exists room_members_alias_bytes_check;
+alter table public.room_members
+  add constraint room_members_alias_bytes_check
+  check (alias_bytes is null or alias_bytes > 0 and alias_bytes <= 1024);
+
 create table if not exists public.room_messages (
   id uuid primary key default gen_random_uuid(),
   room_id text not null references public.rooms(room_id) on delete cascade,
@@ -111,6 +268,21 @@ create table if not exists public.room_messages (
   ciphertext_bytes integer not null check (ciphertext_bytes > 0 and ciphertext_bytes <= 65536),
   content_hash text not null check (content_hash ~ '^[0-9a-f]{64}$'),
   kind text not null default 'human' check (kind in ('human', 'ai', 'system')),
+
+  -- Which model wrote an `ai` message, and what job the host gave it.
+  --
+  -- Attribution, not content: a model name is not the room's text and reveals nothing the
+  -- room did not already say out loud. It is stored in the clear for the same reason
+  -- `reply_to_id` is — the client needs it to render a row without decrypting anything,
+  -- and a column nobody can read is a column nobody can display.
+  --
+  -- Null on every `human` and `system` row. The two checks below say so rather than leaving
+  -- it to convention, because a model label attached to a person's message would let one
+  -- member present their own words as the model's opinion.
+  model_label text check (model_label is null or length(model_label) between 1 and 60),
+  model_specialty text check (model_specialty is null or length(model_specialty) between 1 and 60),
+  check (kind <> 'ai' or model_label is not null),
+  check (kind = 'ai' or model_label is null),
   phase int check (phase is null or phase between 0 and 9),
   pinned_at timestamptz,
   -- Reply and thread targets stay in cleartext columns: they are structural, and
@@ -123,6 +295,56 @@ create table if not exists public.room_messages (
 
 create index if not exists room_messages_room_seq_idx
   on public.room_messages(room_id, seq);
+
+-- Idempotent column adds, for a database created before attribution existed.
+--
+-- `create table if not exists` skips the whole definition when the table is already there,
+-- so a column added to the block above would silently not exist on an install that ran the
+-- file earlier. Existing rows are backfilled before the constraints are added: every
+-- pre-existing `ai` message predates attribution and records no model, so it is labelled
+-- from the room's own model rather than left null and then refused by the new check.
+alter table public.rooms add column if not exists ai_specialties jsonb not null default '[]'::jsonb;
+alter table public.rooms add column if not exists ai_max_models integer;
+
+alter table public.room_messages add column if not exists model_label text;
+alter table public.room_messages add column if not exists model_specialty text;
+
+update public.room_messages m
+   set model_label = coalesce(r.ai_model, 'model')
+  from public.rooms r
+ where m.room_id = r.room_id
+   and m.kind = 'ai'
+   and m.model_label is null;
+
+alter table public.room_messages drop constraint if exists room_messages_model_label_bounds;
+alter table public.room_messages
+  add constraint room_messages_model_label_bounds
+  check (model_label is null or length(model_label) between 1 and 60);
+
+alter table public.room_messages drop constraint if exists room_messages_model_specialty_bounds;
+alter table public.room_messages
+  add constraint room_messages_model_specialty_bounds
+  check (model_specialty is null or length(model_specialty) between 1 and 60);
+
+alter table public.room_messages drop constraint if exists room_messages_ai_has_label;
+alter table public.room_messages
+  add constraint room_messages_ai_has_label
+  check (kind <> 'ai' or model_label is not null);
+
+alter table public.room_messages drop constraint if exists room_messages_only_ai_has_label;
+alter table public.room_messages
+  add constraint room_messages_only_ai_has_label
+  check (kind = 'ai' or model_label is null);
+
+alter table public.rooms drop constraint if exists rooms_ai_specialties_shape;
+alter table public.rooms
+  add constraint rooms_ai_specialties_shape
+  check (jsonb_typeof(ai_specialties) = 'array' and jsonb_array_length(ai_specialties) <= 8);
+
+alter table public.rooms drop constraint if exists rooms_ai_max_models_positive;
+alter table public.rooms
+  add constraint rooms_ai_max_models_positive
+  check (ai_max_models is null or ai_max_models > 0);
 
 -- ---------------------------------------------------------------------------
 -- host_ai_keys — a host's provider key, kept so a room can answer without them
@@ -144,6 +366,62 @@ create index if not exists room_messages_room_seq_idx
 -- cannot be revoked by time is the failure this option exists to avoid. The application
 -- also sweeps on read, because a constraint records that a date was chosen and says
 -- nothing about whether anything acted on it.
+-- Moves an older, room-scoped `host_ai_keys` out of the way, before the current definition
+-- below runs.
+--
+-- The old table was keyed by `room_id` + `author_token_hash` and authorised with a member
+-- token. The current one is keyed by `user_id` and authorised with `auth.uid()`. Those cannot
+-- be migrated into each other: there is no mapping from a room and a member token to an
+-- account. A database carrying the old shape therefore cannot be altered into the new one, and
+-- the policies below fail on it with
+--
+--   ERROR: 42703: column "user_id" does not exist
+--
+-- The old table is **renamed, never dropped**. Two reasons, and the second is the important
+-- one. A drop is unrecoverable, and this file promises to stay additive. More to the point, the
+-- rename leaves the old rows readable by whoever wants them — the table was never usable by
+-- any current code path, so nothing depends on it, but "nothing uses it" is a judgement and a
+-- rename lets that judgement be checked rather than trusted.
+--
+-- Only the exact legacy shape is recognised. Anything else raises with a description of the
+-- table instead, because guessing at an unknown schema is what made this take three attempts.
+do $$
+declare
+  legacy_count integer;
+begin
+  if to_regclass('public.host_ai_keys') is null then
+    return;
+  end if;
+
+  -- Already correct: nothing to do, and the create below will be a no-op.
+  if exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public' and table_name = 'host_ai_keys' and column_name = 'user_id'
+  ) then
+    return;
+  end if;
+
+  -- The legacy shape: no user_id, but carrying both columns only that shape had.
+  select count(*) into legacy_count
+  from information_schema.columns
+  where table_schema = 'public'
+    and table_name = 'host_ai_keys'
+    and column_name in ('room_id', 'author_token_hash');
+
+  if legacy_count = 2 then
+    execute 'alter table public.host_ai_keys rename to host_ai_keys_legacy_room_scoped';
+    return;
+  end if;
+
+  raise exception
+    'public.host_ai_keys exists, has no user_id, and is not the known legacy shape. Columns: %',
+    coalesce((
+      select string_agg(column_name || ' ' || data_type, ', ' order by ordinal_position)
+      from information_schema.columns
+      where table_schema = 'public' and table_name = 'host_ai_keys'
+    ), '(none)');
+end $$;
+
 create table if not exists public.host_ai_keys (
   user_id uuid primary key references auth.users(id) on delete cascade,
   key_version integer not null default 1 check (key_version > 0),
@@ -153,6 +431,33 @@ create table if not exists public.host_ai_keys (
   expires_at timestamptz not null,
   created_at timestamptz not null default now()
 );
+
+
+-- room_ai_usage ------------------------------------------------------------
+-- One row per successful model call made inside a room.
+--
+-- This exists so the host can see what a room has cost them, which the risk table calls for:
+-- "per-room and per-member spend is shown to the host". Without it a `trusted` member can
+-- spend the host's key up to the room's rate limit and the host has no way to notice.
+--
+-- What it deliberately does not hold: the question, the answer, the room's title, or any
+-- member's display name. `author_token_hash` is a hash, so the row identifies a member the
+-- same way `room_members` does — by a value the server cannot invert and cannot tie back to
+-- another room. Nothing here can be joined to what was said.
+--
+-- One row per call rather than a counter, because a counter cannot answer "who spent it", and
+-- answering that is most of the point.
+create table if not exists public.room_ai_usage (
+  id uuid primary key default gen_random_uuid(),
+  room_id text not null references public.rooms(room_id) on delete cascade,
+  author_token_hash text not null check (author_token_hash ~ '^[0-9a-f]{64}$'),
+  -- Which model answered, so the host can see which part of the panel is actually used.
+  model text not null check (length(model) between 1 and 200),
+  created_at timestamptz not null default now()
+);
+
+create index if not exists room_ai_usage_room_created_idx
+  on public.room_ai_usage(room_id, created_at desc);
 
 create table if not exists public.room_ideas (
   id uuid primary key default gen_random_uuid(),
@@ -257,6 +562,7 @@ grant execute on function public.room_is_open(text) to anon, authenticated, serv
 alter table public.rooms enable row level security;
 alter table public.room_members enable row level security;
 alter table public.room_messages enable row level security;
+alter table public.room_ai_usage enable row level security;
 alter table public.room_ideas enable row level security;
 alter table public.room_votes enable row level security;
 -- Not a room table, so it is not on the member-token path: an account's own credential is
@@ -269,6 +575,10 @@ alter table public.host_ai_keys enable row level security;
 grant select, insert, update, delete on public.rooms to authenticated, service_role;
 grant select, insert, update, delete on public.room_members to authenticated, service_role;
 grant select, insert, update, delete on public.room_messages to authenticated, service_role;
+-- Service role only. The write comes from the server after a successful call and the read is
+-- the host's, so granting `authenticated` any verb here would hand a member a table they
+-- have no business reaching.
+grant insert, select on public.room_ai_usage to service_role;
 grant select, insert, update, delete on public.room_ideas to authenticated, service_role;
 grant select, insert, update, delete on public.room_votes to authenticated, service_role;
 
@@ -359,6 +669,21 @@ create policy "host pins messages"
   on public.room_messages for update
   using (public.room_role(room_id) = 'host')
   with check (public.room_role(room_id) = 'host');
+
+-- room_ai_usage ------------------------------------------------------------
+-- The host reads the spend; the server writes it; nobody else does either.
+--
+-- Read is host-only because this is the room's cost record and the host is the one paying. A
+-- `trusted` member invoking the model does not earn a view of the total — that would make the
+-- host's bill legible to the people spending it, which is the opposite of what the trust grant
+-- is for.
+drop policy if exists "host reads own room usage" on public.room_ai_usage;
+create policy "host reads own room usage"
+  on public.room_ai_usage for select
+  using (public.room_role(room_id) = 'host');
+
+-- There is deliberately no insert policy. The only writer is the service role, and a policy it
+-- could not satisfy would exist only to be misread as one.
 
 -- room_ideas and room_votes -------------------------------------------
 drop policy if exists "members read ideas" on public.room_ideas;

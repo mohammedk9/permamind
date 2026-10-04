@@ -6,7 +6,7 @@ import { loadHostKey } from "@/lib/rooms/host-key-store";
 import { checkRateLimit } from "@/lib/ai/rate-limit";
 import type { ChatCompletionMessage } from "@/lib/ai/types";
 import { isValidRoomId, isValidMemberToken } from "@/lib/rooms/access";
-import { resolveAiAccess } from "@/lib/rooms/server";
+import { recordRoomAiUsage, resolveAiAccess } from "@/lib/rooms/server";
 
 export const runtime = "nodejs";
 
@@ -38,21 +38,53 @@ export const runtime = "nodejs";
  * design puts the model behind the host's trust.
  */
 
-const MAX_MESSAGES = 60;
+/**
+ * The largest transcript this route will accept.
+ *
+ * Equal to `ROOM_CONTEXT_MESSAGES` in `lib/rooms/ai-bridge`, and asserted equal in
+ * `__tests__/context-window.test.ts`.
+ *
+ * These were two independent numbers — 60 here, 40 there — with nothing connecting them.
+ * `readMessages` returns a hundred messages, the page sent all of them, and this cap turned
+ * every room past sixty into a 400: "Ask the model" failed outright once a conversation got
+ * long. The bridge's own bound was never applied, because the page does not call the bridge —
+ * it builds the request here. So the two places that decide how much context a question
+ * carries have to agree, and a test now makes them.
+ */
+const MAX_MESSAGES = 40;
 const MAX_QUESTION = 4_000;
 const ROOM_AI_REQUESTS_PER_MINUTE = 10;
 
 function isValidTurn(
   value: unknown,
-): value is { alias: string | null; body: string; isAi: boolean } {
+): value is {
+  alias: string | null;
+  body: string;
+  isAi: boolean;
+  modelLabel?: string | null;
+  modelSpecialty?: string | null;
+} {
   if (!value || typeof value !== "object") return false;
-  const turn = value as { alias?: unknown; body?: unknown; isAi?: unknown };
+  const turn = value as {
+    alias?: unknown;
+    body?: unknown;
+    isAi?: unknown;
+    modelLabel?: unknown;
+    modelSpecialty?: unknown;
+  };
+  // Attribution is optional and, when present, must be a string or null. It is deliberately
+  // *not* required on an `ai` turn: rooms whose host offered no role carry no attribution, and
+  // the prompt builder handles that rather than the request being refused for it.
+  const optionalText = (field: unknown) =>
+    field === undefined || field === null || typeof field === "string";
   return (
     (turn.alias === null || typeof turn.alias === "string") &&
     typeof turn.body === "string" &&
     turn.body.length > 0 &&
     turn.body.length <= MAX_QUESTION &&
-    typeof turn.isAi === "boolean"
+    typeof turn.isAi === "boolean" &&
+    optionalText(turn.modelLabel) &&
+    optionalText(turn.modelSpecialty)
   );
 }
 
@@ -142,24 +174,53 @@ export async function POST(request: Request) {
   // online sees no change until they leave.
   const auth = await resolveKey(request, access);
   if (!auth) {
+    // The two kinds fail differently and must not share a sentence.
+    //
+    // Telling a panel member "the model needs the host's key" would name a key they may not
+    // use and invite them to go and ask the host for it — reintroducing by way of an error
+    // message the exact sharing section 5 exists to prevent. In a panel room the only key that
+    // works is the member's own, so that is what the refusal has to say.
+    const panel = access.roomKind === "panel";
     return Response.json(
       {
-        error:
-          "The model needs the host's key. They are not here and no key is stored for this room.",
-        code: "KEY_REQUIRED",
+        error: panel
+          ? "Ask this room with your own key. This room never spends the host's."
+          : "The model needs the host's key. They are not here and no key is stored for this room.",
+        code: panel ? "PANEL_KEY_REQUIRED" : "KEY_REQUIRED",
       },
       { status: 401 },
     );
   }
 
-  // The model and provider come from the room row, never from the request.
+  // ## Which model answers
   //
-  // The host chose these when they opened the room — which is why `rooms.sql` stores them in
-  // the clear with the comment "the server needs them to pick a model without asking the
-  // host's device for anything". Every member therefore gets the model the host picked, and
-  // a caller-supplied model would let anyone bill the host for a price they never agreed to.
-  const model = access.aiModel?.trim() ?? "";
+  // In a guest room it is the room's own, read from the room row and never from the request.
+  // The host chose it when they opened the room, and a caller-supplied model would let anyone
+  // bill the room for a price the host never agreed to.
+  //
+  // In a panel room it is **the caller's own registration**. Not the room row — that is the
+  // whole difference between the two kinds — and not the request, because a request-supplied
+  // model would let a member spend *their* key on a model *they* did not register, which is
+  // the same abuse with the roles reversed.
+  //
+  // `callerModel` is null when the member registered none, and the proposal is explicit that
+  // this is correct rather than a gap: there is no shared credential to fall back to, and
+  // adding one would undo section 5.
+  const model =
+    access.roomKind === "panel"
+      ? (access.callerModel?.modelId ?? "")
+      : (access.aiModel?.trim() ?? "");
+
   if (!model || model.length > 200 || !isValidModelId(model)) {
+    if (access.roomKind === "panel" && !access.callerModel) {
+      return Response.json(
+        {
+          error: "Bring a model to ask this room. You have not registered one.",
+          code: "PANEL_MODEL_REQUIRED",
+        },
+        { status: 403 },
+      );
+    }
     return Response.json({ error: "This room has no usable model configured" }, { status: 400 });
   }
 
@@ -170,6 +231,7 @@ export async function POST(request: Request) {
   const body = (await request.json().catch(() => null)) as {
     messages?: unknown;
     question?: unknown;
+    specialty?: unknown;
   } | null;
 
   const question = typeof body?.question === "string" ? body.question.trim() : "";
@@ -180,6 +242,21 @@ export async function POST(request: Request) {
   if (messages.length > MAX_MESSAGES || !messages.every(isValidTurn)) {
     return Response.json({ error: "The room transcript is not valid" }, { status: 400 });
   }
+
+  // The role this question is asked under, if the room offers any.
+  //
+  // A role the host did not offer is dropped rather than refused. Refusing would make a room
+  // with a stale client unable to ask anything at all, and a role nobody offered carries no
+  // promise that the question is refused — it only fails to be attributed, which is the
+  // honest outcome. The room row stays the authority: this never invents a role.
+  //
+  // In a panel room the answer is already settled: the caller registered a model *with* a
+  // role, and asking under a different one would let a member answer as the critic while
+  // being billed as the marketer. The registration is the authority there.
+  const acceptedSpecialty =
+    access.roomKind === "panel" && access.callerModel
+      ? access.callerModel.specialty
+      : resolveSpecialty(body?.specialty, access.aiSpecialties);
 
   // Tighter than the private chat's limiter, because here every call is the host's money
   // and a member can make several in a row.
@@ -218,19 +295,64 @@ export async function POST(request: Request) {
     if (!answer) {
       return Response.json({ error: "The model did not return an answer" }, { status: 502 });
     }
+
+    // Recorded here, after the provider answered, so a failed call is not counted as though it
+    // had cost the host something. This is what makes the host's spend panel possible at all:
+    // without it a `trusted` member can spend the host's key up to the rate limit above and the
+    // host has no way to notice.
+    //
+    // Awaited rather than fire-and-forget, and it never throws. Returning before the write lands
+    // would also be fine, but awaiting keeps the ordering predictable when a host opens the
+    // panel straight after asking a question.
+    await recordRoomAiUsage({ roomId, memberToken, model });
+
     // The answer goes to the caller, who encrypts it into the room like any other message.
     // This route never writes room content anywhere.
-    return Response.json({ answer, role: access.role });
+    //
+    // `modelLabel` is sent back so the caller can attribute the row it is about to write. It
+    // is not a secret — it is the room's own model, already named on the room row — but
+    // deriving it here rather than in the browser keeps the prompt and the attribution from
+    // being able to disagree about which model answered.
+    return Response.json({
+      answer,
+      role: access.role,
+      modelLabel: model,
+      modelSpecialty: acceptedSpecialty,
+    });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Failed to reach the provider";
     return Response.json({ error: sanitizeUpstreamError(message) }, { status: 500 });
   }
 }
 
+/**
+ * Returns the requested role only when the host actually offers it.
+ *
+ * Matching is exact rather than case-insensitive: the list is rendered as a fixed control,
+ * so a member sends back one of the strings the server itself sent, and a near-miss is a
+ * stale client rather than an attempt to invent a role.
+ */
+function resolveSpecialty(requested: unknown, offered: string[] | null): string | null {
+  if (typeof requested !== "string") return null;
+  const trimmed = requested.trim();
+  if (!trimmed || trimmed.length > 60) return null;
+  if (!Array.isArray(offered) || offered.length === 0) return null;
+  return offered.includes(trimmed) ? trimmed : null;
+}
+
 interface RoomTurn {
   alias: string | null;
   body: string;
   isAi: boolean;
+  /**
+   * Attribution on an `ai` turn. Carried so the prompt can name the model the room is
+   * already talking to, and so a room with several models reads as several speakers.
+   *
+   * Ignored on a human turn: a member's message body is never promoted to an attribution,
+   * which is what would let one member write in a model's voice.
+   */
+  modelLabel?: string | null;
+  modelSpecialty?: string | null;
 }
 
 /**
@@ -253,13 +375,33 @@ interface RoomTurn {
  */
 async function resolveKey(
   request: Request,
-  access: { keyMode: string | null; roomOwnerId: string | null },
+  access: {
+    keyMode: string | null;
+    roomOwnerId: string | null;
+    roomKind: "guest" | "panel";
+    callerModel: { modelId: string } | null;
+  },
 ): Promise<ReturnType<typeof resolveRequestAuth> | null> {
   if (request.headers.get(HEADER_OPENROUTER_KEY)?.trim()) {
     // Throws when the header is present but unusable — an over-long key, or a custom
     // provider with no URL. That is a real client error and is surfaced as one, not
     // swallowed into "no key" and turned into a misleading 401.
     return resolveRequestAuth(request);
+  }
+
+  // ## A panel room has no stored key to fall back to
+  //
+  // This is section 5 of `panel-rooms-proposal.md` made executable:
+  //
+  // > No one spends someone else's key. Whoever invokes a model invokes it with their own.
+  //
+  // A guest room's host may have chosen Option B, which stores their key so the room answers
+  // while they are away. In a panel room that key would be the host's, and every member
+  // without one of their own would silently be spending it — which is the exact cost surface
+  // the panel kind exists to remove. So the stored-key branch below is unreachable here, and
+  // adding a reach for it later would break the rule rather than extend the feature.
+  if (access.roomKind === "panel") {
+    return null;
   }
 
   if (access.keyMode !== "server" || !access.roomOwnerId) return null;
@@ -310,10 +452,24 @@ function buildPrompt(
         "Do not invent facts about the participants, the company, or anything outside this conversation.",
       ].join(" "),
     },
-    ...turns.map((turn): ChatCompletionMessage => ({
-      role: turn.isAi ? "assistant" : "user",
-      content: `${who(turn)}: ${turn.body.trim().slice(0, MAX_QUESTION)}`,
-    })),
+    ...turns.map((turn): ChatCompletionMessage => {
+      const body = turn.body.trim().slice(0, MAX_QUESTION);
+      if (turn.isAi) {
+        // The model's own answers keep the assistant role and drop the participant name.
+        //
+        // This was a real defect: the mapping below labelled every turn "Name: body", and an
+        // `ai` turn carries no name, so the model read its own earlier answers as something a
+        // participant said. The browser bridge already got this right; this route had not
+        // caught up.
+        const label = (turn.modelLabel ?? "").trim().slice(0, 40);
+        const specialty = (turn.modelSpecialty ?? "").trim().slice(0, 40);
+        return {
+          role: "assistant",
+          content: label ? `[${label}${specialty ? ` — ${specialty}` : ""}]\n${body}` : body,
+        };
+      }
+      return { role: "user", content: `${who(turn)}: ${body}` };
+    }),
     { role: "user", content: question },
   ];
 }
