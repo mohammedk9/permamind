@@ -49,4 +49,41 @@ export function recordUpload(userId: string, bytes: number, now = Date.now()): v
 
 export function resetUploadProtection(): void { usageByUser.clear(); }
 
+/**
+ * Reads a request body while enforcing a byte ceiling.
+ *
+ * Lives here rather than in the route file because Next.js validates every
+ * route module and rejects any export that is not a route handler. Exporting
+ * this helper from the route made `next build` fail with "Property
+ * 'readBodyWithLimit' is incompatible with index signature", which meant the
+ * production build could not be produced at all.
+ *
+ * Returning null as soon as the ceiling is passed is the point: the stream is
+ * cancelled rather than buffered, so an oversized upload cannot be used to
+ * exhaust memory before the size check runs.
+ */
+export async function readBodyWithLimit(request: Request, limit: number): Promise<string | null> {
+  if (!request.body) return "";
+  const reader = request.body.getReader();
+  const decoder = new TextDecoder();
+  let received = 0;
+  let body = "";
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      received += value.byteLength;
+      if (received > limit) {
+        await reader.cancel();
+        return null;
+      }
+      body += decoder.decode(value, { stream: true });
+    }
+    body += decoder.decode();
+    return body;
+  } finally {
+    reader.releaseLock();
+  }
+}
+
 export { MAX_UPLOAD_SIZE_BYTES };

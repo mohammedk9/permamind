@@ -2,11 +2,25 @@ import type { ChatCompletionMessage } from "@/lib/ai/types";
 import { dominantScript } from "@/lib/i18n/arabic-normalize";
 import type { Conversation } from "@/types/chat";
 import type { MemoryRecord, RetrievedMemory } from "@/types/memory";
-import { formatConversationTime } from "@/lib/format/date";
 
 const MAX_CONTEXT_CHARS = 1600;
 const MAX_MEMORY_EXCERPT_CHARS = 420;
 const MAX_STRUCTURED_CHARS = 1400;
+
+/**
+ * Absolute date for a stored memory.
+ *
+ * The relative formatter (`formatConversationTime`) returns "5m ago", which is
+ * useless to a model that has to decide whether two memories describe the same
+ * moment. It also silently changes meaning as the conversation ages: a memory
+ * written today reads "5m ago" now and "3d ago" next week, so the prompt the
+ * model sees is not stable for the same stored record.
+ */
+function formatMemoryDate(value: Date | string): string {
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return "unknown date";
+  return date.toISOString().slice(0, 10);
+}
 
 /**
  * Every system prompt in this project is written in English. Without an
@@ -33,7 +47,7 @@ export function replyLanguageInstruction(messages: ChatCompletionMessage[]): str
 }
 
 function formatMemoryBlock(memory: RetrievedMemory, index: number): string {
-  const when = formatConversationTime(memory.updatedAt);
+  const when = formatMemoryDate(memory.updatedAt);
   const source =
     memory.source === "summary"
       ? "summary"
@@ -81,7 +95,7 @@ function formatStructuredMemory(records: MemoryRecord[]): string {
   const lines: string[] = [];
   let total = 0;
   for (const record of active) {
-    const when = formatConversationTime(new Date(record.updatedAt));
+    const when = formatMemoryDate(record.updatedAt);
     const line = `- [${record.pinned ? "pinned " : ""}${record.kind}, ${record.confidence} confidence, source: "${record.conversationTitle}", ${when}${record.supersededBy ? `, superseded by ${record.supersededBy}` : ""}] ${record.text}`;
     if (total + line.length > MAX_STRUCTURED_CHARS) break;
     lines.push(line);

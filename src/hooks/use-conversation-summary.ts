@@ -16,10 +16,27 @@ import { mergeProjectFromConversations } from "@/lib/projects/context";
 
 const DEBOUNCE_MS = 2000;
 
+/**
+ * `/api/summarize` rejects anything above 100 messages. The summary request is
+ * the one that feeds the memory ledger, so an over-long history did not merely
+ * fail to summarise: it stopped new facts and decisions from ever being
+ * extracted. `formatConversationForSummary` already trims to its own much
+ * smaller window, but the request is validated before that runs.
+ */
+const API_MESSAGE_LIMIT = 100;
+
+/** Keeps the newest messages, which is what the summary describes. */
+function trimToApiLimit<T extends { content: string }>(messages: T[]): T[] {
+  if (messages.length <= API_MESSAGE_LIMIT) return messages;
+  return messages.slice(-API_MESSAGE_LIMIT);
+}
+
 function toApiMessages(messages: Message[]) {
-  return messages
-    .filter((m) => !m.isStreaming && m.content.trim())
-    .map((m) => ({ role: m.role, content: m.content }));
+  return trimToApiLimit(
+    messages
+      .filter((m) => !m.isStreaming && m.content.trim())
+      .map((m) => ({ role: m.role, content: m.content })),
+  );
 }
 
 export function useConversationSummary(

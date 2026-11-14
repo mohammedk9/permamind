@@ -7,7 +7,13 @@
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-sans);
+  /* Was `var(--font-sans)`, which is a circular reference: the property pointed
+     at itself, which CSS invalidates, so `font-family` resolved to nothing and
+     every surface fell back to the browser default. The Latin face is Geist
+     (loaded in `layout.tsx`); the Arabic face is Noto Kufi Arabic, listed second
+     so Latin text still resolves to Geist and Arabic resolves to a real Arabic
+     typeface instead of Arial. */
+  --font-sans: var(--font-geist-sans), var(--font-arabic-sans), ui-sans-serif, system-ui, sans-serif;
   --font-mono: var(--font-geist-mono);
   --font-heading: var(--font-sans);
   --color-sidebar-ring: var(--sidebar-ring);
@@ -225,6 +231,35 @@
   }
   :focus-visible {
     @apply outline-2 outline-offset-2 outline-ring;
+  }
+
+  /* ------------------------------------------------------------------ */
+  /*  Arabic typography                                                  */
+  /* ------------------------------------------------------------------ */
+  /* `tracking-tight` and `tracking-tighter` apply a negative letter-spacing
+     that is correct for Latin, where letters are separate. Arabic is a
+     connected script: pulling the letters together crushes the joins and the
+     headline reads as a squeezed, malformed block. Arabic therefore gets
+     normal spacing at every heading size, and the `letter-spacing` utility
+     itself is reset so any future `tracking-*` on an Arabic element cannot
+     reintroduce the same fault. */
+  :lang(ar) .tracking-tight,
+  :lang(ar) .tracking-tighter,
+  :lang(ar) [class*="tracking-"] {
+    letter-spacing: normal;
+  }
+
+  /* Arabic needs slightly more line height than Latin at the same size: its
+     ascenders and descenders are taller, so a Latin-tuned `leading-*` clips
+     diacritics and makes dense paragraphs hard to read. */
+  :lang(ar) {
+    line-height: 1.75;
+  }
+
+  /* Headings are the one place a tighter rhythm is wanted, so the paragraph
+     rule above must not leak into them. */
+  :lang(ar) :is(h1, h2, h3, h4, h5, h6) {
+    line-height: 1.35;
   }
 }
 

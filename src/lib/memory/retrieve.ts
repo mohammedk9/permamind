@@ -346,11 +346,15 @@ export function selectMemoriesByScore(
   const seen = new Set<string>();
   let used = 0;
   for (const memory of [...memories].sort((a, b) => b.score - a.score)) {
-    if (seen.has(memory.conversationId) && !memory.recordId) continue;
+    // Skip when this conversation already contributed a memory — but a record
+    // from the ledger is independent of the conversation it came from, so two
+    // records from the same chat are both eligible. Only the conversation-level
+    // deduplication applies to plain message/summary hits.
+    if (!memory.recordId && seen.has(memory.conversationId)) continue;
     const tokens = estimateMemoryTokens(memory);
     if (selected.length > 0 && used + tokens > tokenBudget) continue;
     selected.push(memory);
-    seen.add(memory.conversationId);
+    if (!memory.recordId) seen.add(memory.conversationId);
     used += tokens;
     if (selected.length >= maxMemories) break;
   }
@@ -519,8 +523,14 @@ export function retrieveRelevantMemories(
 
     for (const message of recentMessages) {
       const overlap = wordOverlapScore(queryTokens, message.content, q);
+      // A recall question with no keywords left ("ماذا قلت سابقا؟" strips to
+      // the empty string) has nothing to match against, so every message in
+      // every conversation scored the same and `selectMemoriesByScore` kept
+      // only the most recent ones. The conversation's own recency breaks the
+      // tie, so an older conversation still reaches the context when the user
+      // asks what was said earlier.
       const score = previousConversationQuery && queryTokens.length === 0
-        ? Math.max(recency * 0.9, MIN_SCORE)
+        ? Math.max(recency * 0.9, MIN_SCORE) * (1 + recencyBoost(conversation.updatedAt) * 0.1)
         : overlap * 1.0 + bm25Score * 1.3 + recency * 0.9;
       lexicalScores.set(conversation.id, Math.max(lexicalScores.get(conversation.id) ?? 0, score));
 
@@ -583,7 +593,13 @@ export function retrieveRelevantMemories(
   }
 
   const ranked = selectMemoriesByScore(results);
-  if (ranked.length > 0 || previousConversationQuery) return mergeSemanticMemories(ranked, query, conversations, records, semanticDocuments);
+  // The decision flag must be resolved before the first merge, not only before
+  // the second one. The first call is the one that returns whenever anything
+  // matched lexically, which is the common case — passing `false` here dropped
+  // every pinned and decision memory from the reply exactly when the user was
+  // asking about a decision.
+  const wantsDecision = previousConversationQuery || isDecisionQuery(q);
+  if (ranked.length > 0 || previousConversationQuery) return mergeSemanticMemories(ranked, query, conversations, records, semanticDocuments, wantsDecision);
 
   if (results.length === 0 && !previousConversationQuery) {
     const recentWithSummary = conversations
@@ -610,7 +626,7 @@ export function retrieveRelevantMemories(
     }
   }
 
-  return mergeSemanticMemories(selectMemoriesByScore(results), query, conversations, records, semanticDocuments, previousConversationQuery || isDecisionQuery(q));
+  return mergeSemanticMemories(selectMemoriesByScore(results), query, conversations, records, semanticDocuments, wantsDecision);
 }
 
 const SEMANTIC_SCORE = 0.22;

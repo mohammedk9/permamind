@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { readBodyWithLimit } from "../upload/route";
+import { readBodyWithLimit } from "@/lib/arweave/upload-protection";
 
 describe("snapshot upload body limit", () => {
   it("cancels the stream as soon as the byte limit is exceeded", async () => {

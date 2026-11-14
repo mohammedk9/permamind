@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import type { SnapshotMeta } from "@/lib/arweave/snapshot-types";
 import { buildTags, createTransaction, uploadTransaction } from "@/lib/arweave/arweave-client";
 import { MAX_UPLOAD_SIZE_BYTES } from "@/lib/arweave/upload-protection";
-import { checkStorage, checkUploadRate, recordUpload } from "@/lib/arweave/upload-protection";
+import { checkStorage, checkUploadRate, readBodyWithLimit, recordUpload } from "@/lib/arweave/upload-protection";
 import { requireUser } from "@/lib/supabase/server";
 
 /** Uploads an encrypted snapshot using the application-owned Arweave wallet. */
@@ -61,29 +61,5 @@ export async function POST(request: Request) {
   } catch (error) {
     const message = error instanceof Error ? error.message : "Snapshot upload failed";
     return NextResponse.json({ error: message }, { status: 500 });
-  }
-}
-
-export async function readBodyWithLimit(request: Request, limit: number): Promise<string | null> {
-  if (!request.body) return "";
-  const reader = request.body.getReader();
-  const decoder = new TextDecoder();
-  let received = 0;
-  let body = "";
-  try {
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      received += value.byteLength;
-      if (received > limit) {
-        await reader.cancel();
-        return null;
-      }
-      body += decoder.decode(value, { stream: true });
-    }
-    body += decoder.decode();
-    return body;
-  } finally {
-    reader.releaseLock();
   }
 }

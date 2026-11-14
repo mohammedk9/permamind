@@ -52,13 +52,32 @@ const SIDEBAR_UTILITY_TRIGGER_CLASS = "w-full justify-start gap-2 rounded-lg bor
    one constant would force a shared border treatment on both. */
 const SIDEBAR_THEME_TRIGGER_CLASS = "w-full justify-start gap-2 rounded-lg px-3 py-2 text-xs font-medium text-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-2 focus-visible:ring-sidebar-ring/50";
 
+/**
+ * The API rejects a request carrying more than 100 messages, and rejects an
+ * empty content string. The client sent the entire history untrimmed, so a
+ * conversation crossing 100 messages failed on every send with "Messages are
+ * required" — the reply button stopped working entirely — and the summary
+ * request failed with it, which stopped the memory ledger from receiving any
+ * new fact or decision. Keeping the newest messages is correct: the model
+ * answers the latest turn.
+ */
+const API_MESSAGE_LIMIT = 100;
+const API_CONTENT_LIMIT = 20_000;
+
+/** Keeps the newest messages, because the model answers the latest turn. */
+export function trimToApiLimit<T extends { content: string }>(messages: T[]): T[] {
+  if (messages.length <= API_MESSAGE_LIMIT) return messages;
+  return messages.slice(-API_MESSAGE_LIMIT);
+}
 function toApiMessages(messages: Message[]): ChatCompletionMessage[] {
-  return messages
-    .filter((m) => !m.isStreaming && m.content.length > 0)
-    .map((m) => ({
-      role: m.role,
-      content: m.content,
-    }));
+  return trimToApiLimit(
+    messages
+      .filter((m) => !m.isStreaming && m.content.trim().length > 0)
+      .map((m) => ({
+        role: m.role,
+        content: m.content.slice(0, API_CONTENT_LIMIT),
+      })),
+  );
 }
 
 export function ChatApp() {
@@ -579,7 +598,6 @@ export function ChatApp() {
       recordChat,
       recordMemoryRetrieval,
       sendMessage,
-      mode,
       webSearchEnabled,
       snapshot,
       updateConversation,
@@ -587,6 +605,7 @@ export function ChatApp() {
       activeProjectId,
       semanticVectors,
       provider,
+      searchProvider,
     ]
   );
 

@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import { Geist, Geist_Mono, Noto_Kufi_Arabic } from "next/font/google";
 
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { APP_DESCRIPTION, APP_NAME } from "@/lib/constants";
@@ -15,6 +15,24 @@ const geistSans = Geist({
 const geistMono = Geist_Mono({
   variable: "--font-geist-mono",
   subsets: ["latin"],
+});
+
+/**
+ * Geist ships no Arabic glyphs at all, so an Arabic page was rendering in
+ * whatever Arabic face the operating system happened to provide — Arial or
+ * Calibri on Windows, which is why the Arabic hero looked heavier and wider than
+ * the English one at the same declared size. Loading a real Arabic face makes
+ * the two scripts visually comparable, and listing it after Geist in
+ * `--font-sans` means Latin text still resolves to Geist unchanged.
+ *
+ * `display: "swap"` matches Geist: text paints immediately in the fallback
+ * rather than staying invisible while the font downloads.
+ */
+const notoKufiArabic = Noto_Kufi_Arabic({
+  variable: "--font-arabic-sans",
+  subsets: ["arabic", "latin"],
+  weight: ["400", "500", "600", "700"],
+  display: "swap",
 });
 
 const APP_URL =
@@ -132,7 +150,7 @@ export default function RootLayout({
         <script dangerouslySetInnerHTML={{ __html: THEME_BOOTSTRAP }} />
       </head>
       <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased`}
+        className={`${geistSans.variable} ${geistMono.variable} ${notoKufiArabic.variable} antialiased`}
       >
         <TooltipProvider>
           <ServiceWorkerRegistration />
