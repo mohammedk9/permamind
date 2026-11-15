@@ -54,6 +54,14 @@ export interface Conversation {
   projectId?: string;
   /** Explicit user choice to share this conversation summary with Supabase. */
   syncToCloud?: boolean;
+  /**
+   * Explicit, separate choice to let a connected MCP client read this summary.
+   *
+   * Kept distinct from `syncToCloud` on purpose: syncing ciphertext to the
+   * server is not the same as handing the plaintext to another application, and
+   * conflating the two is how a zero-knowledge store quietly stops being one.
+   */
+  mcpAllowed?: boolean;
   /** Previous conversations explicitly chosen as the foundation of this chat. */
   linkedConversationIds?: string[];
 }

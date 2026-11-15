@@ -42,6 +42,39 @@ describe("cloud summary payload", () => {
     await expect(uploadConversationSummary(conversation)).resolves.toBe("uploaded");
   });
 
+  it("omits the plaintext summary unless MCP access is explicit", async () => {
+    const bodies: string[] = [];
+    vi.stubGlobal("fetch", vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      const rawBody = String(init?.body);
+      bodies.push(rawBody);
+      return new Response(JSON.stringify({ ok: true }), { status: 200 });
+    }));
+
+    // No `mcpAllowed`: the row must carry ciphertext and nothing readable.
+    await uploadConversationSummary(conversation);
+
+    const body = JSON.parse(bodies[0]) as Record<string, unknown>;
+    expect(body.mcpAllowed).toBe(false);
+    expect(body).not.toHaveProperty("summary");
+    expect(body).not.toHaveProperty("title");
+    // The encrypted payload still contains the summary, so a restore is lossless.
+    expect(bodies[0]).not.toContain("Private summary");
+  });
+
+  it("sends plaintext summary fields only after an explicit MCP opt-in", async () => {
+    let received: Record<string, unknown> | null = null;
+    vi.stubGlobal("fetch", vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      received = JSON.parse(String(init?.body)) as Record<string, unknown>;
+      return new Response(JSON.stringify({ ok: true }), { status: 200 });
+    }));
+
+    await uploadConversationSummary({ ...conversation, mcpAllowed: true });
+
+    expect(received).not.toBeNull();
+    expect(received!.mcpAllowed).toBe(true);
+    expect(received!.summary).toBe("Private summary");
+  });
+
   it("deletes only the selected cloud summary", async () => {
     const { deleteConversationSummary } = await import("./sync-client");
     vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {

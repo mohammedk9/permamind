@@ -71,6 +71,14 @@ export async function PUT(request: Request) {
   if (existing.error) return NextResponse.json({ error: "Could not check summary" }, { status: 500 });
   if (existing.data?.content_hash === body.contentHash) return new Response(null, { status: 304 });
 
+  // The row is ciphertext-only unless the caller explicitly opted this
+  // conversation into MCP read access. Accepting plaintext summary fields
+  // unconditionally is what made "the server cannot read your data" untrue:
+  // any client, or a future version of this one, could have written readable
+  // text into the same row. Now the default write path stores nulls, and the
+  // only way to populate them is the explicit `mcpAllowed` flag below.
+  const shareWithMcp = body.mcpAllowed === true;
+
   const { data, error } = await supabase.from("cloud_conversation_summaries").upsert({
     user_id: user.id,
     conversation_id: body.conversationId,
@@ -79,11 +87,11 @@ export async function PUT(request: Request) {
     content_hash: body.contentHash,
     source_created_at: body.sourceCreatedAt,
     source_updated_at: body.sourceUpdatedAt,
-    title: typeof body.title === "string" ? body.title.slice(0, 500) : null,
-    summary: typeof body.summary === "string" ? body.summary.slice(0, 50_000) : null,
-    topics: Array.isArray(body.topics) ? body.topics.filter((item): item is string => typeof item === "string").slice(0, 100) : [],
-    tags: Array.isArray(body.tags) ? body.tags.filter((item): item is string => typeof item === "string").slice(0, 100) : [],
-    mcp_allowed: body.mcpAllowed === true,
+    title: shareWithMcp && typeof body.title === "string" ? body.title.slice(0, 500) : null,
+    summary: shareWithMcp && typeof body.summary === "string" ? body.summary.slice(0, 50_000) : null,
+    topics: shareWithMcp && Array.isArray(body.topics) ? body.topics.filter((item): item is string => typeof item === "string").slice(0, 100) : [],
+    tags: shareWithMcp && Array.isArray(body.tags) ? body.tags.filter((item): item is string => typeof item === "string").slice(0, 100) : [],
+    mcp_allowed: shareWithMcp,
     updated_at: new Date().toISOString(),
   }, { onConflict: "user_id,conversation_id" }).select("conversation_id,content_hash,updated_at").single();
   if (error) return NextResponse.json({ error: "Could not save conversation summary" }, { status: 500 });

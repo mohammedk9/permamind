@@ -1,6 +1,6 @@
 # PermaMind
 
-PermaMind is a privacy-focused AI memory workspace. Conversations stay in the browser, relevant memories are retrieved as context, and long-term backups are compressed and encrypted before they reach Arweave.
+PermaMind is a privacy-focused AI memory workspace. Conversations stay in the browser (IndexedDB, so the 5 MB localStorage ceiling no longer applies), relevant memories are retrieved as context, and long-term backups are compressed and encrypted before they reach Arweave.
 
 > **Status:** usable in local development. Production still requires Supabase SQL, authentication, secrets, rate limits, payment configuration, and a scheduled upload worker.
 
@@ -326,6 +326,8 @@ npm run build
 - Never commit `.env.local`, API keys, service-role keys, wallet JWKs, or database credentials.
 - Rotate any secret that appears in a terminal, screenshot, chat, or Git history.
 - Snapshot plaintext is compressed and encrypted in the browser. Arweave receives ciphertext, and the passphrase is not uploaded.
+- Cloud summaries and the single-blob sync documents are encrypted in the browser too. The server stores ciphertext it cannot read, and the plaintext summary columns are written only when a conversation is explicitly marked `mcpAllowed` for the MCP read path.
+- Chat messages and the context needed for a reply are sent in plaintext to the AI provider you configured. That is inherent to asking a hosted model for an answer; only backups and cloud sync are zero-knowledge.
 - An exported archive never contains the API key. It lives in `sessionStorage` and is not part of any localStorage payload, so it cannot travel inside a backup.
 - Restore and import both check metadata, hashes, dates, and payload limits, then require explicit confirmation before replacing local data.
 - Queue status changes and purchase confirmation are reserved for trusted server code.
@@ -337,8 +339,9 @@ npm run build
 
 ## Known limitations
 
-- `localStorage` is small (5 MB in Chromium, 10 MB in Firefox) and every conversation, the memory ledger, and the embedding index live there. Storage health warns before a write fails; migrating to IndexedDB is not done yet.
+- `localStorage` is no longer the ceiling for the big documents: conversations, the memory ledger, the embedding index, and the graph live in IndexedDB, whose quota is a share of free disk space. Small settings, the snapshot registry, and the upload queue still use localStorage, and the storage meter reports the origin-wide figure from `navigator.storage.estimate()` when the browser exposes it.
 - An Arweave upload is permanent. Losing the passphrase means that copy cannot be decrypted by anyone, including you.
+- The local documents are stored **unencrypted** in the browser profile (IndexedDB). The zero-knowledge guarantee covers what leaves the device — Arweave backups, cloud summaries, and the sync blobs — not the disk the browser writes to. Full-disk or profile encryption is the user's responsibility.
 - Search providers are configured server-side, so the chat composer can only offer providers that currently have a key. AnySearch's free tier is time-limited rather than permanent.
 - The app renders in English on the server and corrects the language on the client, because the chosen locale lives in `localStorage`.
 - **A panel member's model is not yet invocable by another member.** The picker, the ownership, the consent controls, and the budget columns are in place, and the schema is written, but the AI route does not yet load the *addressed owner's* stored key — so naming another member's model does not yet reach their provider. Until it does, a panel model can be registered, configured, and seen, but should not be treated as addressable in production.
@@ -353,7 +356,7 @@ npm run build
 - Clearer backup discovery and recovery.
 - Expanded provider and model policy controls.
 - Making a panel member's model genuinely addressable: load the addressed owner's key, enforce consent and both ceilings atomically, and record usage against the owner rather than the caller.
-- Migrating local storage to IndexedDB to escape the localStorage quota.
+- Migrating the remaining localStorage stores (snapshot registry, upload queue, dedup) to IndexedDB.
 - A 250-message room cap, a host-configurable AI rate limit, room session context and summary, and idea-to-task creation.
 - Deployment monitoring, audit visibility, and operational runbooks.
 

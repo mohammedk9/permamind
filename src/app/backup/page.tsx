@@ -29,6 +29,7 @@ import { loadStoragePreferences, saveStoragePreferences, type StoragePreferences
 import { setSyncPassphrase } from "@/lib/storage/sync-encryption";
 import { buildRecoveryBundle, parseRecoveryBundle } from "@/lib/arweave/recovery-bundle";
 import { mergeConversationsByMessage } from "@/lib/storage/message-merge";
+import { hydrateLocalStores } from "@/lib/storage/hydrate";
 
 const emptyQueue: QueueStatusSummary = { total: 0, pending: 0, uploading: 0, done: 0, failed: 0, lastUploadedAt: null };
 type ArweaveWalletApi = NonNullable<Window["arweaveWallet"]> & {
@@ -150,6 +151,9 @@ export default function BackupPage() {
   useEffect(() => {
     setPolicy(loadStoragePolicy());
     setCloudPreferences(loadStoragePreferences());
+    // The backup center reads the ledger, the registry, and the conversations
+    // directly, so it has to wait for the IndexedDB documents like the chat does.
+    void hydrateLocalStores();
     refresh();
     setBrowserReady(true);
     void syncPurchasedQuota();

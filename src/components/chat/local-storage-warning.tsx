@@ -10,9 +10,9 @@ import { buildConversationExport, conversationExportFileName } from "@/lib/stora
 import { downloadBlob } from "@/lib/storage/download";
 import {
   formatBytes,
-  measureStorageBreakdown,
-  watchLocalStorage,
-  type LocalStorageUsage,
+  measureStorageBreakdownAsync,
+  watchStorage,
+  type StorageUsage,
   type StorageBreakdown,
   type StorageFullDetail,
 } from "@/lib/storage/storage-health";
@@ -32,7 +32,7 @@ import type { Conversation } from "@/types/chat";
 export function LocalStorageWarning({ conversations }: { conversations: Conversation[] }) {
   const { locale } = useLocale();
   const ar = locale === "ar";
-  const [usage, setUsage] = useState<LocalStorageUsage | null>(null);
+  const [usage, setUsage] = useState<StorageUsage | null>(null);
   const [failed, setFailed] = useState<StorageFullDetail | null>(null);
   /**
    * Per-store breakdown. Answering "which store filled my browser?" with data
@@ -50,10 +50,12 @@ export function LocalStorageWarning({ conversations }: { conversations: Conversa
 
   useEffect(
     () =>
-      watchLocalStorage(
+      watchStorage(
         (next) => {
           setUsage(next);
-          setBreakdown(measureStorageBreakdown());
+          // The breakdown includes IndexedDB, which only an async measurement
+          // can see. Refreshing it on every change keeps the panel honest.
+          void measureStorageBreakdownAsync().then(setBreakdown);
         },
         (detail) => setFailed(detail),
       ),

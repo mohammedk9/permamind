@@ -1,8 +1,8 @@
 export const CLOUD_SUMMARY_WARNING_EN =
-  "This conversation summary will be saved in Supabase.\nThe summary may contain private information.\nOnly the summary and the details you selected will be sent.\nThe full conversation text will not be sent by default.\nDo you want to continue?";
+  "This conversation summary will be saved in Supabase.\nThe summary is encrypted in your browser before upload, so the server stores ciphertext it cannot read.\nThe full conversation text is not sent.\nAn MCP client can only read the summary if you enable that separately.\nDo you want to continue?";
 
 export const CLOUD_SUMMARY_WARNING_AR =
-  "سيتم حفظ ملخص هذه المحادثة في Supabase.\nقد يحتوي الملخص على معلومات خاصة.\nسيتم إرسال الملخص والتفاصيل التي اخترتها فقط.\nلن يتم إرسال النص الكامل للمحادثة افتراضيًا.\nهل تريد المتابعة؟";
+  "سيتم حفظ ملخص هذه المحادثة في Supabase.\nيُشفَّر الملخص في متصفحك قبل الرفع، لذا يخزّن الخادم نصاً مشفراً لا يستطيع قراءته.\nلن يتم إرسال النص الكامل للمحادثة.\nلا يستطيع عميل MCP قراءة الملخص إلا إذا فعّلت ذلك بشكل منفصل.\nهل تريد المتابعة؟";
 
 export const CLOUD_SUMMARY_WARNING = CLOUD_SUMMARY_WARNING_EN;
 

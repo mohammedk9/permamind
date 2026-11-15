@@ -25,11 +25,41 @@ describe("durable AI quota", () => {
     if (!result.ok) expect(result.status).toBe(429);
   });
 
-  it("tags the exhausted allowance with a translatable code and the limit", async () => {
+  it("tags the exhausted allowance with the free-quota code, used count, and UTC reset", async () => {
     const rpc = vi.fn().mockResolvedValue({ data: [{ allowed: false, used_count: 10 }], error: null });
     vi.mocked(requireUser).mockResolvedValue({ supabase: { rpc }, user: { id: "user-1" } } as never);
+
     const result = await reserveAiQuota("chat", true);
-    expect(result).toMatchObject({ ok: false, code: "QUOTA_EXCEEDED", limit: 10 });
+
+    expect(result).toMatchObject({ ok: false, status: 429, code: "free_quota_exceeded", limit: 10, used: 10 });
+    if (result.ok || !result.resetAt) throw new Error("expected a reset time");
+
+    const reset = new Date(result.resetAt);
+    expect(Number.isNaN(reset.getTime())).toBe(false);
+    expect(result.resetAt).toBe(reset.toISOString());
+    // The daily counter is keyed on the UTC date, so the reset is UTC midnight.
+    expect(reset.getUTCHours()).toBe(0);
+    expect(reset.getUTCMinutes()).toBe(0);
+    expect(reset.getUTCSeconds()).toBe(0);
+    expect(reset.getUTCMilliseconds()).toBe(0);
+    expect(reset.getTime()).toBeGreaterThan(Date.now());
+  });
+
+  it("reports the used count the RPC returned rather than assuming the limit", async () => {
+    const rpc = vi.fn().mockResolvedValue({ data: [{ allowed: false, used_count: 7 }], error: null });
+    vi.mocked(requireUser).mockResolvedValue({ supabase: { rpc }, user: { id: "user-1" } } as never);
+
+    await expect(reserveAiQuota("chat", true)).resolves.toMatchObject({ ok: false, used: 7, limit: 10 });
+  });
+
+  it("never emits the legacy QUOTA_EXCEEDED code for a spent allowance", async () => {
+    const rpc = vi.fn().mockResolvedValue({ data: [{ allowed: false, used_count: 10 }], error: null });
+    vi.mocked(requireUser).mockResolvedValue({ supabase: { rpc }, user: { id: "user-1" } } as never);
+
+    const result = await reserveAiQuota("chat", true);
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.code).not.toBe("QUOTA_EXCEEDED");
   });
 
   it("tags a missing RPC as an unavailable allowance instead of a spent one", async () => {

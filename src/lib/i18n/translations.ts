@@ -17,7 +17,7 @@ export const translations = {
     providerRail: "Works with the models you already use",
     heroCta: "Create a free account",
     heroSecondary: "See how it works",
-    heroTrust: "Your encryption passphrase never leaves your device. Even we can't read your backups.",
+    heroTrust: "Your passphrase never leaves your device, and backups are encrypted before upload. Chat messages are sent to the AI provider you choose to generate a reply.",
     proofLabel: "Context, brought back",
     proofStatus: "PermaMind memory recall",
     proofQuestion: "What did we decide about the Atlas launch last month?",
@@ -42,7 +42,7 @@ export const translations = {
       },
       {
         title: "Keys never leave the device",
-        description: "Your API key and encryption passphrase stay in the browser. We cannot read the backup.",
+        description: "Your API key and encryption passphrase stay in the browser. Backups are encrypted before upload, so we cannot read them. Chat messages still go to your AI provider to generate a reply.",
       },
       {
         title: "Arweave makes it permanent",
@@ -189,11 +189,11 @@ export const translations = {
     helpTitle: "Help",
     helpDescription: "Need help or want to share feedback? Contact us on X and we will be happy to help.",
     privacyTitle: "Privacy Policy",
-    privacyDescription: "PermaMind stores conversations and settings locally in your browser by default. You control what is encrypted and uploaded to Arweave. Your encryption passphrase never reaches the server or AI provider. Arweave backups are permanent and cannot be deleted, so review your storage policy before uploading.",
+    privacyDescription: "PermaMind keeps conversations and settings in your browser (IndexedDB), and you control what is encrypted and uploaded to Arweave. Your encryption passphrase never reaches the server or the AI provider, and backups are encrypted before upload. Chat messages are sent to the AI provider you choose so it can generate a reply. Arweave backups are permanent and cannot be deleted, so review your storage policy before uploading.",
     privacySections: [
       {
         title: "What we store",
-        body: "Conversations and settings stay in your browser by default. PermaMind does not sell, rent, or use your conversations for marketing.",
+        body: "Conversations, the memory ledger, and the embedding index stay in your browser (IndexedDB, not a 5 MB localStorage budget). When you ask for a reply, the messages and context needed for that reply are sent to the AI provider you configured. PermaMind does not sell, rent, or use your conversations for marketing.",
       },
       {
         title: "Memory you control",
@@ -201,11 +201,11 @@ export const translations = {
       },
       {
         title: "What is sent to the AI provider",
-        body: "Only the messages and context needed to generate a reply are sent. Review what you share before connecting MCP clients such as Claude, Cursor, or Codex.",
+        body: "Only the messages and context needed to generate a reply are sent, and they travel in plaintext to that provider. Backups and cloud summaries are the exception: those are encrypted in the browser first, and the server stores ciphertext it cannot read.",
       },
       {
         title: "Optional backups",
-        body: "Optional backups are encrypted locally before upload. Arweave uploads are permanent and cannot be deleted after confirmation.",
+        body: "Optional backups are encrypted locally before upload. Arweave uploads are permanent and cannot be deleted after confirmation. Losing the passphrase means the backup cannot be decrypted by anyone, including you.",
       },
     ],
     termsTitle: "Terms of Use",
@@ -295,7 +295,7 @@ export const translations = {
     providerRail: "يعمل مع النماذج التي تستخدمها بالفعل",
     heroCta: "أنشئ حساباً مجانياً",
     heroSecondary: "شاهد كيف يعمل",
-    heroTrust: "عبارة تشفيرك لا تغادر جهازك أبدًا. حتى نحن لا نستطيع قراءة نسخك الاحتياطية.",
+    heroTrust: "عبارة تشفيرك لا تغادر جهازك، والنسخ الاحتياطية تُشفَّر قبل الرفع. أما رسائل المحادثة فتُرسل إلى مزود الذكاء الاصطناعي الذي تختاره لتوليد الرد.",
     proofLabel: "سياق يعود إليك",
     proofStatus: "استرجاع ذاكرة PermaMind",
     proofQuestion: "ماذا قررنا بشأن إطلاق مشروع أطلس الشهر الماضي؟",
@@ -320,7 +320,7 @@ export const translations = {
       },
       {
         title: "المفاتيح لا تغادر الجهاز",
-        description: "مفتاحك وعبارة التشفير يبقيان في المتصفح. نحن لا نستطيع قراءة النسخة.",
+        description: "مفتاحك وعبارة التشفير يبقيان في المتصفح. النسخ الاحتياطية تُشفَّر قبل الرفع فلا نستطيع قراءتها، لكن رسائل المحادثة تُرسل إلى مزود الذكاء الاصطناعي لتوليد الرد.",
       },
       {
         title: "Arweave يجعلها دائمة",
@@ -466,11 +466,11 @@ export const translations = {
     helpTitle: "المساعدة",
     helpDescription: "هل تحتاج إلى مساعدة أو ترغب في مشاركة اقتراح؟ تواصل معنا عبر X وسنسعد بمساعدتك.",
     privacyTitle: "سياسة الخصوصية",
-    privacyDescription: "يخزن PermaMind المحادثات والإعدادات محلياً في متصفحك بشكل افتراضي. ذاكرتك قابلة للنقل وتحت تحكمك: يمكنك تصديرها واستعادتها واستخدام مزود ذكاء اصطناعي مختلف. لا يرسل مزود الذكاء الاصطناعي إلا الرسائل والسياق اللازمين لإنشاء الرد. يتم تشفير النسخ الاحتياطية الاختيارية محلياً قبل رفعها، ولا تصل عبارة مرور التشفير إلى الخادم أو مزود الذكاء الاصطناعي. أما الرفعات إلى Arweave فهي دائمة ولا يمكن حذفها.",
+    privacyDescription: "يحتفظ PermaMind بالمحادثات والإعدادات في متصفحك (IndexedDB)، وأنت من يتحكم بما يُشفَّر ويُرفع إلى Arweave. لا تصل عبارة مرور التشفير إلى الخادم أو مزود الذكاء الاصطناعي، والنسخ الاحتياطية تُشفَّر قبل الرفع. تُرسل رسائل المحادثة إلى مزود الذكاء الاصطناعي الذي تختاره ليتمكن من توليد الرد. الرفعات إلى Arweave دائمة ولا يمكن حذفها، لذا راجع سياسة التخزين قبل الرفع.",
     privacySections: [
       {
         title: "ما الذي نخزّنه",
-        body: "تبقى المحادثات والإعدادات في متصفحك بشكل افتراضي. لا نبيع محادثاتك ولا نؤجرها ولا نستخدمها لأغراض تسويقية.",
+        body: "تبقى المحادثات ودفتر الذاكرة وفهرس التضمينات في متصفحك (IndexedDB، لا حد 5 ميغا بايت الخاص بـ localStorage). وعند طلب رد، تُرسل الرسائل والسياق اللازم لذلك الرد إلى مزود الذكاء الاصطناعي الذي أعددته. لا نبيع محادثاتك ولا نؤجرها ولا نستخدمها لأغراض تسويقية.",
       },
       {
         title: "ذاكرة تحت تحكمك",
@@ -478,11 +478,11 @@ export const translations = {
       },
       {
         title: "ما يُرسل إلى مزود الذكاء الاصطناعي",
-        body: "لا يُرسل إلا الرسائل والسياق اللازمان لإنشاء الرد. راجع ما تشاركه قبل ربط عملاء MCP مثل Claude أو Cursor أو Codex.",
+        body: "لا يُرسل إلا الرسائل والسياق اللازمان لإنشاء الرد، وتصل إليه كنص صريح. أما النسخ الاحتياطية والملخصات السحابية فتُشفَّر في المتصفح أولاً، ويخزّن الخادم نصاً مشفراً لا يستطيع قراءته.",
       },
       {
         title: "النسخ الاحتياطية الاختيارية",
-        body: "تُشفَّر النسخ الاحتياطية الاختيارية محلياً قبل رفعها. الرفعات إلى Arweave دائمة ولا يمكن حذفها بعد تأكيدها.",
+        body: "تُشفَّر النسخ الاحتياطية الاختيارية محلياً قبل رفعها. الرفعات إلى Arweave دائمة ولا يمكن حذفها بعد تأكيدها. وفقدان عبارة المرور يعني أن أحداً لن يستطيع فك تشفير النسخة، بما في ذلك أنت.",
       },
     ],
     termsTitle: "سياسة الاستخدام",

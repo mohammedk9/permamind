@@ -10,7 +10,10 @@ import type { Locale } from "@/lib/i18n/translations";
  */
 export const ERROR_CODES = [
   "QUOTA_UNAVAILABLE",
+  // Legacy wire code. Kept only so an older client that still sends it keeps a
+  // translated message. New server code emits `free_quota_exceeded` below.
   "QUOTA_EXCEEDED",
+  "free_quota_exceeded",
   "SIGNIN_REQUIRED",
   "RATE_LIMITED",
   "STREAM_INTERRUPTED",
@@ -54,6 +57,16 @@ const MESSAGES: Record<ErrorCode, { en: Copy; ar: Copy }> = {
     ar: {
       title: "وصلت إلى حدّك اليومي",
       body: "لقد استخدمت {count} من طلباتك المجانية اليوم. أضف مفتاح API خاص بك من الإعدادات، أو عد غداً.",
+    },
+  },
+  free_quota_exceeded: {
+    en: {
+      title: "You've reached your daily limit",
+      body: "You have used your {count} free messages for today. Add your own API key in Settings, or come back tomorrow.",
+    },
+    ar: {
+      title: "وصلت إلى حدّك اليومي",
+      body: "لقد استخدمت {count} من رسائلك المجانية اليوم. أضف مفتاح API خاص بك من الإعدادات، أو عد غداً.",
     },
   },
   SIGNIN_REQUIRED: {

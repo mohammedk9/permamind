@@ -7,6 +7,7 @@
  */
 
 import { normalizeForMatch } from "@/lib/i18n/arabic-normalize";
+import { createJsonStore } from "@/lib/storage/json-store";
 
 const INDEX_KEY = "permamind:memory-embeddings:v1";
 const KEY_KEY = "permamind:memory-embeddings:key:v1";
@@ -134,13 +135,23 @@ async function decryptVector(entry: StoredVector, key: CryptoKey): Promise<Float
   }
 }
 
+const indexStore = createJsonStore<StoredIndex>({
+  key: INDEX_KEY,
+  fallback: { version: 1, entries: [] },
+  parse: (value) => {
+    if (!value || typeof value !== "object") return null;
+    const parsed = value as Partial<StoredIndex>;
+    return parsed.version === 1 && Array.isArray(parsed.entries) ? { version: 1, entries: parsed.entries } : null;
+  },
+});
+
 function readIndex(): StoredIndex {
-  try {
-    const parsed = JSON.parse(localStorage.getItem(INDEX_KEY) ?? "") as StoredIndex;
-    return parsed.version === 1 && Array.isArray(parsed.entries) ? parsed : { version: 1, entries: [] };
-  } catch {
-    return { version: 1, entries: [] };
-  }
+  return indexStore.load();
+}
+
+/** Loads the embedding index from IndexedDB into the synchronous cache. */
+export function hydrateMemoryEmbeddings(): Promise<void> {
+  return indexStore.hydrate();
 }
 
 /** Refreshes changed documents and removes vectors whose source disappeared. */
@@ -177,7 +188,7 @@ export async function syncMemoryEmbeddings(documents: MemoryEmbeddingDocument[])
   }
   for (const id of cache.keys()) if (!live.has(id)) cache.delete(id);
   const stored: StoredIndex = { version: 1, entries: next.filter((entry) => live.has(entry.id)) };
-  localStorage.setItem(INDEX_KEY, JSON.stringify(stored));
+  indexStore.save(stored);
 }
 
 export async function searchMemoryEmbeddings(query: string, limit = 4): Promise<SemanticMatch[]> {

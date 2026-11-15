@@ -1,6 +1,7 @@
 import type { Conversation, ConversationMetadata, Message, Project } from "@/types/chat";
 
-import { announceStorageFull, persistOrAnnounce } from "./storage-health";
+import { announceStorageFull } from "./storage-health";
+import { createJsonStore } from "./json-store";
 
 const STORAGE_KEY = "permamind:chat:v1";
 
@@ -47,6 +48,7 @@ interface StoredConversation {
   starred?: boolean;
   projectId?: string;
   syncToCloud?: boolean;
+  mcpAllowed?: boolean;
   linkedConversationIds?: string[];
 }
 
@@ -121,6 +123,7 @@ function serializeConversation(conversation: Conversation): StoredConversation {
     starred: conversation.starred,
     projectId: conversation.projectId,
     syncToCloud: conversation.syncToCloud,
+    mcpAllowed: conversation.mcpAllowed,
     linkedConversationIds: conversation.linkedConversationIds?.length
       ? conversation.linkedConversationIds
       : undefined,
@@ -152,37 +155,61 @@ function deserializeConversation(stored: StoredConversation): Conversation {
     starred: stored.starred,
     projectId: stored.projectId,
     syncToCloud: stored.syncToCloud,
+    mcpAllowed: stored.mcpAllowed,
     linkedConversationIds: stored.linkedConversationIds?.filter(
       (id): id is string => typeof id === "string" && id.length > 0 && id !== stored.id,
     ),
   };
 }
 
+/**
+ * The conversation document.
+ *
+ * IndexedDB is the backend in a browser; localStorage remains the fallback for
+ * private modes and for non-browser test environments. Either way the API stays
+ * synchronous, which is what every caller already expects.
+ */
+function parseStoredChatData(value: unknown): StoredChatData | null {
+  if (!value || typeof value !== "object") return null;
+  const data = value as Partial<StoredChatData>;
+  if (data.version !== 1 || !Array.isArray(data.conversations)) return null;
+  return {
+    version: 1,
+    conversations: data.conversations,
+    activeId: typeof data.activeId === "string" ? data.activeId : null,
+    projects: Array.isArray(data.projects) ? data.projects : [],
+  };
+}
+
+const emptyChatData: StoredChatData = { version: 1, conversations: [], activeId: null, projects: [] };
+
+const chatStore = createJsonStore<StoredChatData>({
+  key: STORAGE_KEY,
+  fallback: emptyChatData,
+  parse: parseStoredChatData,
+});
+
+/**
+ * Loads the conversation document from IndexedDB into the synchronous cache.
+ *
+ * Awaited once at startup (see `hydrateLocalStores`). Callers that read before
+ * it resolves still get the legacy localStorage copy, so the first paint is
+ * never empty on a device that already has data.
+ */
+export function hydrateChatData(): Promise<void> {
+  return chatStore.hydrate();
+}
+
 export function loadChatData(): LoadedChatData {
-  if (typeof window === "undefined") {
-    return { conversations: [], activeId: null, projects: [] };
-  }
+  const stored = chatStore.load();
+  const conversations = stored.conversations.map(deserializeConversation);
+  const activeId =
+    stored.activeId && conversations.some((c) => c.id === stored.activeId)
+      ? stored.activeId
+      : conversations[0]?.id ?? null;
 
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return { conversations: [], activeId: null, projects: [] };
-
-    const data = JSON.parse(raw) as StoredChatData;
-    if (data.version !== 1 || !Array.isArray(data.conversations)) {
-      return { conversations: [], activeId: null, projects: [] };
-    }
-
-    const conversations = data.conversations.map(deserializeConversation);
-    const activeId =
-      data.activeId && conversations.some((c) => c.id === data.activeId)
-        ? data.activeId
-        : conversations[0]?.id ?? null;
-
-    const projects = (data.projects ?? []).map((project) => ({ ...project, createdAt: new Date(project.createdAt), updatedAt: new Date(project.updatedAt) }));
-    return { conversations, activeId, projects };
-  } catch {
-    return { conversations: [], activeId: null, projects: [] };
-  }
+  const projects = (stored.projects ?? []).map((project) => ({ ...project, createdAt: new Date(project.createdAt), updatedAt: new Date(project.updatedAt) }));
+  return { conversations, activeId, projects };
 }
 
 /**
@@ -207,10 +234,10 @@ export function saveChatData(
   };
 
   const serialized = JSON.stringify(data);
-  if (persistOrAnnounce(STORAGE_KEY, serialized)) return { ok: true };
+  if (chatStore.save(data)) return { ok: true };
 
-  // persistOrAnnounce already dispatched the event; report the same outcome so
-  // callers and listeners can never disagree about what happened.
+  // A failed write already dispatched STORAGE_FULL_EVENT; report the same
+  // outcome so callers and listeners can never disagree about what happened.
   return { ok: false, reason: "quota", bytes: serialized.length * 2 };
 }
 

@@ -30,6 +30,7 @@ import { createId, truncateTitle } from "@/lib/chat/conversation";
 import { QUICK_COMMANDS, buildQuickCommandReply, localCommandMessages, type QuickCommand } from "@/lib/chat/quick-commands";
 import { getLastSnapshot } from "@/lib/arweave/snapshot-registry";
 import { startProcessor, stopProcessor } from "@/lib/arweave/queue-processor";
+import { hydrateLocalStores } from "@/lib/storage/hydrate";
 import type { ChatCompletionMessage } from "@/lib/ai/types";
 import type { Message, Project } from "@/types/chat";
 import type { MemoryRecord, RetrievedMemory, SearchCitation, SearchProvider } from "@/types/memory";
@@ -118,6 +119,10 @@ export function ChatApp() {
     setStoragePolicy(loadStoragePolicy());
     setSearchProviderState(loadSearchProvider());
     if (!hasCompletedFirstRun()) setShowOnboarding(true);
+    // The large documents live in IndexedDB now. Kick the load off at mount so
+    // the ledger, embeddings, and graph are ready before the first memory
+    // retrieval, without blocking the first paint.
+    void hydrateLocalStores();
   }, []);
 
   const setSearchProvider = useCallback((next: SearchProvider) => {

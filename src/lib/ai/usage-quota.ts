@@ -19,8 +19,15 @@ type Reservation =
       code: ErrorCode;
       /** Quota limit, used by the client for the {count} placeholder. */
       limit?: number;
+      /** How many of the limit were already spent when the request was refused. */
+      used?: number;
+      /** ISO 8601, UTC: when the daily allowance resets. */
+      resetAt?: string;
       retryAfterSeconds?: number;
     };
+
+/** The refusal half of a reservation result, as returned to the route. */
+export type QuotaRejection = Extract<Reservation, { ok: false }>;
 
 /**
  * Free mode spends the shared server key, so its daily allowance must survive
@@ -77,14 +84,20 @@ export async function reserveAiQuota(kind: QuotaKind, freeMode: boolean): Promis
     return { ok: false, status: 503, code: "QUOTA_UNAVAILABLE", error: "The daily allowance is temporarily unavailable." };
   }
 
-  const quota = (Array.isArray(data) ? data[0] : data) as { allowed?: boolean; reservation_id?: unknown } | null | undefined;
+  const quota = (Array.isArray(data) ? data[0] : data) as { allowed?: boolean; used_count?: number; reservation_id?: unknown } | null | undefined;
   if (!quota?.allowed) {
     const noun = kind === "chat" ? "messages" : "summaries";
+    const rawUsed = Number(quota?.used_count);
     return {
       ok: false,
       status: 429,
-      code: "QUOTA_EXCEEDED",
+      // The wire code the client keys its offline card on. `QUOTA_EXCEEDED` is
+      // retained in the error catalogue only for an older client; new code
+      // emits this one and nothing else.
+      code: "free_quota_exceeded",
       limit,
+      used: Number.isFinite(rawUsed) ? rawUsed : limit,
+      resetAt: nextUtcMidnightIso(),
       error: `You have used your ${limit} free ${noun} for today. Add your own API key in Settings, or come back tomorrow.`,
       retryAfterSeconds: secondsUntilUtcMidnight(),
     };
@@ -132,8 +145,24 @@ export async function releaseAiQuota(reservationId: string | undefined): Promise
   }
 }
 
-function secondsUntilUtcMidnight(now = Date.now()): number {
+/**
+ * The next UTC midnight: the boundary the daily allowance resets on.
+ *
+ * The RPC keys usage on `(now() at time zone 'utc')::date`, so this is the same
+ * instant the counter rolls over. Exported so the reset time can be sent to the
+ * client as an ISO string instead of only a relative `Retry-After`.
+ */
+export function nextUtcMidnight(now = Date.now()): Date {
   const next = new Date(now);
   next.setUTCHours(24, 0, 0, 0);
-  return Math.max(1, Math.ceil((next.getTime() - now) / 1000));
+  return next;
+}
+
+/** ISO 8601, UTC, for the next daily-allowance reset. */
+export function nextUtcMidnightIso(now = Date.now()): string {
+  return nextUtcMidnight(now).toISOString();
+}
+
+function secondsUntilUtcMidnight(now = Date.now()): number {
+  return Math.max(1, Math.ceil((nextUtcMidnight(now).getTime() - now) / 1000));
 }

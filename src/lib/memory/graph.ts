@@ -1,4 +1,5 @@
 import type { Conversation } from "@/types/chat";
+import { createJsonStore } from "@/lib/storage/json-store";
 
 export type MemoryGraphNodeType = "conversation" | "entity" | "tag" | "topic";
 export interface MemoryGraphNode { id: string; type: MemoryGraphNodeType; label: string; }
@@ -55,17 +56,29 @@ export function graphConversationNeighbors(graph: MemoryGraph, conversationId: s
   return result;
 }
 
+const graphStore = createJsonStore<MemoryGraph | null>({
+  key: MEMORY_GRAPH_STORAGE_KEY,
+  fallback: null,
+  parse: (value) => {
+    if (!value || typeof value !== "object") return null;
+    const parsed = value as Partial<MemoryGraph>;
+    return parsed.version === 1 && Array.isArray(parsed.nodes) && Array.isArray(parsed.edges)
+      ? { version: 1, nodes: parsed.nodes, edges: parsed.edges }
+      : null;
+  },
+});
+
+/** Loads the graph from IndexedDB into the synchronous cache. */
+export function hydrateMemoryGraph(): Promise<void> {
+  return graphStore.hydrate();
+}
+
 export function loadMemoryGraph(): MemoryGraph | null {
-  if (typeof window === "undefined") return null;
-  try {
-    const parsed = JSON.parse(localStorage.getItem(MEMORY_GRAPH_STORAGE_KEY) ?? "null") as MemoryGraph | null;
-    return parsed?.version === 1 && Array.isArray(parsed.nodes) && Array.isArray(parsed.edges) ? parsed : null;
-  } catch { return null; }
+  return graphStore.load();
 }
 
 export function saveMemoryGraph(graph: MemoryGraph): void {
-  if (typeof window === "undefined") return;
-  try { localStorage.setItem(MEMORY_GRAPH_STORAGE_KEY, JSON.stringify(graph)); } catch { /* unavailable storage */ }
+  graphStore.save(graph);
 }
 
 export function updateMemoryGraph(conversations: Conversation[]): MemoryGraph {

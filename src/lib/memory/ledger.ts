@@ -1,20 +1,30 @@
 import type { Conversation, MemoryDecision, MemoryFact } from "@/types/chat";
 import type { MemoryConfidence, MemoryRecord } from "@/types/memory";
 
-import { persistOrAnnounce } from "@/lib/storage/storage-health";
+import { createJsonStore } from "@/lib/storage/json-store";
 
 export const MEMORY_LEDGER_KEY = "permamind:memory-ledger:v1";
 
 interface StoredLedger { version: 1; records: MemoryRecord[]; }
 
+const ledgerStore = createJsonStore<StoredLedger>({
+  key: MEMORY_LEDGER_KEY,
+  fallback: { version: 1, records: [] },
+  parse: (value) => {
+    if (!value || typeof value !== "object") return null;
+    const parsed = value as Partial<StoredLedger>;
+    if (parsed.version !== 1 || !Array.isArray(parsed.records)) return null;
+    return { version: 1, records: parsed.records.filter(isRecord) };
+  },
+});
+
 function read(): MemoryRecord[] {
-  if (typeof window === "undefined") return [];
-  try {
-    const parsed = JSON.parse(localStorage.getItem(MEMORY_LEDGER_KEY) ?? "") as StoredLedger;
-    return parsed.version === 1 && Array.isArray(parsed.records) ? parsed.records.filter(isRecord) : [];
-  } catch {
-    return [];
-  }
+  return ledgerStore.load().records;
+}
+
+/** Loads the ledger from IndexedDB into the synchronous cache. */
+export function hydrateMemoryLedger(): Promise<void> {
+  return ledgerStore.hydrate();
 }
 
 function isRecord(value: unknown): value is MemoryRecord {
@@ -32,8 +42,7 @@ function isRecord(value: unknown): value is MemoryRecord {
  * entire record set on every single mutation.
  */
 function write(records: MemoryRecord[]): boolean {
-  if (typeof window === "undefined") return false;
-  return persistOrAnnounce(MEMORY_LEDGER_KEY, JSON.stringify({ version: 1, records } satisfies StoredLedger));
+  return ledgerStore.save({ version: 1, records });
 }
 
 function sorted(records: MemoryRecord[]): MemoryRecord[] {

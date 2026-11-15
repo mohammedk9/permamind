@@ -14,6 +14,7 @@ import {
 } from "@/lib/ai/route-models";
 import type { ChatCompletionMessage, ChatRequestBody } from "@/lib/ai/types";
 import { checkRateLimit } from "@/lib/ai/rate-limit";
+import { quotaRejectionResponse } from "@/lib/ai/quota-response";
 import { createQuotaStream } from "@/lib/ai/quota-stream";
 import { releaseAiQuota, reserveAiQuota } from "@/lib/ai/usage-quota";
 
@@ -93,12 +94,7 @@ export async function POST(request: Request) {
   }
 
   const quota = await reserveAiQuota("chat", auth.mode === "free");
-  if (!quota.ok) {
-    return Response.json(
-      { error: quota.error, code: quota.code, limit: quota.limit },
-      { status: quota.status, headers: quota.retryAfterSeconds ? { "Retry-After": String(quota.retryAfterSeconds) } : undefined }
-    );
-  }
+  if (!quota.ok) return quotaRejectionResponse(quota);
   const reservationId = quota.reservationId;
 
   const modelChain = customByokModel ? [customByokModel] : resolveModelChain(model, auth.mode);

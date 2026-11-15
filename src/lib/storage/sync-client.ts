@@ -37,6 +37,16 @@ export async function uploadConversationSummary(conversation: Conversation): Pro
   };
   const contentHash = await computeContentHash(canonicalJSON(payload));
   const ciphertext = await encryptSyncValue(payload);
+
+  // Zero-knowledge by default: only the ciphertext leaves the browser.
+  //
+  // The MCP read path is the one exception, and it is opt-in per conversation.
+  // When `mcpAllowed` is false the plaintext columns are omitted entirely, so
+  // the server has nothing to return even if its database is read directly.
+  // When it is true, the user has explicitly asked for this summary to be
+  // readable by an MCP client, and the server stores exactly those fields.
+  const shareWithMcp = conversation.mcpAllowed === true;
+
   const response = await fetch("/api/sync/summaries", {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
@@ -47,7 +57,15 @@ export async function uploadConversationSummary(conversation: Conversation): Pro
       encryptionVersion: 1,
       sourceCreatedAt: conversation.createdAt.toISOString(),
       sourceUpdatedAt: conversation.updatedAt.toISOString(),
-      mcpAllowed: conversation.syncToCloud === true,
+      mcpAllowed: shareWithMcp,
+      ...(shareWithMcp
+        ? {
+            title: conversation.title,
+            summary: metadata.summary,
+            topics: metadata.topics,
+            tags: metadata.tags,
+          }
+        : {}),
     }),
   });
   if (response.status === 304) return "unchanged";
@@ -66,14 +84,6 @@ export async function deleteConversationSummary(conversationId: string): Promise
     const error = await response.json().catch(() => null) as { error?: string } | null;
     throw new Error(error?.error ?? "Could not delete conversation summary");
   }
-}
-
-export interface RemoteSyncBlob {
-  data_scope: SyncScope;
-  ciphertext: string;
-  encryption_version: number;
-  content_hash?: string | null;
-  updated_at: string;
 }
 
 /** One row returned by the delta endpoint. */
@@ -161,7 +171,21 @@ export async function fetchSyncDelta(
     hasMore: payload.hasMore === true,
   };
 }
+export interface RemoteSyncBlob {
+  data_scope: SyncScope;
+  ciphertext: string;
+  encryption_version: number;
+  content_hash?: string | null;
+  updated_at: string;
+}
 
+/**
+ * Uploads one encrypted scope document.
+ *
+ * The caller encrypts before calling; this function never sees plaintext. It is
+ * the single-blob path used by the backup center's cloud copy, where one
+ * document per scope is the intended shape.
+ */
 export async function uploadEncryptedSync(scope: SyncScope, value: unknown): Promise<void> {
   const ciphertext = await encryptSyncValue(value);
   const contentHash = await computeContentHash(canonicalJSON(value));
@@ -176,6 +200,7 @@ export async function uploadEncryptedSync(scope: SyncScope, value: unknown): Pro
   }
 }
 
+/** Downloads and decrypts one scope document. */
 export async function downloadEncryptedSync<T>(scope: SyncScope): Promise<{ value: T; updatedAt: string; contentHash: string | null } | null> {
   const response = await fetch(`/api/sync?scope=${encodeURIComponent(scope)}`);
   if (!response.ok) {

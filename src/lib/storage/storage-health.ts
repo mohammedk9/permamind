@@ -1,17 +1,20 @@
 /**
  * Local browser storage health.
  *
- * PermaMind is local-first: conversations, the memory ledger, and the
- * encrypted embedding index all live in this origin's localStorage. That is a
- * deliberate choice, but localStorage is small (5 MB in Chromium, 10 MB in
- * Firefox) and the browser reports exhaustion only by throwing
- * `QuotaExceededError` from `setItem`. Before this module existed, a full quota
- * meant a write was discarded with no signal anywhere: the user kept chatting,
- * saw a successful reply, and lost the conversation on the next refresh.
+ * PermaMind is local-first: conversations, the memory ledger, the encrypted
+ * embedding index, and the graph all live in this origin. The large documents
+ * live in IndexedDB, whose quota is a share of free disk space rather than the
+ * ~5 MB localStorage ceiling. Small settings and caches stay in localStorage.
+ *
+ * The browser reports exhaustion only by throwing `QuotaExceededError` from a
+ * write. Before this module existed, a full quota meant the write was discarded
+ * with no signal anywhere: the user kept chatting, saw a successful reply, and
+ * lost the conversation on the next refresh.
  *
  * This module measures what is actually stored and broadcasts the failure so
- * the UI can warn before it is too late. It deliberately does NOT attempt to
- * move data to IndexedDB; that is a separate migration with its own async API.
+ * the UI can warn before it is too late. `measureLocalStorage` stays
+ * synchronous and localStorage-only because it runs inside render-adjacent
+ * code; `measureStorage` adds the origin-wide IndexedDB figure for the meter.
  */
 
 /**
@@ -124,7 +127,7 @@ export interface StorageFullDetail {
  */
 export type StorageChangedDetail = LocalStorageUsage;
 
-function isQuotaError(error: unknown): boolean {
+export function isQuotaError(error: unknown): boolean {
   if (!(error instanceof DOMException)) {
     // jsdom and older browsers may surface a plain Error carrying a code.
     const candidate = error as { name?: string; code?: number } | null;
@@ -235,4 +238,106 @@ export function formatBytes(bytes: number): string {
   const megabytes = bytes / (1024 * 1024);
   if (megabytes < 1) return `${Math.max(1, Math.round(bytes / 1024))} KB`;
   return `${megabytes.toFixed(2)} MB`;
+}
+
+// ---------------------------------------------------------------------------
+// Whole-origin usage (localStorage + IndexedDB)
+// ---------------------------------------------------------------------------
+
+export interface StorageUsage extends LocalStorageUsage {
+  /** Which budget the numbers describe. */
+  backend: "indexeddb" | "localstorage";
+}
+
+/**
+ * The origin's real usage, as reported by `navigator.storage.estimate()`.
+ *
+ * This is the number the meter should show once the large documents live in
+ * IndexedDB: it covers every store the origin owns instead of the 5 MB
+ * localStorage guess. When the browser does not expose it (older Safari, some
+ * private modes), the localStorage measurement is the honest fallback.
+ */
+export async function measureStorage(): Promise<StorageUsage> {
+  const local = measureLocalStorage();
+  if (typeof navigator === "undefined" || !navigator.storage?.estimate) {
+    return { ...local, backend: "localstorage" };
+  }
+
+  try {
+    const estimate = await navigator.storage.estimate();
+    const usage = typeof estimate.usage === "number" ? estimate.usage : local.usedBytes;
+    const quota = typeof estimate.quota === "number" && estimate.quota > 0 ? estimate.quota : ESTIMATED_QUOTA_BYTES;
+    const ratio = Math.min(1, usage / quota);
+    return {
+      usedBytes: usage,
+      quotaBytes: quota,
+      ratio,
+      level: local.available ? levelFor(ratio) : "unavailable",
+      available: local.available,
+      backend: "indexeddb",
+    };
+  } catch {
+    return { ...local, backend: "localstorage" };
+  }
+}
+
+/**
+ * Subscribes to whole-origin usage.
+ *
+ * `STORAGE_CHANGED_EVENT` carries the localStorage figure, so this also
+ * re-measures through `measureStorage()` on every change and on mount. That
+ * keeps the banner correct after a write to IndexedDB, which fires the same
+ * event but cannot be measured synchronously.
+ */
+export function watchStorage(
+  onChanged: (usage: StorageUsage) => void,
+  onFull?: (detail: StorageFullDetail) => void,
+): () => void {
+  if (typeof window === "undefined") return () => {};
+
+  let active = true;
+  const refresh = () => {
+    void measureStorage().then((usage) => {
+      if (active) onChanged(usage);
+    });
+  };
+
+  const changed = () => refresh();
+  const full = (event: Event) => {
+    onFull?.((event as CustomEvent<StorageFullDetail>).detail);
+    refresh();
+  };
+
+  window.addEventListener(STORAGE_CHANGED_EVENT, changed);
+  window.addEventListener(STORAGE_FULL_EVENT, full);
+  refresh();
+
+  return () => {
+    active = false;
+    window.removeEventListener(STORAGE_CHANGED_EVENT, changed);
+    window.removeEventListener(STORAGE_FULL_EVENT, full);
+  };
+}
+
+/**
+ * The per-store breakdown, plus IndexedDB as one line.
+ *
+ * IndexedDB cannot be enumerated key by key through a synchronous API, and the
+ * whole point of the breakdown is to show which store is large. The origin
+ * estimate is attributed to a single `indexeddb` row rather than guessed at per
+ * key, which keeps the total equal to `measureStorage().usedBytes`.
+ */
+export async function measureStorageBreakdownAsync(): Promise<StorageBreakdown> {
+  const usage = await measureStorage();
+  const local = measureStorageBreakdown();
+  const entries = [...local.entries];
+
+  if (usage.backend === "indexeddb") {
+    const localBytes = local.usedBytes;
+    const indexedDbBytes = Math.max(0, usage.usedBytes - localBytes);
+    if (indexedDbBytes > 0) entries.push({ key: "indexeddb", role: "indexeddb", bytes: indexedDbBytes });
+  }
+
+  entries.sort((left, right) => right.bytes - left.bytes);
+  return { ...usage, entries };
 }

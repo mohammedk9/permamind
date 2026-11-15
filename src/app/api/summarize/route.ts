@@ -20,6 +20,7 @@ import type { ChatCompletionMessage } from "@/lib/ai/types";
 import type { Message } from "@/types/chat";
 import { sanitizeUpstreamError } from "@/lib/ai/openrouter";
 import { checkRateLimit } from "@/lib/ai/rate-limit";
+import { quotaRejectionResponse } from "@/lib/ai/quota-response";
 import { finalizeAiQuota, releaseAiQuota, reserveAiQuota } from "@/lib/ai/usage-quota";
 
 export const runtime = "nodejs";
@@ -93,12 +94,7 @@ export async function POST(request: Request) {
   }
 
   const quota = await reserveAiQuota("summary", auth.mode === "free");
-  if (!quota.ok) {
-    return Response.json(
-      { error: quota.error, code: quota.code, limit: quota.limit },
-      { status: quota.status, headers: quota.retryAfterSeconds ? { "Retry-After": String(quota.retryAfterSeconds) } : undefined }
-    );
-  }
+  if (!quota.ok) return quotaRejectionResponse(quota);
   const reservationId = quota.reservationId;
 
   const summaryModel = getSummaryModel(auth.mode);

@@ -6,7 +6,7 @@ import {
   createConversation,
   sortConversations,
 } from "@/lib/chat/conversation";
-import { loadChatData, saveChatData } from "@/lib/storage/chat-storage";
+import { hydrateChatData, loadChatData, saveChatData } from "@/lib/storage/chat-storage";
 import type { Conversation, Project } from "@/types/chat";
 import { uploadConversationSummary, deleteConversationSummary } from "@/lib/storage/sync-client";
 import { isCloudSyncEnabled } from "@/lib/storage/storage-preferences";
@@ -34,11 +34,24 @@ export function useConversations(options: UseConversationsOptions = {}) {
   const [projects, setProjects] = useState<Project[]>([]);
 
   useEffect(() => {
-    const { conversations: loaded, activeId: loadedActiveId, projects: loadedProjects } = loadChatData();
-    setConversations(loaded);
-    setActiveId(loadedActiveId);
-    setProjects(loadedProjects);
-    setIsHydrated(true);
+    let cancelled = false;
+
+    // The conversation document lives in IndexedDB, which can only be read
+    // asynchronously. Hydrate first, then read, so the first render after the
+    // effect has the real data instead of an empty list that a later save would
+    // happily write back over it.
+    void hydrateChatData().then(() => {
+      if (cancelled) return;
+      const { conversations: loaded, activeId: loadedActiveId, projects: loadedProjects } = loadChatData();
+      setConversations(loaded);
+      setActiveId(loadedActiveId);
+      setProjects(loadedProjects);
+      setIsHydrated(true);
+    });
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const reload = useCallback(() => {
@@ -165,6 +178,20 @@ export function useConversations(options: UseConversationsOptions = {}) {
     )));
   }, []);
 
+  /**
+   * Grants or revokes MCP read access for one conversation.
+   *
+   * Deliberately separate from `syncToCloud`: the first decides whether a
+   * ciphertext copy exists on the server, the second decides whether the
+   * plaintext summary is readable by an MCP client. Merging them is how a
+   * zero-knowledge store stops being one.
+   */
+  const setConversationMcpAccess = useCallback((id: string, allowed: boolean) => {
+    setConversations((previous) => previous.map((conversation) => (
+      conversation.id === id ? { ...conversation, mcpAllowed: allowed, updatedAt: new Date() } : conversation
+    )));
+  }, []);
+
   const enableConversationCloudSync = useCallback(async (id: string, isConfirmed = false): Promise<"uploaded" | "unchanged" | "pending-summary"> => {
     if (!isCloudSyncEnabled()) {
       throw new Error("Enable cloud storage and select the data you want to sync first");
@@ -208,6 +235,7 @@ export function useConversations(options: UseConversationsOptions = {}) {
     selectConversation,
     getConversation,
     setConversationCloudSync,
+    setConversationMcpAccess,
     enableConversationCloudSync,
     disableConversationCloudSync,
     syncConversationSummary,
