@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import { streamChatCompletion } from "@/lib/chat/stream-client";
 import { isValidModelId } from "@/lib/ai/models";
-import type { ChatCompletionMessage } from "@/lib/ai/types";
+import type { ChatCompletionMessage, QuotaExceededFields } from "@/lib/ai/types";
 import type { ApiKeyMode } from "@/lib/settings/api-key-storage";
 import type { ErrorCode } from "@/lib/i18n/error-messages";
 import type { TokenUsage } from "@/types/analytics";
@@ -18,11 +18,14 @@ export interface SendMessageResult {
 /**
  * A failure plus the language-neutral code needed to render it. The message is
  * the English fallback shown only when the code cannot be resolved.
+ *
+ * `used` and `resetAt` are carried for the spent free allowance only. They are
+ * typed from the server's own body rather than redeclared, so the wire shape and
+ * the UI cannot drift apart.
  */
-export interface ChatError {
+export interface ChatError extends QuotaExceededFields {
   message: string;
   code?: ErrorCode;
-  limit?: number;
 }
 
 interface UseChatCompletionOptions {
@@ -83,13 +86,13 @@ export function useChatCompletion({
             setCanRetry(false);
             resolve({ success: true, usage, retryable: false });
           },
-          onError: (message, retryable, code, limit) => {
+          onError: (message, retryable, code, limit, used, resetAt) => {
             if (requestId !== requestIdRef.current) {
               resolve({ success: false, usage: null, retryable: false });
               return;
             }
             setIsLoading(false);
-            if (!controller.signal.aborted) setError({ message, code, limit });
+            if (!controller.signal.aborted) setError({ message, code, limit, used, resetAt });
             setCanRetry(retryable && !controller.signal.aborted);
             abortRef.current = null;
             resolve({ success: false, usage: null, retryable });

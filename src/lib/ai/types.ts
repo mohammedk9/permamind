@@ -19,17 +19,27 @@ import type { ErrorCode } from "@/lib/i18n/error-messages";
  */
 export const FREE_QUOTA_EXCEEDED_CODE = "free_quota_exceeded" as const;
 
-export interface ChatErrorResponse {
-  /** English provider text. Kept for logs and as a last-resort fallback. */
-  error: string;
-  /** Language-neutral identifier the client translates for display. */
-  code?: ErrorCode;
+/**
+ * The counters that describe a spent free allowance.
+ *
+ * Shared by the server body, the chat stream callback, and the UI error state
+ * so one field added on the wire reaches every consumer without a second edit.
+ * All three are optional here because only a spent allowance carries them.
+ */
+export interface QuotaExceededFields {
   /** Quota limit for the {count} placeholder, when the code needs one. */
   limit?: number;
   /** How many of the limit were already spent when the request was refused. */
   used?: number;
   /** ISO 8601, UTC: when the daily allowance resets. */
   resetAt?: string;
+}
+
+export interface ChatErrorResponse extends QuotaExceededFields {
+  /** English provider text. Kept for logs and as a last-resort fallback. */
+  error: string;
+  /** Language-neutral identifier the client translates for display. */
+  code?: ErrorCode;
 }
 
 /**

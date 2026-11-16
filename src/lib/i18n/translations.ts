@@ -277,6 +277,26 @@ export const translations = {
     roomsCostLabel: "Who pays",
     roomsCostGuest: "The host, on their own key",
     roomsCostPanel: "Whoever addresses the model",
+
+    // Free daily allowance
+    freeQuotaResetAt: "Resets at",
+    freeQuotaEyebrow: "From your memory — not an AI answer",
+    freeQuotaAddKey: "Add your own API key",
+    freeQuotaSearch: "Search my memory",
+    freeQuotaHideResults: "Hide results",
+    freeQuotaOpenMemory: "Open memory",
+    freeQuotaResultsTitle: "What your memory holds",
+    freeQuotaResultsCount: "{count} results",
+    freeQuotaNoResults: "Nothing stored in this browser matches that yet.",
+    freeQuotaBodyNoCount:
+      "You have used your free messages for today. Add your own API key, or come back tomorrow.",
+    freeQuotaTypeSummary: "Summary",
+    freeQuotaTypeConversation: "Conversation",
+    freeQuotaTypeDecision: "Decision",
+    freeQuotaStatusReplaced: "Replaced",
+    freeQuotaDismiss: "Dismiss",
+    retryAction: "Try again",
+    dismissError: "Dismiss error",
   },
 
   ar: {
@@ -554,6 +574,26 @@ export const translations = {
     roomsCostLabel: "من يدفع",
     roomsCostGuest: "المضيف من مفتاحه هو",
     roomsCostPanel: "من ينادي النموذج",
+
+    // الحصة المجانية اليومية
+    freeQuotaResetAt: "تتجدّد عند",
+    freeQuotaEyebrow: "من ذاكرتك — وليست رد ذكاء اصطناعي",
+    freeQuotaAddKey: "أضف مفتاح API خاصًا بك",
+    freeQuotaSearch: "ابحث في ذاكرتك",
+    freeQuotaHideResults: "إخفاء النتائج",
+    freeQuotaOpenMemory: "افتح الذاكرة",
+    freeQuotaResultsTitle: "ما تحفظه ذاكرتك",
+    freeQuotaResultsCount: "{count} نتيجة",
+    freeQuotaNoResults: "لا يوجد في ذاكرة هذا المتصفح ما يطابق ذلك بعد.",
+    freeQuotaBodyNoCount:
+      "لقد استخدمت رسائلك المجانية اليوم. أضف مفتاح API خاصًا بك، أو عد غداً.",
+    freeQuotaTypeSummary: "ملخص",
+    freeQuotaTypeConversation: "محادثة",
+    freeQuotaTypeDecision: "قرار",
+    freeQuotaStatusReplaced: "استُبدل",
+    freeQuotaDismiss: "إغلاق",
+    retryAction: "أعد المحاولة",
+    dismissError: "إغلاق الخطأ",
   },
 } as const;
 

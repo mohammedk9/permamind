@@ -14,7 +14,21 @@ interface StreamChatOptions {
   signal?: AbortSignal;
   onChunk: (text: string) => void;
   onComplete: (usage: TokenUsage) => void;
-  onError: (error: string, retryable: boolean, code?: ErrorCode, limit?: number) => void;
+  /**
+   * `code` is the language-neutral identifier the UI translates.
+   *
+   * `limit`, `used` and `resetAt` are present only for a spent free allowance
+   * (`code: "free_quota_exceeded"`); a provider failure sends none of them,
+   * which is what keeps the quota copy off a transient outage.
+   */
+  onError: (
+    error: string,
+    retryable: boolean,
+    code?: ErrorCode,
+    limit?: number,
+    used?: number,
+    resetAt?: string,
+  ) => void;
 }
 
 interface SsePayload {
@@ -103,6 +117,8 @@ export async function streamChatCompletion({
       // provider failure does not, so it falls back to the upstream text.
       data.code ?? "PROVIDER_ERROR",
       data.limit,
+      data.used,
+      data.resetAt,
     );
     return;
   }

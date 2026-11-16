@@ -5,6 +5,8 @@ import { useEffect, useRef } from "react";
 
 import { ConversationMetadataBar } from "@/components/chat/conversation-metadata";
 import { ChatErrorBanner } from "@/components/chat/chat-error-banner";
+import { FreeQuotaCard } from "@/components/chat/free-quota-card";
+import { FREE_QUOTA_EXCEEDED_CODE } from "@/lib/ai/types";
 import type { ChatError } from "@/hooks/use-chat-completion";
 import { ChatInput } from "@/components/chat/chat-input";
 import { ChatMessage } from "@/components/chat/chat-message";
@@ -48,6 +50,27 @@ interface ChatMainProps {
   mode: ApiKeyMode;
   isLoading: boolean;
   error: ChatError | null;
+  /**
+   * When the free daily allowance returns, remembered from the last refusal.
+   *
+   * Kept separate from `error` because it outlives it: the banner can be
+   * dismissed, or the app reloaded, and the allowance is still spent.
+   */
+  quotaResetAt?: string | null;
+  /**
+   * The limit that came with the remembered refusal.
+   *
+   * Kept next to `quotaResetAt` because the card's sentence names a number
+   * ("your 10 free messages"), and a card shown after a reload has no `error`
+   * to take it from.
+   */
+  quotaLimit?: number | null;
+  /** The message to search the local memory for. */
+  quotaQuery?: string;
+  /** Opens Settings, so the user can add their own key. */
+  onOpenSettings?: () => void;
+  /** Opens the memory area itself, as opposed to one conversation. */
+  onOpenMemoryArea?: () => void;
   onDismissError: () => void;
   onRetry?: () => void;
   onResend?: (message: import("@/types/chat").Message) => void;
@@ -89,6 +112,11 @@ export function ChatMain({
   mode,
   isLoading,
   error,
+  quotaResetAt,
+  quotaLimit,
+  quotaQuery,
+  onOpenSettings,
+  onOpenMemoryArea,
   onDismissError,
   onRetry,
   onResend,
@@ -123,6 +151,16 @@ export function ChatMain({
     messages.length > 0
       ? `${messages.length}-${messages[messages.length - 1]?.content.length ?? 0}`
       : "empty";
+
+  /**
+   * Whether the free allowance is spent.
+   *
+   * Either the server just refused, or the refusal was remembered locally from an
+   * earlier visit and has not reached its reset time yet. The remembered path is
+   * what makes the card appear after a reload, when there is no `error` at all.
+   */
+  const quotaVisible =
+    error?.code === FREE_QUOTA_EXCEEDED_CODE || Boolean(quotaResetAt);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
@@ -183,13 +221,36 @@ export function ChatMain({
         onOpenConversation={onOpenMemory}
       />
 
-      {error && (
+      {error && !quotaVisible && (
         <ChatErrorBanner
           message={error.message}
           code={error.code}
           limit={error.limit}
+          resetAt={quotaResetAt ?? error.resetAt}
           onDismiss={onDismissError}
           onRetry={onRetry}
+        />
+      )}
+
+      {/*
+        A spent allowance gets the card rather than the banner, and it gets it even
+        when `error` has been dismissed or the page was reloaded: the allowance is
+        still spent, so there is still something useful to offer. A provider
+        failure is not a quota problem and must not borrow this card.
+      */}
+      {quotaVisible && (
+        <FreeQuotaCard
+          query={quotaQuery ?? ""}
+          resetAt={quotaResetAt ?? error?.resetAt ?? null}
+          limit={quotaLimit ?? (error?.code === FREE_QUOTA_EXCEEDED_CODE ? error.limit : undefined)}
+          excludeConversationId={activeId}
+          onOpenSettings={onOpenSettings ?? (() => {})}
+          onOpenConversation={(conversationId) => onOpenMemory?.(conversationId)}
+          // "Open memory" means the memory area, not whichever chat is open. The
+          // fallback only exists so a caller that renders this card without a
+          // navigator still gets somewhere useful.
+          onOpenMemory={onOpenMemoryArea ?? (() => onOpenMemory?.(activeId ?? ""))}
+          onDismiss={onDismissError}
         />
       )}
 

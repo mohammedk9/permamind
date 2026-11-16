@@ -31,6 +31,8 @@ import { QUICK_COMMANDS, buildQuickCommandReply, localCommandMessages, type Quic
 import { getLastSnapshot } from "@/lib/arweave/snapshot-registry";
 import { startProcessor, stopProcessor } from "@/lib/arweave/queue-processor";
 import { hydrateLocalStores } from "@/lib/storage/hydrate";
+import { clearFreeQuotaState, readActiveFreeQuotaState, rememberFreeQuotaResetAt } from "@/lib/storage/quota-state";
+import { FREE_QUOTA_EXCEEDED_CODE } from "@/lib/ai/types";
 import type { ChatCompletionMessage } from "@/lib/ai/types";
 import type { Message, Project } from "@/types/chat";
 import type { MemoryRecord, RetrievedMemory, SearchCitation, SearchProvider } from "@/types/memory";
@@ -168,6 +170,30 @@ export function ChatApp() {
   const [searchProvider, setSearchProviderState] = useState<SearchProvider>(DEFAULT_SEARCH_PROVIDER);
   const [searchUsage, setSearchUsage] = useState<{ used: number; limit: number } | null>(null);
   const [activeProjectId, setActiveProjectId] = useState<string | null>(null);
+  /**
+   * When the free daily allowance returns, or null while it is still available.
+   *
+   * Separate from `error` on purpose: the refusal is dismissed with the banner
+   * but the allowance stays spent, and a reload must not make the app forget
+   * that. The server still decides on every send — this is only so the UI can
+   * say so before the user spends a request finding out.
+   */
+  const [quotaResetAt, setQuotaResetAt] = useState<string | null>(null);
+  /**
+   * The limit that came with the refusal, kept beside the reset time.
+   *
+   * The card names a number, so a card shown after a reload needs it: reading
+   * only `resetAt` back would render "you have used your {count} free messages".
+   */
+  const [quotaLimit, setQuotaLimit] = useState<number | null>(null);
+
+  useEffect(() => {
+    // Read once at boot. An entry whose reset has already passed is dropped by
+    // the reader itself, so this also clears yesterday's refusal.
+    const stored = readActiveFreeQuotaState();
+    setQuotaResetAt(stored?.resetAt ?? null);
+    setQuotaLimit(stored?.limit ?? null);
+  }, []);
   useEffect(() => {
     const fromPath = () => (window.location.pathname.split("/")[1] as ProductArea) || "chat";
     const initial = fromPath();
@@ -299,6 +325,39 @@ export function ChatApp() {
       defaultModelId,
       getRequestHeaders,
     });
+
+  /**
+   * Remembers a spent allowance so it survives the banner being dismissed.
+   *
+   * Keyed on `error` rather than on the response, because this is the one place
+   * that already holds the server's own `used` and `resetAt`. A refusal with no
+   * `resetAt` is not stored: without a reset time the local state would claim an
+   * expiry it cannot know.
+   */
+  useEffect(() => {
+    if (error?.code !== FREE_QUOTA_EXCEEDED_CODE) return;
+    const resetAt = error.resetAt;
+    if (!resetAt) return;
+    rememberFreeQuotaResetAt(resetAt, { used: error.used, limit: error.limit });
+    setQuotaResetAt(resetAt);
+    setQuotaLimit(error.limit ?? null);
+  }, [error]);
+
+  /**
+   * Closes the quota card and forgets the remembered refusal.
+   *
+   * Both, deliberately: the card's whole purpose is to say "the allowance is
+   * spent", so leaving the stored timestamp behind would make it reappear on the
+   * next render with no way to dismiss it. The server still refuses the next send,
+   * and the card comes back with the refusal — dismissing is a pause, not a
+   * promise.
+   */
+  const handleDismissQuota = useCallback(() => {
+    clearFreeQuotaState();
+    setQuotaResetAt(null);
+    setQuotaLimit(null);
+    clearError();
+  }, [clearError]);
 
   const { queueSummary, isSummarizing } = useConversationSummary(
     getConversation,
@@ -532,6 +591,14 @@ export function ChatApp() {
         };
       });
 
+      // A new send is a fresh question for the server. The remembered refusal is
+      // dropped first so a stale banner cannot outlive the request that replaces
+      // it; if the allowance is still spent the refusal comes back and is stored
+      // again by the effect above.
+      clearFreeQuotaState();
+      setQuotaResetAt(null);
+      setQuotaLimit(null);
+
       const result = await sendMessage(messagesForRequest, (chunk) => {
         updateConversation(conversationId!, (c) => ({
           ...c,
@@ -699,6 +766,22 @@ export function ChatApp() {
       }
     : null;
 
+  /**
+   * The text the quota card searches the local memory for.
+   *
+   * The last thing the user said is the best available query: it is exactly what
+   * they wanted the model to answer. An empty string is fine — the card then shows
+   * no results rather than a wrong one.
+   */
+  const quotaQuery = useMemo(() => {
+    const messages = activeConversation?.messages ?? [];
+    for (let index = messages.length - 1; index >= 0; index -= 1) {
+      const candidate = messages[index];
+      if (candidate.role === "user" && candidate.content.trim()) return candidate.content;
+    }
+    return "";
+  }, [activeConversation]);
+
   if (!isHydrated || !apiHydrated) {
     return (
       <div className="flex h-dvh items-center justify-center bg-background">
@@ -748,7 +831,12 @@ export function ChatApp() {
           mode={mode}
           isLoading={isLoading}
           error={error ?? apiBlockedError}
-          onDismissError={clearError}
+          quotaResetAt={quotaResetAt}
+          quotaLimit={quotaLimit}
+          quotaQuery={quotaQuery}
+          onOpenSettings={() => navigate("settings")}
+          onOpenMemoryArea={() => navigate("memory")}
+          onDismissError={handleDismissQuota}
           onRetry={canRetry ? handleRetry : undefined}
           onResend={handleResend}
           memoriesUsed={memoriesUsed}
