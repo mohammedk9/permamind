@@ -1,5 +1,8 @@
 import type { Conversation, Message, Project } from "@/types/chat";
 import type { SnapshotMeta } from "@/lib/arweave/snapshot-types";
+import type { MemoryRecord } from "@/types/memory";
+
+import { loadMemoryLedger } from "@/lib/memory/ledger";
 
 export type QuickCommand = "weekly" | "decisions" | "changes";
 
@@ -41,14 +44,33 @@ function recentConversations(conversations: Conversation[], now: Date): Conversa
     .slice(0, MAX_ITEMS);
 }
 
-function pendingDecisions(project: Project | null, conversations: Conversation[]): string[] {
+/**
+ * Decisions from the local ledger.
+ *
+ * The model's summaries are not the only place a decision lives: the local
+ * extractor writes to the same ledger without spending the daily allowance, so a
+ * user who has run out of free messages — or never added a key — still has
+ * decisions worth listing. Reading only `metadata.decisions` made this command
+ * answer "no decisions pending" on exactly those accounts.
+ */
+function localDecisions(records: MemoryRecord[]): string[] {
+  return records
+    .filter((record) => record.kind === "decision" && record.status === "active" && record.text.trim())
+    .map((record) => record.text);
+}
+
+function pendingDecisions(
+  project: Project | null,
+  conversations: Conversation[],
+  records: MemoryRecord[] = [],
+): string[] {
   const projectDecisions = project?.decisions ?? [];
   const conversationDecisions = conversations.flatMap((conversation) =>
     (conversation.metadata?.decisions ?? [])
       .filter((decision) => decision.status !== "superseded")
       .map((decision) => decision.decision),
   );
-  return unique([...projectDecisions, ...conversationDecisions]);
+  return unique([...projectDecisions, ...localDecisions(records), ...conversationDecisions]);
 }
 
 function openQuestions(project: Project | null, conversations: Conversation[]): string[] {
@@ -82,8 +104,12 @@ export function buildWeeklySummary(project: Project | null, conversations: Conve
   ].join("\n");
 }
 
-export function buildPendingDecisions(project: Project | null, conversations: Conversation[]): string {
-  const decisions = pendingDecisions(project, conversations);
+export function buildPendingDecisions(
+  project: Project | null,
+  conversations: Conversation[],
+  records: MemoryRecord[] = [],
+): string {
+  const decisions = pendingDecisions(project, conversations, records);
   const questions = openQuestions(project, conversations);
   if (!decisions.length && !questions.length) {
     return "لا توجد قرارات أو أسئلة معلّقة.";
@@ -131,7 +157,12 @@ export function buildQuickCommandReply(
   input: { project: Project | null; conversations: Conversation[]; snapshot: Pick<SnapshotMeta, "conversationIds" | "createdAt"> | null; now?: Date },
 ): string {
   if (command === "weekly") return buildWeeklySummary(input.project, input.conversations, input.now);
-  if (command === "decisions") return buildPendingDecisions(input.project, input.conversations);
+  // The ledger is read here rather than inside `buildPendingDecisions`, which
+  // stays a pure function: callers that already hold the records can pass them,
+  // and the reply path picks them up from the device.
+  if (command === "decisions") {
+    return buildPendingDecisions(input.project, input.conversations, loadMemoryLedger());
+  }
   return buildSnapshotChanges(input.conversations, input.snapshot);
 }
 

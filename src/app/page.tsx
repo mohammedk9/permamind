@@ -199,10 +199,13 @@ export default function LandingPage() {
 
         <div className="relative mx-auto max-w-6xl px-4 pb-16 pt-12 sm:px-6 sm:pb-24 sm:pt-32">
           <div className="mx-auto max-w-3xl text-center">
-            {/* Badge */}
-            <div className="mb-6 inline-flex max-w-full items-center gap-2 rounded-full border border-border bg-card px-3 py-1.5 text-xs text-muted-foreground sm:px-4 sm:text-sm">
-              <Sparkles className="size-4 shrink-0 text-primary" />
-              <span className="truncate">{t.heroBadge}</span>
+            {/* Badge. The English copy is long enough to overflow a phone, and
+                truncating it read as a broken layout ("Permanently yours…").
+                It now wraps inside the pill — which relaxes its corners while it
+                spans two lines — instead of clipping. */}
+            <div className="mb-6 inline-flex max-w-full items-center gap-2 rounded-2xl border border-border bg-card px-3 py-1.5 text-xs text-muted-foreground sm:rounded-full sm:px-4 sm:text-sm">
+              <Sparkles className="size-4 shrink-0 text-primary" aria-hidden="true" />
+              <span className="min-w-0 text-balance">{t.heroBadge}</span>
             </div>
 
             {/* Title */}

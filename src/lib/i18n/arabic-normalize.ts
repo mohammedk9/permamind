@@ -60,9 +60,23 @@ const LETTER_FOLDING: ReadonlyArray<readonly [RegExp, string]> = [
  * later whitespace collapse removes any padding it introduces.
  */
 export function normalizeArabic(input: string): string {
+  return normalizeArabicPreservingCase(input).toLowerCase();
+}
+
+/**
+ * The same normalisation, but with letter case intact.
+ *
+ * Case folding is right for *matching* and wrong for *storing*: a memory that
+ * captured from the folded text reads "postgresql" instead of "PostgreSQL", and
+ * "I prefer Vim" instead of "I prefer Vim". Anything that keeps the matched text
+ * — the local extractor — needs the case it was written in.
+ *
+ * The two share this pipeline so they can never disagree about which characters
+ * are Arabic letters; only the final `toLowerCase()` differs.
+ */
+export function normalizeArabicPreservingCase(input: string): string {
   const stripped = input
     .normalize("NFKC")
-    .toLowerCase()
     .replace(DIACRITICS, "")
     .replace(TATWEEL, "")
     .replace(ZERO_WIDTH, " ");
@@ -87,14 +101,21 @@ export function normalizeForMatch(input: string): string {
 /**
  * Splits normalised text into comparable tokens.
  *
- * Two-character tokens are dropped. That was the original behaviour and it
- * costs little: every Arabic function word that short is already in the stop
- * list.
+ * Tokens of two characters are dropped, except for the short technical terms in
+ * {@link SHORT_TOKENS}: two-character Arabic words are clitics the stop list
+ * already covers, while "ai", "ml", "db", and "ui" are exactly the kind of thing
+ * people ask about. A blanket length cut therefore threw away the most useful
+ * English queries ("did we pick ml or js?") while removing nothing from Arabic.
  */
+const SHORT_TOKENS = new Set([
+  "ai", "ml", "ui", "ux", "db", "os", "js", "ts", "go", "io", "qa", "ci", "cd",
+  "ar", "vr", "xr", "3d", "5g",
+]);
+
 export function tokenizeArabic(input: string): string[] {
   const normalized = normalizeForMatch(input);
   if (!normalized) return [];
-  return normalized.split(" ").filter((token) => token.length > 2);
+  return normalized.split(" ").filter((token) => token.length > 2 || SHORT_TOKENS.has(token));
 }
 
 /**

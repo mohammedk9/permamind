@@ -17,8 +17,11 @@ const DIMENSIONS = 96;
  * normaliser cannot be compared with new ones, so the fingerprint includes the
  * model name and every stored entry is recomputed on the next sync. The key is
  * unchanged, so there is no re-encryption cost.
+ *
+ * v3: two-character technical tokens ("ai", "ml", "js") are now indexed, which
+ * changes the token stream and therefore every vector.
  */
-const MODEL = "permamind-local-hashing-v2";
+const MODEL = "permamind-local-hashing-v3";
 
 export interface MemoryEmbeddingDocument {
   id: string;

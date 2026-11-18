@@ -24,9 +24,10 @@
  * All text stays on the device. The only input is the query the user typed.
  */
 
-import { normalizeForMatch, tokenizeArabic } from "@/lib/i18n/arabic-normalize";
+import { tokenizeArabic } from "@/lib/i18n/arabic-normalize";
 import { loadMemoryLedger } from "@/lib/memory/ledger";
 import { isDecisionQuery } from "@/lib/memory/retrieve";
+import { buildSnippet } from "@/lib/memory/snippet";
 import { Bm25Index } from "@/lib/search/bm25";
 import { loadChatData } from "@/lib/storage/chat-storage";
 import type { Conversation } from "@/types/chat";
@@ -79,11 +80,6 @@ export const DEFAULT_OFFLINE_LIMIT = 5;
  */
 export const MIN_OFFLINE_QUERY_LENGTH = 3;
 
-/** Characters of context kept on each side of a match in a snippet. */
-const SNIPPET_RADIUS = 80;
-
-/** A run of letters or digits in the *original* text, used to map a match back. */
-const WORD_PATTERN = /[\p{L}\p{N}]+/gu;
 
 interface Source {
   /** BM25 document id. */
@@ -213,73 +209,13 @@ function buildSources(
 }
 
 /**
- * Finds the first word in the original text that corresponds to a query token.
- *
- * The normaliser changes string length — harakat and tatweel are deleted, a
- * zero-width joiner becomes a space — so an offset found in the normalised text
- * cannot be used against the original. Walking the original words and
- * normalising each one keeps the offset exact for every script.
- *
- * A second, looser pass accepts the Arabic definite article and a leading
- * conjunction, because "القرار" and "قرار" are the same word to a reader, and a
- * snippet centred on the wrong occurrence is simply a worse excerpt.
- */
-function findMatchRange(text: string, tokens: string[]): { start: number; end: number } | null {
-  if (!tokens.length) return null;
-
-  const words = Array.from(text.matchAll(WORD_PATTERN), (match) => ({
-    start: match.index ?? 0,
-    word: match[0],
-  }));
-  if (!words.length) return null;
-
-  for (const { start, word } of words) {
-    if (tokens.includes(normalizeForMatch(word))) return { start, end: start + word.length };
-  }
-
-  for (const { start, word } of words) {
-    const normalized = normalizeForMatch(word);
-    const bare = normalized.replace(/^(?:و|ف|ب|ك|ل)+/, "").replace(/^ال/, "");
-    if (!bare) continue;
-    if (tokens.some((token) => bare === token || (token.length >= 4 && bare.startsWith(token)))) {
-      return { start, end: start + word.length };
-    }
-  }
-
-  return null;
-}
-
-/**
- * A short excerpt around the match, or the opening of the text when nothing
- * matched exactly.
- *
- * Word boundaries are respected on both sides so a snippet never begins or ends
- * mid-word, which matters more in Arabic than the characters it costs.
+ * Kept as the named export the card and its tests use; the implementation lives
+ * in `snippet.ts`, so the chat path and this one cannot drift apart.
  */
 export function buildOfflineSnippet(text: string, tokens: string[]): string {
-  if (!text) return "";
-
-  const range = findMatchRange(text, tokens);
-  // No exact match: show the opening rather than an excerpt centred on a guess,
-  // because a wrong centre reads as a broken result.
-  const focus = range ? (range.start + range.end) / 2 : SNIPPET_RADIUS;
-
-  let start = Math.max(0, Math.floor(focus - SNIPPET_RADIUS));
-  let end = Math.min(text.length, Math.ceil(focus + SNIPPET_RADIUS));
-
-  if (start > 0) {
-    const nextBoundary = text.indexOf(" ", start);
-    if (nextBoundary !== -1 && nextBoundary < focus) start = nextBoundary + 1;
-  }
-  if (end < text.length) {
-    const previousBoundary = text.lastIndexOf(" ", end);
-    if (previousBoundary > start) end = previousBoundary;
-  }
-
-  const prefix = start > 0 ? "…" : "";
-  const suffix = end < text.length ? "…" : "";
-  return `${prefix}${text.slice(start, end).trim()}${suffix}`;
+  return buildSnippet(text, tokens);
 }
+
 
 /**
  * Ranks hits for display.

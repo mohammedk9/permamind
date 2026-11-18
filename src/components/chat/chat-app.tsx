@@ -6,7 +6,7 @@ import { needsSummary } from "@/lib/ai/summarize";
 import { buildMessagesWithMemory, linkedConversationContext } from "@/lib/memory/context";
 import { projectConversationContext } from "@/lib/projects/context";
 import { embedText, syncMemoryEmbeddings, type MemoryEmbeddingDocument } from "@/lib/memory/embeddings";
-import { activeMemoryRecords, addMemoryRecord, forgetMemoryRecord, syncExtractedMemories, updateMemoryRecord } from "@/lib/memory/ledger";
+import { activeMemoryRecords, addMemoryRecord, forgetMemoryRecord, syncAllMemory, updateMemoryRecord } from "@/lib/memory/ledger";
 import { isPreviousConversationQuery, previousConversationSearchQuery, retrieveRelevantMemories } from "@/lib/memory/retrieve";
 
 import { ChatMain } from "@/components/chat/chat-main";
@@ -270,7 +270,9 @@ export function ChatApp() {
     builtIndexKey.current = signature;
 
     // One read and one write for the whole batch instead of one per conversation.
-    const records = syncExtractedMemories(source);
+    // The local pass runs here too, so decisions and preferences keep being
+    // learned when the model's summary cannot be afforded.
+    const records = syncAllMemory(source);
     setMemoryRecords(records);
     const documents: MemoryEmbeddingDocument[] = [];
     for (const conversation of source) {

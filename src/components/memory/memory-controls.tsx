@@ -49,6 +49,14 @@ export function MemoryControls({ records, onPin, onCorrect, onForget, onRestore,
             ) : (
               <>
                 <p className={`text-sm leading-6 ${record.status === "forgotten" ? "text-muted-foreground line-through" : ""}`}>{record.text}</p>
+                {record.source === "extracted" && (
+                  // Says where the record came from, because an extracted memory
+                  // is a guess the machine made from the user's own words, not a
+                  // statement the user wrote. Correcting it is one click away.
+                  <span className="mt-1 inline-flex items-center rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary">
+                    {ar ? "مستخرج محليًا" : "locally extracted"}
+                  </span>
+                )}
                 <p className="mt-1 truncate text-[11px] text-muted-foreground">
                   {kindLabel(record.kind)} · {ar ? `ثقة ${confidenceLabel(record.confidence)}` : `${confidenceLabel(record.confidence)} confidence`} · {record.conversationTitle}
                   {record.pinned ? (ar ? " · مثبتة" : " · pinned") : ""}

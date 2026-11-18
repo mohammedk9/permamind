@@ -4,18 +4,22 @@ import { cosineSimilarity, embedText } from "./embeddings";
 import { graphConversationNeighbors, updateMemoryGraph } from "./graph";
 
 import { normalizeArabic, normalizeForMatch, tokenizeArabic } from "@/lib/i18n/arabic-normalize";
-import { buildBm25Index } from "@/lib/search/bm25";
 import { reciprocalRankFusion } from "@/lib/search/reciprocal-rank-fusion";
+import { conversationBm25Scores, getMemoryCorpus } from "@/lib/memory/core";
 
 /**
- * Three memories per reply left most of a stored history unused. The budget is
- * what actually protects the context window, not this number, so it is raised
- * and the character budget stays the binding constraint.
+ * How many memories may reach a reply, and how many tokens they may cost.
+ *
+ * Eight memories shared between a summary and its messages meant a long
+ * conversation could only ever contribute one line, and the rest of the history
+ * was dropped before it was ever ranked. Twelve is still a small, bounded block:
+ * the token budget is what actually protects the context window, and at
+ * ~420 characters per excerpt twelve memories is roughly 1.2k tokens.
  */
-const MAX_MEMORIES = 8;
-const DECISION_MAX_MEMORIES = 10;
-export const MEMORY_TOKEN_BUDGET = 900;
-const DECISION_TOKEN_BUDGET = 1600;
+const MAX_MEMORIES = 12;
+const DECISION_MAX_MEMORIES = 14;
+export const MEMORY_TOKEN_BUDGET = 1200;
+const DECISION_TOKEN_BUDGET = 1800;
 const MIN_QUERY_LENGTH = 3;
 const MIN_SCORE = 0.8;
 
@@ -398,45 +402,6 @@ interface Candidate {
   reason: RetrievedMemory["reason"];
 }
 
-/**
- * Builds the corpus BM25 ranks over.
- *
- * Each conversation contributes its summary plus the same recent messages the
- * fallback scan uses, so the two paths see the same material and BM25 is a
- * re-ranking of it rather than a different dataset. Document ids encode the
- * conversation so a hit can be attributed back.
- */
-function buildRetrievalDocuments(
-  conversations: Conversation[],
-  excludeConversationId?: string | null,
-  previousConversationQuery = false,
-): Array<{ id: string; text: string }> {
-  const documents: Array<{ id: string; text: string }> = [];
-
-  for (const conversation of conversations) {
-    if (conversation.id === excludeConversationId) continue;
-
-    const meta = conversation.metadata;
-    if (meta?.summary) {
-      documents.push({
-        id: `summary:${conversation.id}`,
-        text: [conversation.title, meta.summary, ...meta.topics, ...meta.tags, ...meta.entities].join(" "),
-      });
-    }
-
-    const messages = conversation.messages.filter((message) => !message.isStreaming && message.content.trim());
-    // A recall question ("what did we say about X?") should be able to reach the
-    // whole history, which is why it widens the window the same way the
-    // fallback scan does.
-    const recent = previousConversationQuery ? messages : messages.slice(-6);
-    for (const message of recent) {
-      documents.push({ id: `message:${message.id}`, text: `${conversation.title} ${message.content}` });
-    }
-  }
-
-  return documents;
-}
-
 export function retrieveRelevantMemories(
   query: string,
   conversations: Conversation[],
@@ -456,30 +421,17 @@ export function retrieveRelevantMemories(
   const lexicalScores = new Map<string, number>();
 
   /**
-   * BM25 pre-filter.
+   * BM25 evidence, per conversation.
    *
-   * The old loop scored every conversation and every one of its last six
-   * messages with a flat overlap count, which ranked a term appearing in fifty
-   * conversations exactly the same as a term appearing in one. BM25 inverts
-   * that: a rare term dominates, which is what makes "what did we decide about
-   * launch?" find the one conversation that actually mentions a launch.
-   *
-   * The index is built over conversation summaries and their recent messages,
-   * and its scores are merged into the existing pipeline rather than replacing
-   * it, so recency, graph signals, pinned memories, and the decision rules all
-   * keep working exactly as before.
+   * The index lives in `core.ts` and covers **every** message of every
+   * conversation, not the last six: a question about something said early in a
+   * long chat has to be able to reach it. The scores are keyed by conversation
+   * because that is what the loop below asks for — the previous implementation
+   * stored them under the document id (`summary:c1`) and read them under the
+   * conversation id, so BM25 contributed exactly zero and the effective ranker
+   * was the flat overlap count.
    */
-  const bm25 = buildBm25Index(buildRetrievalDocuments(conversations, excludeConversationId, previousConversationQuery));
-  const bm25Scores = new Map<string, number>();
-  if (bm25.size > 0) {
-    const maxScore = bm25.maxScore;
-    for (const hit of bm25.search(q, { limit: conversations.length * 4 || 40 })) {
-      // Normalise onto 0-1 so it can be combined with the other signals, which
-      // already live in that range. The cap keeps one dominant hit from
-      // erasing the recency and graph contributions entirely.
-      bm25Scores.set(hit.id, Math.min(1, hit.score / maxScore));
-    }
-  }
+  const bm25Scores = conversationBm25Scores(getMemoryCorpus(conversations, records), q);
 
   for (const conversation of conversations) {
     if (conversation.id === excludeConversationId) continue;
@@ -499,10 +451,17 @@ export function retrieveRelevantMemories(
       const overlap = wordOverlapScore(queryTokens, metaText, q);
       // BM25 is weighted highest: it is the only signal that understands how
       // rare the query terms are, which the flat overlap count cannot express.
-      const score = overlap * 1.4 + bm25Score * 1.6 + recency;
+      const lexical = overlap * 1.4 + bm25Score * 1.6;
+      const score = lexical + recency;
       lexicalScores.set(conversation.id, Math.max(lexicalScores.get(conversation.id) ?? 0, score));
 
-      if (score >= MIN_SCORE || previousConversationQuery) {
+      // Recency alone must not qualify a summary. Before this, `recency` (up to
+      // 1) was added to a score whose threshold is 0.8, so *every* recent
+      // conversation with a summary became a candidate on every reply — twelve
+      // unrelated chats could fill the memory block and push out the one that
+      // actually answered the question. The "recent context" fallback below still
+      // covers a question nothing matches.
+      if ((lexical > 0 && score >= MIN_SCORE) || previousConversationQuery) {
         candidates.push({
           conversationId: conversation.id,
           conversationTitle: conversation.title,
@@ -519,22 +478,29 @@ export function retrieveRelevantMemories(
     const messages = conversation.messages.filter(
       (m) => !m.isStreaming && m.content.trim()
     );
-    const recentMessages = previousConversationQuery ? messages : messages.slice(-6);
-
-    for (const message of recentMessages) {
+    // Every message is scored, not only the last few: "what did I say about X"
+    // has to be answerable from anywhere in the conversation, and the BM25
+    // contribution above now ranks which of those messages actually matters.
+    for (const message of messages) {
       const overlap = wordOverlapScore(queryTokens, message.content, q);
+      const lexical = overlap * 1.0 + bm25Score * 1.3;
       // A recall question with no keywords left ("ماذا قلت سابقا؟" strips to
       // the empty string) has nothing to match against, so every message in
       // every conversation scored the same and `selectMemoriesByScore` kept
       // only the most recent ones. The conversation's own recency breaks the
       // tie, so an older conversation still reaches the context when the user
       // asks what was said earlier.
-      const score = previousConversationQuery && queryTokens.length === 0
+      const noKeywords = previousConversationQuery && queryTokens.length === 0;
+      const score = noKeywords
         ? Math.max(recency * 0.9, MIN_SCORE) * (1 + recencyBoost(conversation.updatedAt) * 0.1)
-        : overlap * 1.0 + bm25Score * 1.3 + recency * 0.9;
+        : lexical + recency * 0.9;
       lexicalScores.set(conversation.id, Math.max(lexicalScores.get(conversation.id) ?? 0, score));
 
-      if (score >= MIN_SCORE) {
+      // Recency alone must not qualify a message: `recency * 0.9` reaches 0.9
+      // against a 0.8 threshold, so every message in every conversation touched
+      // today used to become a candidate, and the memory block filled with recent
+      // chatter instead of the answer.
+      if (score >= MIN_SCORE && (lexical > 0 || noKeywords)) {
         candidates.push({
           conversationId: conversation.id,
           conversationTitle: conversation.title,
@@ -551,7 +517,9 @@ export function retrieveRelevantMemories(
     if (!meta?.summary && conversation.title) {
       const overlap = wordOverlapScore(queryTokens, conversation.title, q);
       const score = overlap * 1.0 + recency * 0.5;
-      if (score >= MIN_SCORE && messages.length > 0) {
+      // The title must actually match: `recency * 0.5` is 0.5 on its own, and a
+      // half-point overlap was enough to attach an unrelated chat's last message.
+      if (overlap > 0 && score >= MIN_SCORE && messages.length > 0) {
         const last = messages[messages.length - 1];
         candidates.push({
           conversationId: conversation.id,

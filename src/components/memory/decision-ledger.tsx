@@ -111,6 +111,13 @@ function DecisionBody({ current, ar, onPin, onEdit, onOpenConversation }: {
   return (
     <>
       <p className="text-sm leading-6">{current.text}</p>
+      {current.source === "extracted" && (
+        // A decision the app inferred from the conversation, not one the user
+        // typed. Saying so is what makes "correct" the obvious next move.
+        <span className="mt-1 inline-flex items-center rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary">
+          {ar ? "مستخرج محليًا" : "locally extracted"}
+        </span>
+      )}
       <p className="mt-1 text-[11px] text-muted-foreground">{current.conversationTitle} · {formatDate(current.updatedAt, ar)}{current.pinned ? (ar ? " · مثبت" : " · pinned") : ""}{current.confidence === "low" ? (ar ? " · غير مؤكد" : " · uncertain") : ""}</p>
       <div className="mt-2 flex flex-wrap gap-2">
         <button type="button" onClick={() => onPin(current.id, !current.pinned)} className="inline-flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground">{current.pinned ? <PinOff className="size-3" /> : <Pin className="size-3" />}{current.pinned ? (ar ? "إلغاء التثبيت" : "Unpin") : (ar ? "تثبيت" : "Pin")}</button>

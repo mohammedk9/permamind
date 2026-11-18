@@ -1,6 +1,33 @@
-import { describe, expect, it } from "vitest";
-import { buildPendingDecisions, buildSnapshotChanges, buildWeeklySummary } from "@/lib/chat/quick-commands";
+import { beforeEach, describe, expect, it } from "vitest";
+import {
+  buildPendingDecisions,
+  buildQuickCommandReply,
+  buildSnapshotChanges,
+  buildWeeklySummary,
+} from "@/lib/chat/quick-commands";
+import { addMemoryRecord } from "@/lib/memory/ledger";
 import type { Conversation, Project } from "@/types/chat";
+import type { MemoryRecord } from "@/types/memory";
+
+function record(
+  overrides: Partial<MemoryRecord> & { id: string; text: string },
+): MemoryRecord {
+  return {
+    kind: "decision",
+    conversationId: "c1",
+    conversationTitle: "محادثة",
+    confidence: "medium",
+    pinned: false,
+    status: "active",
+    source: "extracted",
+    updatedAt: "2026-09-24T12:00:00.000Z",
+    ...overrides,
+  };
+}
+
+beforeEach(() => {
+  window.localStorage.clear();
+});
 
 const now = new Date("2026-09-24T12:00:00.000Z");
 const project: Project = {
@@ -58,6 +85,42 @@ describe("local quick commands", () => {
     expect(reply).toContain("القرار النشط");
     expect(reply).not.toContain("القرار المستبدل");
     expect(reply).toContain("أي مزود نستخدم؟");
+  });
+
+  it("lists decisions the local extractor wrote, with no AI summary at all", () => {
+    // A user out of free messages has no `metadata.decisions`, but the local
+    // extractor still writes to the ledger. This command used to answer "none".
+    const reply = buildPendingDecisions(null, [], [
+      record({ id: "local-1", text: "استخدام PostgreSQL بدلاً من MySQL" }),
+    ]);
+
+    expect(reply).toContain("استخدام PostgreSQL بدلاً من MySQL");
+  });
+
+  it("skips superseded and forgotten local decisions", () => {
+    const reply = buildPendingDecisions(null, [], [
+      record({ id: "active", text: "القرار القديم" }),
+      record({ id: "gone", text: "قرار منسيّ", status: "forgotten" }),
+      record({ id: "old", text: "قرار مستبدَل", status: "superseded" }),
+      record({ id: "fact", text: "حقيقة وليست قراراً", kind: "fact" }),
+    ]);
+
+    expect(reply).toContain("القرار القديم");
+    expect(reply).not.toContain("قرار منسيّ");
+    expect(reply).not.toContain("قرار مستبدَل");
+    expect(reply).not.toContain("حقيقة وليست قراراً");
+  });
+
+  it("reads the ledger when the command is invoked from the chat", () => {
+    addMemoryRecord(record({ id: "local-1", text: "القرار المحلي من الدفتر" }));
+
+    const reply = buildQuickCommandReply("decisions", {
+      project: null,
+      conversations: [],
+      snapshot: null,
+    });
+
+    expect(reply).toContain("القرار المحلي من الدفتر");
   });
 
   it("says when no decisions or questions are pending", () => {

@@ -9,7 +9,7 @@ import { StatusPill } from "@/components/ui/status-pill";
 import { SurfaceCard } from "@/components/ui/surface-card";
 import { useLocale } from "@/hooks/use-locale";
 import { formatConversationTime } from "@/lib/format/date";
-import { buildMemoryIndex, searchMemoryIndex, type MemorySearchResult } from "@/lib/search/memory-index";
+import { searchMemoryCore } from "@/lib/memory/core";
 import { generateMemoryInsights } from "@/lib/memory/insights";
 import type { Conversation } from "@/types/chat";
 import type { MemoryRecord } from "@/types/memory";
@@ -79,9 +79,27 @@ export function MemoryExperience({ conversations, records = [], onOpenConversati
   const [query, setQuery] = useState("");
   const [selectedId, setSelectedId] = useState<string | null>(initialConversationId ?? null);
   const ar = useLocale().locale === "ar";
-  const index = useMemo(() => buildMemoryIndex(conversations), [conversations]);
   const insights = useMemo(() => generateMemoryInsights(conversations), [conversations]);
-  const results = useMemo(() => searchMemoryIndex(index, query), [index, query]);
+  /**
+   * Search over every message, summary, and ledger record.
+   *
+   * The previous implementation was a case-insensitive substring scan over
+   * `toLowerCase()` text, with no Arabic normalisation and no ranking: "الإطلاق"
+   * did not match "الإطلاق" with harakat, "قرار" did not match "القرار", and the
+   * first matching entry won whatever the order happened to be. The shared core
+   * ranks by BM25, folds Arabic letterforms, and returns one best hit per
+   * conversation — which is what a grid of conversation cards needs.
+   */
+  const results = useMemo(
+    () =>
+      searchMemoryCore(query, {
+        conversations,
+        records,
+        limit: 24,
+        dedupePerConversation: true,
+      }),
+    [conversations, query, records],
+  );
   const selected = selectedId ? conversations.find((conversation) => conversation.id === selectedId) : undefined;
 
   if (selected) return (
@@ -105,9 +123,9 @@ export function MemoryExperience({ conversations, records = [], onOpenConversati
 
   const cards: Array<{ conversation: Conversation; excerpt?: string }> = query
     ? results
-        .map((result: MemorySearchResult) => ({
-          conversation: conversations.find((item) => item.id === result.conversationId),
-          excerpt: result.snippet,
+        .map((hit) => ({
+          conversation: conversations.find((item) => item.id === hit.entry.conversationId),
+          excerpt: hit.snippet,
         }))
         .filter(
           (item): item is { conversation: Conversation; excerpt: string } =>

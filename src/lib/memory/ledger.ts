@@ -2,6 +2,7 @@ import type { Conversation, MemoryDecision, MemoryFact } from "@/types/chat";
 import type { MemoryConfidence, MemoryRecord } from "@/types/memory";
 
 import { createJsonStore } from "@/lib/storage/json-store";
+import { extractLocalMemoryFromConversation } from "@/lib/memory/extract-local";
 
 export const MEMORY_LEDGER_KEY = "permamind:memory-ledger:v1";
 
@@ -109,6 +110,83 @@ export function syncExtractedMemories(conversations: Conversation[]): MemoryReco
   }
   write(records);
   return sorted(records);
+}
+
+/**
+ * Local extraction, in one read and one write.
+ *
+ * The model's extraction needs the daily allowance and is therefore unavailable
+ * exactly when a user has run out. This pass reads the user's own words and needs
+ * nothing but the device, so the ledger keeps learning either way.
+ *
+ * It runs before the model pass so an extracted record is never able to displace
+ * one the model produced from a fuller reading of the conversation.
+ */
+export function syncLocalMemory(conversations: Conversation[]): MemoryRecord[] {
+  if (typeof window === "undefined") return [];
+  let records = read();
+  for (const conversation of conversations) {
+    records = applyLocalExtraction(records, conversation);
+  }
+  write(records);
+  return sorted(records);
+}
+
+/**
+ * Both passes, one read and one write.
+ *
+ * `chat-app` rebuilds the memory index after every message, so the model pass
+ * and the local pass have to share a single write: two writes would serialise the
+ * whole ledger twice per message.
+ */
+export function syncAllMemory(conversations: Conversation[]): MemoryRecord[] {
+  if (typeof window === "undefined") return [];
+  let records = read();
+  for (const conversation of conversations) {
+    records = applyLocalExtraction(records, conversation);
+  }
+  for (const conversation of conversations) {
+    const metadata = conversation.metadata;
+    if (!metadata) continue;
+    records = applyExtraction(records, conversation, metadata);
+  }
+  write(records);
+  return sorted(records);
+}
+
+/**
+ * Adds the drafts found in the user's own messages.
+ *
+ * Ids are derived from the kind and the normalised text, so re-running this over
+ * an unchanged conversation updates the same record instead of appending a
+ * duplicate. `upsert` also refuses to touch a record the user wrote, pinned, or
+ * already forgot, which is what makes this safe to run on every message.
+ */
+function applyLocalExtraction(records: MemoryRecord[], conversation: Conversation): MemoryRecord[] {
+  const drafts = extractLocalMemoryFromConversation(conversation);
+  if (!drafts.length) return records;
+
+  const base = {
+    conversationId: conversation.id,
+    conversationTitle: conversation.title,
+    status: "active" as const,
+    source: "extracted" as const,
+    pinned: false,
+    updatedAt: conversation.updatedAt.toISOString(),
+  };
+
+  let next = records;
+  for (const draft of drafts) {
+    next = upsert(next, {
+      ...base,
+      id: `local-${draft.kind}:${conversation.id}:${normalizeKey(draft.text)}`,
+      kind: draft.kind,
+      category: draft.kind === "preference" ? "preference" : "decision",
+      confidence: draft.confidence,
+      text: draft.text,
+    });
+  }
+  return next;
 }
 
 /** Mutates the record list for one conversation without touching storage. */
