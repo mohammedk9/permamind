@@ -154,4 +154,24 @@ describe("ChatMain and a spent free allowance", () => {
     expect(onOpenMemoryArea).toHaveBeenCalledTimes(1);
     expect(onOpenMemory).not.toHaveBeenCalled();
   });
+
+  it("passes a verified local model through to the card", async () => {
+    const onUseLocalModel = vi.fn();
+    await renderMainSettled({
+      error: null,
+      quotaResetAt: RESET_AT,
+      quotaLimit: 10,
+      onUseLocalModel,
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: copy.freeQuotaUseLocal }));
+
+    expect(onUseLocalModel).toHaveBeenCalledTimes(1);
+  });
+
+  it("falls back to the key when no local model is offered", async () => {
+    await renderMainSettled({ error: null, quotaResetAt: RESET_AT, quotaLimit: 10 });
+
+    expect(screen.getByRole("button", { name: copy.freeQuotaAddKey })).toBeTruthy();
+  });
 });

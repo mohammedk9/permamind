@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 
 import { buildApiHeaders } from "@/lib/ai/client-headers";
 import { getDefaultModelId } from "@/lib/ai/models";
+import { LOCAL_OLLAMA_BASE_URL } from "@/lib/settings/api-key-storage";
 import {
   loadApiSettings,
   markOnboardingSeen,
@@ -20,6 +21,38 @@ export type ConnectionStatus =
   | "invalid"
   | "checking"
   | "not_set";
+
+/**
+ * Whether a request may be sent at all.
+ *
+ * Extracted so it can be tested without a React renderer: the three inputs are
+ * exactly what the hook holds, and every branch here was previously a nested
+ * ternary inside the hook body, which is how "local model selected but no model
+ * name" came to look sendable.
+ *
+ * - The free allowance needs nothing.
+ * - BYOK needs a key and a successful validation.
+ * - A local model needs a **name**: the server rejects a keyless request without
+ *   `x-ai-model`, so letting the send through only produces a 500 the user
+ *   cannot act on.
+ */
+export function canSendWith(input: {
+  provider: AiProvider;
+  mode: ApiKeyMode;
+  apiKey: string;
+  modelName: string;
+  connectionStatus: ConnectionStatus;
+}): boolean {
+  if (input.provider === "ollama") {
+    return input.modelName.trim().length > 0 && input.connectionStatus === "connected";
+  }
+  if (input.mode === "free") return true;
+  return (
+    input.mode === "byok" &&
+    input.apiKey.trim().length > 0 &&
+    input.connectionStatus === "connected"
+  );
+}
 
 export function useApiSettings() {
   const [hydrated, setHydrated] = useState(false);
@@ -43,10 +76,12 @@ export function useApiSettings() {
     setValidatedAt(stored.validatedAt);
     // The API key lives in sessionStorage and may be gone at the start of a
     // new browser session even though BYOK settings persist. Only report
-    // "connected" when a usable key is actually present.
+    // "connected" when a usable key is actually present. A stored local plan is
+    // "unknown" here on purpose: whether Ollama is running is a question only a
+    // probe can answer, and the effect below asks it.
     setConnectionStatus(
       stored.provider === "ollama"
-        ? "connected"
+        ? "unknown"
         : stored.mode === "byok"
         ? stored.apiKey && stored.validatedAt
           ? "connected"
@@ -97,7 +132,48 @@ export function useApiSettings() {
     [persist]
   );
 
+  /**
+   * Asks the server whether the Ollama on this machine is running.
+   *
+   * The browser cannot answer this itself (mixed content, and Ollama's CORS is
+   * opt-in), so the check goes through `/api/ai/local-status`, which probes
+   * localhost from Node — the same place the chat route will call.
+   */
+  const probeLocalModel = useCallback(async (): Promise<boolean> => {
+    setConnectionStatus("checking");
+    try {
+      const response = await fetch("/api/ai/local-status");
+      const data = (await response.json()) as { ok?: boolean; models?: string[] };
+      const models = Array.isArray(data.models) ? data.models : [];
+      // Running with nothing pulled is not "connected": the chat request would
+      // fail on a model name that does not exist.
+      const ready = data.ok === true && models.length > 0;
+      setConnectionStatus(ready ? "connected" : "invalid");
+      return ready;
+    } catch {
+      setConnectionStatus("invalid");
+      return false;
+    }
+  }, []);
+
+  /**
+   * Re-checks the local daemon whenever the app opens with a local plan stored.
+   *
+   * A stored provider is not evidence that Ollama is running today: the machine
+   * may have restarted, or the daemon was never installed. Asking once at boot
+   * means the settings screen and the chat input agree with reality instead of
+   * showing a stale "connected".
+   */
+  useEffect(() => {
+    if (!hydrated || provider !== "ollama") return;
+    void probeLocalModel();
+  }, [hydrated, provider, probeLocalModel]);
+
   const validateKey = useCallback(async (): Promise<boolean> => {
+    // The local plan has no key to validate. What it needs is a reachable daemon,
+    // which is a different question with a different failure mode.
+    if (provider === "ollama") return probeLocalModel();
+
     const key = apiKey.trim();
     if (!key) {
       setConnectionStatus("not_set");
@@ -133,7 +209,7 @@ export function useApiSettings() {
       setConnectionStatus("invalid");
       return false;
     }
-  }, [apiKey, baseUrl, modelName, persist, provider]);
+  }, [apiKey, baseUrl, modelName, persist, probeLocalModel, provider]);
 
   const clearKey = useCallback(() => {
     setApiKeyState("");
@@ -143,15 +219,37 @@ export function useApiSettings() {
     persist({ mode: "free", apiKey: "", validatedAt: undefined });
   }, [persist]);
 
+  /**
+   * Switches the provider, and with it the whole plan.
+   *
+   * Choosing Ollama is not just a provider change: it implies the keyless local
+   * mode, so the base URL is set here and the status starts as "checking" rather
+   * than "connected". Claiming "connected" before the daemon answers is what made
+   * a machine without Ollama look ready to chat.
+   */
   const setProvider = useCallback((next: AiProvider) => {
     setProviderState(next);
-    const local = next === "ollama";
-    if (local) { setBaseUrlState("http://127.0.0.1:11434/v1"); setModeState("byok"); setConnectionStatus("connected"); }
-    else { setValidatedAt(undefined); setConnectionStatus(apiKey ? "unknown" : "not_set"); }
-    persist({ provider: next, mode: local ? "byok" : mode, baseUrl: local ? "http://127.0.0.1:11434/v1" : baseUrl, validatedAt: local ? new Date().toISOString() : undefined });
-  }, [apiKey, baseUrl, mode, persist]);
+    if (next === "ollama") {
+      setBaseUrlState(LOCAL_OLLAMA_BASE_URL);
+      setModeState("byok");
+      setValidatedAt(undefined);
+      setConnectionStatus("unknown");
+      persist({ provider: next, mode: "byok", baseUrl: LOCAL_OLLAMA_BASE_URL, validatedAt: undefined });
+      return;
+    }
+    setValidatedAt(undefined);
+    setConnectionStatus(apiKey ? "unknown" : "not_set");
+    persist({ provider: next, validatedAt: undefined });
+  }, [apiKey, persist]);
   const setBaseUrl = useCallback((value: string) => { setBaseUrlState(value); persist({ baseUrl: value, validatedAt: undefined }); }, [persist]);
-  const setModelName = useCallback((value: string) => { setModelNameState(value); persist({ modelName: value }); }, [persist]);
+  const setModelName = useCallback((value: string) => {
+    setModelNameState(value);
+    // A local plan is only usable with a name, so the status has to stop saying
+    // "connected" the moment the name is cleared — otherwise the chat looks
+    // ready and the server refuses it.
+    if (provider === "ollama") setConnectionStatus(value.trim() ? connectionStatus : "invalid");
+    persist({ modelName: value });
+  }, [connectionStatus, persist, provider]);
 
   const dismissOnboarding = useCallback(() => {
     markOnboardingSeen();
@@ -159,19 +257,16 @@ export function useApiSettings() {
   }, []);
 
   const getRequestHeaders = useCallback(() => {
-    if (provider === "ollama") return buildApiHeaders("byok", "", provider, baseUrl || "http://127.0.0.1:11434/v1", modelName);
+    if (provider === "ollama") {
+      return buildApiHeaders("byok", "", provider, baseUrl || LOCAL_OLLAMA_BASE_URL, modelName);
+    }
     if (mode === "byok" && apiKey.trim() && validatedAt) {
       return buildApiHeaders("byok", apiKey, provider, baseUrl, modelName);
     }
     return buildApiHeaders("free");
   }, [apiKey, baseUrl, mode, modelName, provider, validatedAt]);
 
-  const canSendRequests =
-    provider === "ollama" ||
-    mode === "free" ||
-    (mode === "byok" &&
-      apiKey.trim().length > 0 &&
-      connectionStatus === "connected");
+  const canSendRequests = canSendWith({ provider, mode, apiKey, modelName, connectionStatus });
 
       const defaultModelId = getDefaultModelId();
 

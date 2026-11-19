@@ -69,6 +69,8 @@ interface ChatMainProps {
   quotaQuery?: string;
   /** Opens Settings, so the user can add their own key. */
   onOpenSettings?: () => void;
+  /** Switches to a verified local model; when absent the card offers Settings. */
+  onUseLocalModel?: () => void;
   /** Opens the memory area itself, as opposed to one conversation. */
   onOpenMemoryArea?: () => void;
   onDismissError: () => void;
@@ -116,6 +118,7 @@ export function ChatMain({
   quotaLimit,
   quotaQuery,
   onOpenSettings,
+  onUseLocalModel,
   onOpenMemoryArea,
   onDismissError,
   onRetry,
@@ -245,6 +248,7 @@ export function ChatMain({
           limit={quotaLimit ?? (error?.code === FREE_QUOTA_EXCEEDED_CODE ? error.limit : undefined)}
           excludeConversationId={activeId}
           onOpenSettings={onOpenSettings ?? (() => {})}
+          onUseLocalModel={onUseLocalModel}
           onOpenConversation={(conversationId) => onOpenMemory?.(conversationId)}
           // "Open memory" means the memory area, not whichever chat is open. The
           // fallback only exists so a caller that renders this card without a

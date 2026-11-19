@@ -1,20 +1,20 @@
 import type { Conversation } from "@/types/chat";
 import type { MemoryRecord, RetrievedMemory } from "@/types/memory";
 import { cosineSimilarity, embedText } from "./embeddings";
-import { graphConversationNeighbors, updateMemoryGraph } from "./graph";
+import { graphConversationNeighbors, buildMemoryGraph } from "./graph";
 
 import { normalizeArabic, normalizeForMatch, tokenizeArabic } from "@/lib/i18n/arabic-normalize";
 import { reciprocalRankFusion } from "@/lib/search/reciprocal-rank-fusion";
 import { conversationBm25Scores, getMemoryCorpus } from "@/lib/memory/core";
 
 /**
- * How many memories may reach a reply, and how many tokens they may cost.
+    // * How many memories may reach a reply, and how many tokens they may cost.
  *
- * Eight memories shared between a summary and its messages meant a long
- * conversation could only ever contribute one line, and the rest of the history
- * was dropped before it was ever ranked. Twelve is still a small, bounded block:
- * the token budget is what actually protects the context window, and at
- * ~420 characters per excerpt twelve memories is roughly 1.2k tokens.
+    // * Eight memories shared between a summary and its messages meant a long
+    // * conversation could only ever contribute one line, and the rest of the history
+    // * was dropped before it was ever ranked. Twelve is still a small, bounded block:
+    // * the token budget is what actually protects the context window, and at
+    // * ~420 characters per excerpt twelve memories is roughly 1.2k tokens.
  */
 const MAX_MEMORIES = 12;
 const DECISION_MAX_MEMORIES = 14;
@@ -295,12 +295,12 @@ function tokenize(text: string): string[] {
 }
 
 /**
- * Legacy overlap score, retained for the memory-index search path and as the
- * tie-breaker BM25 feeds.
+    // * Legacy overlap score, retained for the memory-index search path and as the
+    // * tie-breaker BM25 feeds.
  *
- * BM25 is now the primary ranker; this survives because the Memory page search
- * needs a bounded, explainable 0-1 number per hit and because
- * `scoreMemory` is part of the exported surface other modules already call.
+    // * BM25 is now the primary ranker; this survives because the Memory page search
+    // * needs a bounded, explainable 0-1 number per hit and because
+    // * `scoreMemory` is part of the exported surface other modules already call.
  */
 function wordOverlapScore(
   queryTokens: string[],
@@ -402,6 +402,24 @@ interface Candidate {
   reason: RetrievedMemory["reason"];
 }
 
+export interface RetrieveOptions {
+  /**
+    // * A query vector from a real embedding model, when one is loaded.
+   *
+    // * When absent the retriever builds its local hashing vector instead, so every
+    // * existing caller keeps working unchanged.
+   */
+  queryVector?: Float32Array;
+  /**
+    // * Ledger-record vectors from the same model as `queryVector`.
+   *
+    // * A record without one is skipped rather than compared: a 256-dimension query
+    // * vector and a 96-dimension hashed vector produce a meaningless cosine, and a
+    // * meaningless score is worse than no score.
+   */
+  recordVectors?: ReadonlyMap<string, Float32Array>;
+}
+
 export function retrieveRelevantMemories(
   query: string,
   conversations: Conversation[],
@@ -409,6 +427,7 @@ export function retrieveRelevantMemories(
   previousConversationQuery = false,
   records: MemoryRecord[] = [],
   semanticDocuments: Array<{ id: string; vector: Float32Array }> = [],
+  options: RetrieveOptions = {},
 ): RetrievedMemory[] {
   const q = query.trim();
   if (q.length < MIN_QUERY_LENGTH && !previousConversationQuery) return [];
@@ -417,19 +436,27 @@ export function retrieveRelevantMemories(
   if (queryTokens.length === 0 && !previousConversationQuery) return [];
 
   const candidates: Candidate[] = [];
-  const graph = updateMemoryGraph(conversations);
+  /**
+    // * The conversation graph, built in memory and never written here.
+   *
+    // * This used to call `updateMemoryGraph`, which persists as a side effect of
+    // * reading: every reply rewrote the graph document. A read path that writes is
+    // * also a read path that can fail on a full quota — and this one runs inside the
+    // * request that is about to produce the user's answer.
+   */
+  const graph = buildMemoryGraph(conversations);
   const lexicalScores = new Map<string, number>();
 
   /**
-   * BM25 evidence, per conversation.
+    // * BM25 evidence, per conversation.
    *
-   * The index lives in `core.ts` and covers **every** message of every
-   * conversation, not the last six: a question about something said early in a
-   * long chat has to be able to reach it. The scores are keyed by conversation
-   * because that is what the loop below asks for — the previous implementation
-   * stored them under the document id (`summary:c1`) and read them under the
-   * conversation id, so BM25 contributed exactly zero and the effective ranker
-   * was the flat overlap count.
+    // * The index lives in `core.ts` and covers **every** message of every
+    // * conversation, not the last six: a question about something said early in a
+    // * long chat has to be able to reach it. The scores are keyed by conversation
+    // * because that is what the loop below asks for — the previous implementation
+    // * stored them under the document id (`summary:c1`) and read them under the
+    // * conversation id, so BM25 contributed exactly zero and the effective ranker
+    // * was the flat overlap count.
    */
   const bm25Scores = conversationBm25Scores(getMemoryCorpus(conversations, records), q);
 
@@ -567,7 +594,7 @@ export function retrieveRelevantMemories(
   // every pinned and decision memory from the reply exactly when the user was
   // asking about a decision.
   const wantsDecision = previousConversationQuery || isDecisionQuery(q);
-  if (ranked.length > 0 || previousConversationQuery) return mergeSemanticMemories(ranked, query, conversations, records, semanticDocuments, wantsDecision);
+  if (ranked.length > 0 || previousConversationQuery) return mergeSemanticMemories(ranked, query, conversations, records, semanticDocuments, wantsDecision, options);
 
   if (results.length === 0 && !previousConversationQuery) {
     const recentWithSummary = conversations
@@ -594,7 +621,7 @@ export function retrieveRelevantMemories(
     }
   }
 
-  return mergeSemanticMemories(selectMemoriesByScore(results), query, conversations, records, semanticDocuments, wantsDecision);
+  return mergeSemanticMemories(selectMemoriesByScore(results), query, conversations, records, semanticDocuments, wantsDecision, options);
 }
 
 const SEMANTIC_SCORE = 0.22;
@@ -606,15 +633,26 @@ function mergeSemanticMemories(
   records: MemoryRecord[],
   semanticDocuments: Array<{ id: string; vector: Float32Array }>,
   decisionQuery = false,
+  options: RetrieveOptions = {},
 ): RetrievedMemory[] {
-  const queryVector = embedText(query);
+  // A caller that already embedded the query (with a real model) must not have
+  // its vector thrown away, and a caller that did not still gets the local one.
+  const queryVector = options.queryVector ?? embedText(query);
   if (![...queryVector].some(Boolean)) return lexical;
   const active = records.filter((record) => record.status === "active" && record.text.trim());
   const additions: RetrievedMemory[] = [];
 
   for (const record of active) {
+    // A record vector from a different model is not comparable: comparing 256
+    // dimensions against 96 yields a number that looks like a similarity and is
+    // * not one.
+    const recordVector =
+      options.recordVectors?.get(record.id) ??
+      (options.queryVector ? undefined : embedText(record.text));
+    if (!recordVector || recordVector.length !== queryVector.length) continue;
+
     const durable = record.pinned || record.kind === "decision";
-    const overlap = cosineSimilarity(queryVector, embedText(record.text));
+    const overlap = cosineSimilarity(queryVector, recordVector);
     if (!durable && overlap < SEMANTIC_SCORE) continue;
     if (decisionQuery && record.kind !== "decision" && overlap < SEMANTIC_SCORE) continue;
     additions.push({
@@ -631,6 +669,9 @@ function mergeSemanticMemories(
   }
 
   for (const document of semanticDocuments) {
+    // Same guard as above: a summary vector from the hashing embedder cannot be
+    // * compared with a model query vector.
+    if (document.vector.length !== queryVector.length) continue;
     const overlap = cosineSimilarity(queryVector, document.vector);
     if (overlap < SEMANTIC_SCORE || lexical.some((memory) => memory.conversationId === document.id.replace(/^summary:/, ""))) continue;
     const conversation = conversations.find((item) => item.id === document.id.replace(/^summary:/, ""));
@@ -648,19 +689,19 @@ function mergeSemanticMemories(
   }
 
   /**
-   * Fusion.
+    // * Fusion.
    *
-   * The previous implementation took `Math.max(lexicalScore, semanticScore)`,
-   * which assumed the two numbers were on the same scale. They are not: a
-   * cosine similarity near 0.3 and an overlap ratio near 0.9 are different
-   * quantities, so the larger one silently erased the other. A memory the
-   * semantic retriever loved but the lexical one disliked lost, and vice versa.
+    // * The previous implementation took `Math.max(lexicalScore, semanticScore)`,
+    // * which assumed the two numbers were on the same scale. They are not: a
+    // * cosine similarity near 0.3 and an overlap ratio near 0.9 are different
+    // * quantities, so the larger one silently erased the other. A memory the
+    // * semantic retriever loved but the lexical one disliked lost, and vice versa.
    *
-   * Reciprocal Rank Fusion replaces that with a position-based combination, so
-   * a memory ranked highly by either retriever survives, and neither can
-   * single-handedly dictate the final order. Pinned and decision memories keep
-   * their explicit boosts, which are a user instruction rather than a ranking
-   * signal and therefore must not be normalised away.
+    // * Reciprocal Rank Fusion replaces that with a position-based combination, so
+    // * a memory ranked highly by either retriever survives, and neither can
+    // * single-handedly dictate the final order. Pinned and decision memories keep
+    // * their explicit boosts, which are a user instruction rather than a ranking
+    // * signal and therefore must not be normalised away.
    */
   const semanticRanking = additions
     .slice()

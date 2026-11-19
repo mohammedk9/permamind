@@ -1,5 +1,7 @@
 import type { Conversation } from "@/types/chat";
 import { scoreMemory } from "@/lib/memory/retrieve";
+import { findMatchRange } from "@/lib/memory/snippet";
+import { normalizeForMatch } from "@/lib/i18n/arabic-normalize";
 
 export interface MemorySearchResult {
   conversationId: string;
@@ -26,8 +28,17 @@ const MAX_RESULTS = 30;
 const MIN_QUERY_LENGTH = 2;
 const SNIPPET_CONTEXT = 48;
 
+/**
+ * Normalisation for matching, shared with every other retrieval path.
+ *
+ * This was `toLowerCase()`, which meant the sidebar search could not find
+ * "الإطلاق" written with harakat, "قرار" inside "القرار", or anything where a
+ * hamza differed from the stored spelling — the same failure already fixed in the
+ * memory page and the chat retriever. One normaliser everywhere is the point:
+ * a query that matches in one search box has to match in all of them.
+ */
 function normalize(text: string): string {
-  return text.toLowerCase();
+  return normalizeForMatch(text);
 }
 
 function buildSnippet(
@@ -110,13 +121,25 @@ export function searchMemoryIndex(
   const results: Array<MemorySearchResult & { relevance: number }> = [];
 
   for (const entry of index) {
+    // The whole query must appear in the normalised text. This is an existence
+    // test only: the offset below comes from the original, because normalisation
+    // changes string length and an index into it means nothing here.
     const matchIndex = entry.normalized.indexOf(q);
     if (matchIndex === -1) continue;
 
+    // Locate the first query token in the *original* text, word by word, so the
+    // highlight lands on the right characters for Arabic (harakat and hamza) as
+    // well as English. Falling back to the start is better than a wrong centre.
+    const tokens = q.split(" ").filter(Boolean);
+    const range = findMatchRange(entry.original, tokens) ?? {
+      start: 0,
+      end: Math.min(q.length, entry.original.length),
+    };
+
     const { snippet, matchStart, matchEnd } = buildSnippet(
       entry.original,
-      matchIndex,
-      q.length
+      range.start,
+      Math.max(1, range.end - range.start),
     );
 
     const conversationEntries = index.filter((candidate) => candidate.conversationId === entry.conversationId);

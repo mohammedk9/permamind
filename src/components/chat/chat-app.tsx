@@ -7,6 +7,7 @@ import { buildMessagesWithMemory, linkedConversationContext } from "@/lib/memory
 import { projectConversationContext } from "@/lib/projects/context";
 import { embedText, syncMemoryEmbeddings, type MemoryEmbeddingDocument } from "@/lib/memory/embeddings";
 import { activeMemoryRecords, addMemoryRecord, forgetMemoryRecord, syncAllMemory, updateMemoryRecord } from "@/lib/memory/ledger";
+import { updateMemoryGraph } from "@/lib/memory/graph";
 import { isPreviousConversationQuery, previousConversationSearchQuery, retrieveRelevantMemories } from "@/lib/memory/retrieve";
 
 import { ChatMain } from "@/components/chat/chat-main";
@@ -31,6 +32,9 @@ import { QUICK_COMMANDS, buildQuickCommandReply, localCommandMessages, type Quic
 import { getLastSnapshot } from "@/lib/arweave/snapshot-registry";
 import { startProcessor, stopProcessor } from "@/lib/arweave/queue-processor";
 import { hydrateLocalStores } from "@/lib/storage/hydrate";
+import { loadSemanticPreference, saveSemanticPreference } from "@/lib/storage/semantic-settings";
+import { embedSemanticText, embedSemanticTexts, loadSemanticModel, unloadSemanticModel } from "@/lib/memory/semantic/model";
+import { currentPlan, canOfferLocalPlan, resolvePlan, type ChatPlan } from "@/lib/chat/plans";
 import { clearFreeQuotaState, readActiveFreeQuotaState, rememberFreeQuotaResetAt } from "@/lib/storage/quota-state";
 import { FREE_QUOTA_EXCEEDED_CODE } from "@/lib/ai/types";
 import type { ChatCompletionMessage } from "@/lib/ai/types";
@@ -56,13 +60,13 @@ const SIDEBAR_UTILITY_TRIGGER_CLASS = "w-full justify-start gap-2 rounded-lg bor
 const SIDEBAR_THEME_TRIGGER_CLASS = "w-full justify-start gap-2 rounded-lg px-3 py-2 text-xs font-medium text-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-2 focus-visible:ring-sidebar-ring/50";
 
 /**
- * The API rejects a request carrying more than 100 messages, and rejects an
- * empty content string. The client sent the entire history untrimmed, so a
- * conversation crossing 100 messages failed on every send with "Messages are
- * required" — the reply button stopped working entirely — and the summary
- * request failed with it, which stopped the memory ledger from receiving any
- * new fact or decision. Keeping the newest messages is correct: the model
- * answers the latest turn.
+      // * The API rejects a request carrying more than 100 messages, and rejects an
+      // * empty content string. The client sent the entire history untrimmed, so a
+      // * conversation crossing 100 messages failed on every send with "Messages are
+      // * required" — the reply button stopped working entirely — and the summary
+      // * request failed with it, which stopped the memory ledger from receiving any
+      // * new fact or decision. Keeping the newest messages is correct: the model
+      // * answers the latest turn.
  */
 const API_MESSAGE_LIMIT = 100;
 const API_CONTENT_LIMIT = 20_000;
@@ -165,25 +169,69 @@ export function ChatApp() {
   const [memoriesUsed, setMemoriesUsed] = useState<RetrievedMemory[]>([]);
   const [memoryRecords, setMemoryRecords] = useState<MemoryRecord[]>([]);
   const [semanticVectors, setSemanticVectors] = useState<Array<{ id: string; vector: Float32Array }>>([]);
+  /** Ledger vectors from the same model as `semanticVectors`, keyed by record id. */
+  const [recordVectors, setRecordVectors] = useState<Map<string, Float32Array>>(new Map());
+  /**
+      // * The on-device embedding model: whether it is on, and whether it loaded.
+   *
+      // * `status` is separate from `enabled` because the download can fail on a slow
+      // * or blocked connection — the switch stays on (the user asked for it) while the
+      // * app keeps using the local embedder and says so.
+   */
+  const [semanticEnabled, setSemanticEnabled] = useState(false);
+  const [semanticStatus, setSemanticStatus] = useState<"off" | "loading" | "ready" | "error">("off");
+  const [semanticProgress, setSemanticProgress] = useState(0);
+
+  useEffect(() => {
+    setSemanticEnabled(loadSemanticPreference());
+  }, []);
+
+  const semanticReady = semanticStatus === "ready";
+
+  /**
+      // * Turns the model on or off.
+   *
+      // * Enabling is the only thing in the app that downloads 150 MB, so it is the
+      // * user's explicit action — never a consequence of opening a page. A failed load
+      // * leaves the switch on and reports `error`, because the next send may well
+      // * succeed on a better connection.
+   */
+  const handleToggleSemantic = useCallback(async (next: boolean) => {
+    saveSemanticPreference(next);
+    setSemanticEnabled(next);
+
+    if (!next) {
+      unloadSemanticModel();
+      setSemanticStatus("off");
+      setSemanticProgress(0);
+      setRecordVectors(new Map());
+      return;
+    }
+
+    setSemanticStatus("loading");
+    setSemanticProgress(0);
+    const loaded = await loadSemanticModel(setSemanticProgress);
+    setSemanticStatus(loaded ? "ready" : "error");
+  }, []);
   const [area, setArea] = useState<ProductArea>("chat");
   const [webSearchEnabled, setWebSearchEnabled] = useState(false);
   const [searchProvider, setSearchProviderState] = useState<SearchProvider>(DEFAULT_SEARCH_PROVIDER);
   const [searchUsage, setSearchUsage] = useState<{ used: number; limit: number } | null>(null);
   const [activeProjectId, setActiveProjectId] = useState<string | null>(null);
   /**
-   * When the free daily allowance returns, or null while it is still available.
+      // * When the free daily allowance returns, or null while it is still available.
    *
-   * Separate from `error` on purpose: the refusal is dismissed with the banner
-   * but the allowance stays spent, and a reload must not make the app forget
-   * that. The server still decides on every send — this is only so the UI can
-   * say so before the user spends a request finding out.
+      // * Separate from `error` on purpose: the refusal is dismissed with the banner
+      // * but the allowance stays spent, and a reload must not make the app forget
+      // * that. The server still decides on every send — this is only so the UI can
+      // * say so before the user spends a request finding out.
    */
   const [quotaResetAt, setQuotaResetAt] = useState<string | null>(null);
   /**
-   * The limit that came with the refusal, kept beside the reset time.
+      // * The limit that came with the refusal, kept beside the reset time.
    *
-   * The card names a number, so a card shown after a reload needs it: reading
-   * only `resetAt` back would render "you have used your {count} free messages".
+      // * The card names a number, so a card shown after a reload needs it: reading
+      // * only `resetAt` back would render "you have used your {count} free messages".
    */
   const [quotaLimit, setQuotaLimit] = useState<number | null>(null);
 
@@ -204,16 +252,16 @@ export function ChatApp() {
   }, []);
 
   /**
-   * Restores the project named in the address bar.
+      // * Restores the project named in the address bar.
    *
-   * `/project/<id>` carries the id in the second path segment, which `fromPath` cannot express —
-   * it returns `"project"` and stops. Without reading that id back, reloading a project URL left
-   * `activeProjectId` null while the bar still said "project": the page rendered nothing and Back
-   * had nothing to return to.
+      // * `/project/<id>` carries the id in the second path segment, which `fromPath` cannot express —
+      // * it returns `"project"` and stops. Without reading that id back, reloading a project URL left
+      // * `activeProjectId` null while the bar still said "project": the page rendered nothing and Back
+      // * had nothing to return to.
    *
-   * This waits on `isHydrated` because the project list lives in local storage and is still empty
-   * on the first render; restoring an id against an empty list would silently resolve to nothing,
-   * which is the same blank page by a slower route.
+      // * This waits on `isHydrated` because the project list lives in local storage and is still empty
+      // * on the first render; restoring an id against an empty list would silently resolve to nothing,
+      // * which is the same blank page by a slower route.
    */
   useEffect(() => {
     if (!isHydrated || area !== "project") return;
@@ -237,33 +285,36 @@ export function ChatApp() {
   }, []);
 
   /**
-   * Cheap signature of everything the memory index actually depends on.
+      // * Cheap signature of everything the memory index actually depends on.
    *
-   * The old effect keyed on the `conversations` array itself, so every streamed
-   * chunk produced a new array and therefore a full rebuild: one SHA-256 and
-   * one AES-GCM encryption per memory, per token. Only the summary fingerprint,
-   * the decision count, and the title can change what gets indexed, so a chat
-   * that has not been re-summarised keeps the same signature and is skipped.
+      // * The old effect keyed on the `conversations` array itself, so every streamed
+      // * chunk produced a new array and therefore a full rebuild: one SHA-256 and
+      // * one AES-GCM encryption per memory, per token. Only the summary fingerprint,
+      // * the decision count, and the title can change what gets indexed, so a chat
+      // * that has not been re-summarised keeps the same signature and is skipped.
    */
   const memoryIndexKey = useMemo(
     () =>
-      conversations
+      `${conversations
         .map(
           (conversation) =>
             `${conversation.id}:${conversation.title.length}:${conversation.metadata?.messageFingerprint ?? ""}:${conversation.metadata?.decisions?.length ?? 0}:${conversation.metadata?.facts?.length ?? 0}`,
         )
-        .join("|"),
-    [conversations],
+        .join("|")}|${semanticReady ? "semantic" : "lexical"}`,
+    [conversations, semanticReady],
   );
   const builtIndexKey = useRef("");
 
   const refreshMemoryIndex = useCallback(async (source = conversations) => {
-    const signature = source
+    // The embedder is part of the signature: switching between the local hashing
+    // vector and a model vector changes every vector in the index, so the cache
+    // must miss once rather than keep serving the old representation.
+    const signature = `${source
       .map(
         (conversation) =>
           `${conversation.id}:${conversation.title.length}:${conversation.metadata?.messageFingerprint ?? ""}:${conversation.metadata?.decisions?.length ?? 0}:${conversation.metadata?.facts?.length ?? 0}`,
       )
-      .join("|");
+      .join("|")}|${semanticReady ? "semantic" : "lexical"}`;
 
     // Rebuild only when the indexed content actually changed.
     if (builtIndexKey.current === signature) return;
@@ -273,6 +324,13 @@ export function ChatApp() {
     // The local pass runs here too, so decisions and preferences keep being
     // learned when the model's summary cannot be afforded.
     const records = syncAllMemory(source);
+
+    // The conversation graph is persisted here, alongside the rest of the index
+    // work. Retrieval only reads it now, so this is the single place that writes —
+    // previously every reply rewrote the graph document as a side effect of
+    // reading it.
+    updateMemoryGraph(source);
+
     setMemoryRecords(records);
     const documents: MemoryEmbeddingDocument[] = [];
     for (const conversation of source) {
@@ -283,9 +341,43 @@ export function ChatApp() {
     for (const record of records.filter((record) => record.status === "active")) {
       documents.push({ id: record.id, conversationId: record.conversationId, conversationTitle: record.conversationTitle, source: record.kind === "decision" ? "decision" : record.kind === "project" ? "project" : "fact", text: record.text, updatedAt: record.updatedAt });
     }
+
+    /**
+      // * Which embedder produced these vectors.
+     *
+      // * The two are not interchangeable — a 256-dimension model vector compared
+      // * with a 96-dimension hashed one yields a meaningless cosine — so the
+      // * semantic path either embeds everything with the model or keeps the local
+      // * embedder for everything. `retrieve` also guards on length, but never
+      // * producing a mixed set is the cheaper way to be correct.
+     */
+    const embedded = semanticReady ? await embedSemanticTexts(documents.map((document) => document.text)) : null;
+
+    if (embedded && embedded.length === documents.length) {
+      // The encrypted vector store is deliberately skipped here: it exists to
+      // keep hashed vectors between sessions, and a model vector is deterministic
+      // — recomputing it is cheaper than storing a second, incompatible format.
+      setSemanticVectors(
+        documents.map((document, index) => ({ id: document.id, vector: embedded[index] })),
+      );
+
+      // Ledger records are compared against the query in `retrieve`, so they need
+      // vectors from the same model. Keeping them in state lets the next send
+      // reuse them instead of re-embedding the whole ledger per message.
+      const activeRecords = records.filter((record) => record.status === "active" && record.text.trim());
+      const recordVectors = await embedSemanticTexts(activeRecords.map((record) => record.text));
+      setRecordVectors(
+        recordVectors && recordVectors.length === activeRecords.length
+          ? new Map(activeRecords.map((record, index) => [record.id, recordVectors[index]]))
+          : new Map(),
+      );
+      return;
+    }
+
     await syncMemoryEmbeddings(documents);
     setSemanticVectors(documents.map((document) => ({ id: document.id, vector: embedText(document.text) })));
-  }, [conversations]);
+    setRecordVectors(new Map());
+  }, [conversations, semanticReady]);
 
   useEffect(() => {
     if (!isHydrated) return;
@@ -299,6 +391,7 @@ export function ChatApp() {
   const apiSettings = useApiSettings();
   const {
     mode,
+    setMode,
     apiKey,
     provider,
     setProvider,
@@ -312,6 +405,67 @@ export function ChatApp() {
     defaultModelId,
     hydrated: apiHydrated,
   } = apiSettings;
+
+  /**
+      // * The three-way plan choice, and the one place that keeps its two stored
+      // * halves consistent.
+   *
+      // * `plan` is derived from the stored settings, so a reload can never show a
+      // * choice the app is not actually using. `handlePlanChange` writes both halves
+      // * at once: choosing "free" while the provider is Ollama would otherwise keep
+      // * routing to the local model, because the provider is checked before the mode.
+   */
+  const plan = currentPlan({ mode, provider });
+
+  const handlePlanChange = useCallback(
+    (next: ChatPlan) => {
+      const resolved = resolvePlan(next, { mode, provider });
+      setMode(resolved.mode);
+      setProvider(resolved.provider);
+    },
+    [mode, provider, setMode, setProvider],
+  );
+
+  /**
+      // * The models the local Ollama has pulled, or [] when it cannot be used here.
+   *
+      // * Probed once, and only when the page itself was opened on localhost: the
+      // * status route asks the *server's* localhost, which is the user's machine only
+      // * when the app is running on it. On a hosted deployment this stays empty, so
+      // * the quota card offers a key instead of a switch that cannot work.
+   */
+  const [localModels, setLocalModels] = useState<string[]>([]);
+
+  useEffect(() => {
+    if (!canOfferLocalPlan(window.location.hostname)) return;
+    let cancelled = false;
+    void fetch("/api/ai/local-status")
+      .then((response) => response.json() as Promise<{ ok?: boolean; models?: string[] }>)
+      .then((data) => {
+        if (cancelled) return;
+        const models = Array.isArray(data.models) ? data.models : [];
+        setLocalModels(data.ok === true ? models : []);
+      })
+      .catch(() => {
+        if (!cancelled) setLocalModels([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  /**
+      // * Switches to the local model in one click, from the quota card.
+   *
+      // * It also supplies a model name when the user has never chosen one: adopting
+      // * the local plan without a name would land on the state the server rejects.
+   */
+  const handleUseLocalModel = useCallback(() => {
+    handlePlanChange("local");
+    if (modelName.trim()) return;
+    const preferred = localModels.find((model) => model.startsWith("qwen")) ?? localModels[0];
+    if (preferred) setModelName(preferred);
+  }, [handlePlanChange, localModels, modelName, setModelName]);
 
   const {
     summary: analyticsSummary,
@@ -329,12 +483,12 @@ export function ChatApp() {
     });
 
   /**
-   * Remembers a spent allowance so it survives the banner being dismissed.
+      // * Remembers a spent allowance so it survives the banner being dismissed.
    *
-   * Keyed on `error` rather than on the response, because this is the one place
-   * that already holds the server's own `used` and `resetAt`. A refusal with no
-   * `resetAt` is not stored: without a reset time the local state would claim an
-   * expiry it cannot know.
+      // * Keyed on `error` rather than on the response, because this is the one place
+      // * that already holds the server's own `used` and `resetAt`. A refusal with no
+      // * `resetAt` is not stored: without a reset time the local state would claim an
+      // * expiry it cannot know.
    */
   useEffect(() => {
     if (error?.code !== FREE_QUOTA_EXCEEDED_CODE) return;
@@ -346,13 +500,13 @@ export function ChatApp() {
   }, [error]);
 
   /**
-   * Closes the quota card and forgets the remembered refusal.
+      // * Closes the quota card and forgets the remembered refusal.
    *
-   * Both, deliberately: the card's whole purpose is to say "the allowance is
-   * spent", so leaving the stored timestamp behind would make it reappear on the
-   * next render with no way to dismiss it. The server still refuses the next send,
-   * and the card comes back with the refusal — dismissing is a pause, not a
-   * promise.
+      // * Both, deliberately: the card's whole purpose is to say "the allowance is
+      // * spent", so leaving the stored timestamp behind would make it reappear on the
+      // * next render with no way to dismiss it. The server still refuses the next send,
+      // * and the card comes back with the refusal — dismissing is a pause, not a
+      // * promise.
    */
   const handleDismissQuota = useCallback(() => {
     clearFreeQuotaState();
@@ -426,11 +580,11 @@ export function ChatApp() {
   }, [activeId, activeProjectId, conversations, createAndSelect, projects, updateConversation]);
 
   /**
-   * Which project the name dialog is acting on.
+      // * Which project the name dialog is acting on.
    *
-   * `null` is closed. The id — rather than a boolean — is carried here so the dialog can show the
-   * current name when renaming; a bare `isOpen` flag would leave the rename form starting blank,
-   * and a user confirming an empty field would learn nothing.
+      // * `null` is closed. The id — rather than a boolean — is carried here so the dialog can show the
+      // * current name when renaming; a bare `isOpen` flag would leave the rename form starting blank,
+      // * and a user confirming an empty field would learn nothing.
    */
   const [nameDialog, setNameDialog] = useState<{ mode: "create" | "rename"; projectId: string | null } | null>(null);
 
@@ -453,11 +607,11 @@ export function ChatApp() {
   }, [createProject, nameDialog, renameProject]);
 
   /**
-   * Deleting a project asks first, and says exactly what survives.
+      // * Deleting a project asks first, and says exactly what survives.
    *
-   * The conversations keep their text and lose only their link to the project, so the confirmation
-   * states that rather than the generic "are you sure" — a user who believes the delete will take
-   * their conversations with it will not confirm if told plainly, and should not have to guess.
+      // * The conversations keep their text and lose only their link to the project, so the confirmation
+      // * states that rather than the generic "are you sure" — a user who believes the delete will take
+      // * their conversations with it will not confirm if told plainly, and should not have to guess.
    */
   const handleDeleteProject = useCallback((projectId: string) => {
     const target = projects.find((item) => item.id === projectId);
@@ -533,6 +687,12 @@ export function ChatApp() {
 
       const previousConversationQuery = isPreviousConversationQuery(visibleContent);
       const records = activeMemoryRecords();
+      // Embedding the query with the model is what turns "meaning" into a ranking
+      // * signal; without the model this stays `undefined` and the retriever builds
+      // its local vector exactly as before.
+      const queryVector = semanticReady
+        ? ((await embedSemanticText(visibleContent)) ?? undefined)
+        : undefined;
       const memories = retrieveRelevantMemories(
         previousConversationQuery ? previousConversationSearchQuery(visibleContent) || visibleContent : visibleContent,
         conversations,
@@ -540,6 +700,10 @@ export function ChatApp() {
         previousConversationQuery,
         records,
         semanticVectors,
+        // Record vectors are only comparable when they came from the same model as
+        // the query; passing them with a local query vector would be a category
+        // error, and `retrieve` would discard them anyway.
+        queryVector ? { queryVector, recordVectors } : {},
       );
       const project = projects.find((item) => item.id === (conv?.projectId ?? (conversationId === activeId ? activeProjectId : undefined)));
       const projectContext = project ? projectConversationContext(project) : "";
@@ -678,6 +842,12 @@ export function ChatApp() {
       projects,
       activeProjectId,
       semanticVectors,
+      // These two decide whether the query is embedded by the model, so leaving
+      // them out would freeze the first render's answer into the callback: the
+      // model could be enabled and ready and the request would still embed with
+      // the local hashing vector.
+      semanticReady,
+      recordVectors,
       provider,
       searchProvider,
     ]
@@ -769,11 +939,11 @@ export function ChatApp() {
     : null;
 
   /**
-   * The text the quota card searches the local memory for.
+      // * The text the quota card searches the local memory for.
    *
-   * The last thing the user said is the best available query: it is exactly what
-   * they wanted the model to answer. An empty string is fine — the card then shows
-   * no results rather than a wrong one.
+      // * The last thing the user said is the best available query: it is exactly what
+      // * they wanted the model to answer. An empty string is fine — the card then shows
+      // * no results rather than a wrong one.
    */
   const quotaQuery = useMemo(() => {
     const messages = activeConversation?.messages ?? [];
@@ -837,6 +1007,7 @@ export function ChatApp() {
           quotaLimit={quotaLimit}
           quotaQuery={quotaQuery}
           onOpenSettings={() => navigate("settings")}
+          onUseLocalModel={localModels.length > 0 ? handleUseLocalModel : undefined}
           onOpenMemoryArea={() => navigate("memory")}
           onDismissError={handleDismissQuota}
           onRetry={canRetry ? handleRetry : undefined}
@@ -873,7 +1044,7 @@ export function ChatApp() {
           onSubmit={handleSubmitProjectName}
         />
       ) : null}
-{area === "settings" && <SettingsShell conversations={conversations} apiKey={apiKey} provider={provider} onProviderChange={setProvider} baseUrl={baseUrl} onBaseUrlChange={setBaseUrl} modelName={modelName} onModelNameChange={setModelName} connectionStatus={connectionStatus} onApiKeyChange={setApiKey} onValidate={validateKey} onClearKey={clearKey} onClearAnalytics={clearAnalytics} />}
+{area === "settings" && <SettingsShell conversations={conversations} apiKey={apiKey} provider={provider} onProviderChange={setProvider} baseUrl={baseUrl} onBaseUrlChange={setBaseUrl} modelName={modelName} onModelNameChange={setModelName} connectionStatus={connectionStatus} plan={plan} onPlanChange={handlePlanChange} semantic={{ enabled: semanticEnabled, status: semanticStatus, progress: semanticProgress }} onToggleSemantic={handleToggleSemantic} onApiKeyChange={setApiKey} onValidate={validateKey} onClearKey={clearKey} onClearAnalytics={clearAnalytics} />}
       </AppShell>
     </>
   );

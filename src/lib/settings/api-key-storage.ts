@@ -1,6 +1,16 @@
 export type ApiKeyMode = "free" | "byok";
 export type AiProvider = "openrouter" | "openai" | "anthropic" | "google" | "deepseek" | "qwen" | "kimi" | "meta" | "grok" | "nanogpt" | "eden" | "orcarouter" | "unorouter" | "llm7" | "huggingface" | "custom" | "ollama";
 
+/**
+ * The base URL the local plan talks to.
+ *
+ * Shared by the settings hook (which writes it) and the server's allowlist check
+ * (which validates it), so the two cannot drift: if the client started sending a
+ * different address, the server would reject every local request as "not the
+ * Ollama address on this device".
+ */
+export const LOCAL_OLLAMA_BASE_URL = "http://127.0.0.1:11434/v1";
+
 const STORAGE_KEY = "permamind:api-settings:v1";
 /**
  * The API key lives in sessionStorage only, so it is automatically cleared

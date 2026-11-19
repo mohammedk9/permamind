@@ -27,7 +27,7 @@
  * changes.
  */
 
-import { BookOpen, KeyRound, Search, X } from "lucide-react";
+import { BookOpen, KeyRound, Laptop, Search, X } from "lucide-react";
 import { useId, useMemo, useState } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -53,6 +53,15 @@ interface FreeQuotaCardProps {
   excludeConversationId?: string | null;
   /** Opens Settings so the user can add their own key. */
   onOpenSettings: () => void;
+  /**
+   * Switches to a local model that has already been verified as running.
+   *
+   * When present, it becomes the primary action: on a machine with Ollama
+   * installed, "add a key" is not the only way forward, and making the user
+   * discover Settings to find it is the difference between a way out and a
+   * lecture.
+   */
+  onUseLocalModel?: () => void;
   /** Opens the conversation a result came from. */
   onOpenConversation: (conversationId: string) => void;
   /** Opens the memory area, where every decision can be reviewed. */
@@ -117,6 +126,7 @@ export function FreeQuotaCard({
   limit,
   excludeConversationId,
   onOpenSettings,
+  onUseLocalModel,
   onOpenConversation,
   onOpenMemory,
   onDismiss,
@@ -164,10 +174,17 @@ export function FreeQuotaCard({
           {resetLabel && <p className="mt-1 text-xs text-muted-foreground">{resetLabel}</p>}
 
           <div className="mt-3 flex flex-wrap gap-2">
-            <Button size="sm" onClick={onOpenSettings} className="min-h-11">
-              <KeyRound aria-hidden="true" />
-              {copy.freeQuotaAddKey}
-            </Button>
+            {onUseLocalModel ? (
+              <Button size="sm" onClick={onUseLocalModel} className="min-h-11">
+                <Laptop aria-hidden="true" />
+                {copy.freeQuotaUseLocal}
+              </Button>
+            ) : (
+              <Button size="sm" onClick={onOpenSettings} className="min-h-11">
+                <KeyRound aria-hidden="true" />
+                {copy.freeQuotaAddKey}
+              </Button>
+            )}
             <Button
               size="sm"
               variant="outline"

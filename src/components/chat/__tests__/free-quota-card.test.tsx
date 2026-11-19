@@ -115,6 +115,19 @@ describe("FreeQuotaCard", () => {
     expect(onOpenMemory).toHaveBeenCalledTimes(1);
   });
 
+  it("offers the local model instead of a key when one is verified as running", () => {
+    const onOpenSettings = vi.fn();
+    const onUseLocalModel = vi.fn();
+    renderCard({ onOpenSettings, onUseLocalModel });
+
+    // The key is not the only way out on a machine that already has a model.
+    expect(screen.queryByRole("button", { name: copy.freeQuotaAddKey })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: copy.freeQuotaUseLocal }));
+
+    expect(onUseLocalModel).toHaveBeenCalledTimes(1);
+    expect(onOpenSettings).not.toHaveBeenCalled();
+  });
+
   it("can be dismissed by name", () => {
     const onDismiss = vi.fn();
     renderCard({ onDismiss });

@@ -16,8 +16,16 @@ import { normalizeForMatch } from "@/lib/i18n/arabic-normalize";
 /** Characters of context kept on each side of a match. */
 export const SNIPPET_RADIUS = 80;
 
-/** A run of letters or digits in the original text. */
-const WORD_PATTERN = /[\p{L}\p{N}]+/gu;
+/**
+ * A run of letters, digits, or **combining marks**, in the original text.
+ *
+ * `\p{M}` is not optional for Arabic: harakat are combining marks, not letters,
+ * so `[\p{L}\p{N}]+` splits "قَرَّرْنا" into "ق", "ر", "ر", "نا" and
+ * "الإِطْلاقِ" into "الإ", "ط", "لاق". Every word comparison then fails and the
+ * snippet silently falls back to the opening of the text — which is why a
+ * diacritised memory could be found but never highlighted.
+ */
+const WORD_PATTERN = /[\p{L}\p{N}\p{M}]+/gu;
 
 export interface MatchRange {
   start: number;

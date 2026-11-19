@@ -19,4 +19,53 @@ describe("memory search", () => {
     const result = searchMemoryIndex(buildMemoryIndex(conversations), "notes")[0];
     expect(result.snippet.slice(result.matchStart, result.matchEnd).toLowerCase()).toBe("notes");
   });
+
+  it("finds Arabic text whatever its harakat or hamza", () => {
+    const date = new Date("2026-01-01");
+    const arabic: Conversation[] = [
+      {
+        id: "c1",
+        title: "خطة الإطلاق",
+        messages: [
+          {
+            id: "m1",
+            role: "user",
+            content: "قَرَّرْنا تَأْجِيلَ الإِطْلاقِ أسبوعاً إضافياً",
+            createdAt: date,
+          },
+        ],
+        createdAt: date,
+        updatedAt: date,
+      },
+    ];
+
+    // The query carries no harakat and a plain hamza; the stored text does not.
+    const results = searchMemoryIndex(buildMemoryIndex(arabic), "الإطلاق");
+
+    expect(results.length).toBeGreaterThan(0);
+    // The title matches too, so check the message hit specifically: its highlight
+    // must land on the stored spelling, not on normalised text.
+    const highlighted = results.map((hit) => hit.snippet.slice(hit.matchStart, hit.matchEnd));
+    expect(highlighted.some((text) => text.includes("الإِطْلاقِ"))).toBe(true);
+  });
+
+  it("matches a bare word inside its definite-article form", () => {
+    const date = new Date("2026-01-01");
+    const arabic: Conversation[] = [
+      {
+        id: "c1",
+        title: "اجتماع",
+        messages: [
+          { id: "m1", role: "user", content: "عدنا إلى القرار بعد يومين", createdAt: date },
+        ],
+        createdAt: date,
+        updatedAt: date,
+      },
+    ];
+
+    const results = searchMemoryIndex(buildMemoryIndex(arabic), "قرار");
+
+    expect(results.length).toBeGreaterThan(0);
+    expect(results[0].snippet).toContain("القرار");
+  });
 });
