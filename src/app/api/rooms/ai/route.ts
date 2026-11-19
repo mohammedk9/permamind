@@ -6,7 +6,7 @@ import { loadHostKey } from "@/lib/rooms/host-key-store";
 import { checkRateLimit } from "@/lib/ai/rate-limit";
 import type { ChatCompletionMessage } from "@/lib/ai/types";
 import { isValidRoomId, isValidMemberToken } from "@/lib/rooms/access";
-import { recordRoomAiUsage, resolveAiAccess, resolveModelTarget } from "@/lib/rooms/server";
+import { recordRoomAiUsage, releaseRoomModelCall, resolveAiAccess, resolveModelTarget } from "@/lib/rooms/server";
 
 export const runtime = "nodejs";
 
@@ -293,6 +293,10 @@ export async function POST(request: Request) {
   // could carry any.
   const prompt = buildPrompt(messages as RoomTurn[], question, access.role);
 
+  // The reservation taken by `resolveModelTarget` is keyed by the addressed slot.
+  // A caller answered by their own model (no slot) never reserved anything.
+  const reservedSlot = addressed ? slot : null;
+
   try {
     // The room's provider decides where the request goes. `custom` needs the base URL the
     // host configured in Settings, which arrives per-request and is validated by
@@ -308,12 +312,15 @@ export async function POST(request: Request) {
           );
 
     if (!upstream.ok) {
+      // The provider never answered, so the reserved call is refunded to the owner.
+      if (reservedSlot) await releaseRoomModelCall({ roomId, slot: reservedSlot });
       const detail = await parseOpenRouterError(upstream);
       return Response.json({ error: sanitizeUpstreamError(detail) }, { status: upstream.status });
     }
 
     const answer = await readSingleCompletion(upstream);
     if (!answer) {
+      if (reservedSlot) await releaseRoomModelCall({ roomId, slot: reservedSlot });
       return Response.json({ error: "The model did not return an answer" }, { status: 502 });
     }
 

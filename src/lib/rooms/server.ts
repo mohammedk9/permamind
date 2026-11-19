@@ -1220,6 +1220,33 @@ export async function recordRoomAiUsage(input: {
 }
 
 /**
+ * Refunds one reserved model call.
+ *
+ * `resolveModelTarget` reserves a slot against the owner's ceiling before the
+ * provider is called. If the provider then fails, the AI route calls this to put
+ * the slot back, so a failed call costs the owner nothing — the same guarantee
+ * the free chat quota gives with `release_ai_request`.
+ *
+ * Never throws: the request has already failed and is being answered with an
+ * error, and a bookkeeping hiccup must not change that answer.
+ */
+export async function releaseRoomModelCall(input: {
+  roomId: string;
+  slot: string;
+}): Promise<void> {
+  try {
+    const { supabase } = await requireUser();
+    if (!supabase) return;
+    await supabase.rpc("release_room_model_call", {
+      p_room_id: input.roomId,
+      p_slot: input.slot,
+    });
+  } catch {
+    // Swallowed on purpose: the caller is already returning an error to the user.
+  }
+}
+
+/**
  * Switches a room between open and read-only. Host only.
  *
  * Read-only is the host's blunt instrument and the one the risk table reaches for: "the host
@@ -1797,17 +1824,33 @@ export async function resolveModelTarget(input: {
     throw new RoomError(sharingRefusalMessage(refusal, false), 403, "MODEL_NOT_SHARED");
   }
 
-  // Counted against the owner, and stamped with the day so a daily ceiling resets by
-  // comparison rather than by a sweep that might not run.
-  await supabase
-    .from("room_members")
-    .update({
-      model_calls_total: totalCalls + 1,
-      model_calls_today: callsToday + 1,
-      model_calls_on: today,
-    })
-    .eq("room_id", input.roomId)
-    .eq("model_slot", input.slot);
+  // Counted against the owner by a single SQL statement that checks both ceilings
+  // and increments in one step, so two members asking at once cannot both pass a
+  // limit that only had room for one. The earlier `canModelAnswer` read is the
+  // consent gate; this RPC is the authoritative, race-free budget check.
+  //
+  // Charging here — before the provider answers — is what makes a ceiling a
+  // budget rather than an invoice; the AI route releases the reservation if the
+  // provider then fails, so a failed call costs the owner nothing.
+  const { data: reservation, error: reserveError } = await supabase.rpc(
+    "reserve_room_model_call",
+    { p_room_id: input.roomId, p_slot: input.slot },
+  );
+
+  if (reserveError) {
+    throw new RoomError("That model's budget could not be checked", 503, "MODEL_BUDGET_UNAVAILABLE");
+  }
+
+  const reserved = (Array.isArray(reservation) ? reservation[0] : reservation) as
+    | { allowed?: boolean }
+    | null
+    | undefined;
+
+  if (!reserved?.allowed) {
+    // Lost the race for the last slot: the atomic check refused even though the
+    // earlier read appeared to have room.
+    throw new RoomError(sharingRefusalMessage("budget", false), 403, "MODEL_NOT_SHARED");
+  }
 
   return {
     modelId: String(owner.model_id),

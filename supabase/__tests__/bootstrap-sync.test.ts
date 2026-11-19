@@ -75,6 +75,8 @@ describe("bootstrap-production.sql is a faithful copy of the SQL sources", () =>
       "read_mcp_summaries",
       "room_role",
       "room_is_open",
+      "reserve_room_model_call",
+      "release_room_model_call",
     ]) {
       expect(bootstrap, `${fn} is missing from the bootstrap script`).toContain(fn);
     }

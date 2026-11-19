@@ -1237,6 +1237,128 @@ grant execute on function public.room_role(text) to anon, authenticated, service
 grant execute on function public.room_is_open(text) to anon, authenticated, service_role;
 
 -- ---------------------------------------------------------------------------
+-- Atomic model-call budget
+--
+-- A panel member sets a ceiling on how many times their model may answer. Two
+-- members pressing ask at the same instant must not both pass a limit that had
+-- room for only one, and the check-and-increment has to be a single step rather
+-- than a read followed by a write. These two functions are that step:
+--
+--   reserve_room_model_call  — checks both ceilings and increments, atomically.
+--   release_room_model_call  — refunds the reservation when the provider fails.
+--
+-- Both run with the service role (the AI route already authenticated the member),
+-- so RLS on room_members does not apply here. The lock order matches the free
+-- chat quota: the member row is locked for the duration of the update.
+-- ---------------------------------------------------------------------------
+
+create or replace function public.reserve_room_model_call(p_room_id text, p_slot uuid)
+returns table(allowed boolean, calls_total integer, calls_today integer)
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_today date := (now() at time zone 'utc')::date;
+  v_call_limit integer;
+  v_daily_limit integer;
+  v_total integer;
+  v_on date;
+  v_today_count integer;
+begin
+  select
+    m.model_call_limit,
+    m.model_daily_limit,
+    m.model_calls_total,
+    m.model_calls_on,
+    m.model_calls_today
+  into
+    v_call_limit,
+    v_daily_limit,
+    v_total,
+    v_on,
+    v_today_count
+  from public.room_members as m
+  where m.room_id = p_room_id
+    and m.model_slot = p_slot
+  for update;
+
+  -- No such model in the room.
+  if not found then
+    return query select false, 0, 0;
+    return;
+  end if;
+
+  -- A counter stamped on an earlier day reads as zero for today, without a write.
+  if v_on is distinct from v_today then
+    v_today_count := 0;
+  end if;
+
+  -- Both ceilings are checked here, under the row lock, so the decision and the
+  -- increment cannot be separated by a concurrent request.
+  if (v_call_limit is not null and v_total >= v_call_limit)
+     or (v_daily_limit is not null and v_today_count >= v_daily_limit) then
+    return query select false, coalesce(v_total, 0), v_today_count;
+    return;
+  end if;
+
+  update public.room_members as m
+     set model_calls_total = coalesce(m.model_calls_total, 0) + 1,
+         model_calls_on = v_today,
+         model_calls_today = case when m.model_calls_on = v_today
+                                  then coalesce(m.model_calls_today, 0) + 1
+                                  else 1 end
+   where m.room_id = p_room_id
+     and m.model_slot = p_slot;
+
+  return query
+    select true,
+           coalesce(v_total, 0) + 1,
+           v_today_count + 1;
+end; $$;
+
+create or replace function public.release_room_model_call(p_room_id text, p_slot uuid)
+returns boolean
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_on date;
+  v_today_count integer;
+begin
+  select m.model_calls_on, m.model_calls_today
+    into v_on, v_today_count
+  from public.room_members as m
+  where m.room_id = p_room_id
+    and m.model_slot = p_slot
+  for update;
+
+  if not found then
+    return false;
+  end if;
+
+  -- Refund both counters, but never below zero. A daily refund only applies when
+  -- the reservation was stamped on the current UTC day.
+  update public.room_members as m
+     set model_calls_total = greatest(coalesce(m.model_calls_total, 0) - 1, 0),
+         model_calls_today = case
+           when m.model_calls_on = (now() at time zone 'utc')::date
+             then greatest(coalesce(m.model_calls_today, 0) - 1, 0)
+           else m.model_calls_today
+         end
+   where m.room_id = p_room_id
+     and m.model_slot = p_slot;
+
+  return true;
+end; $$;
+
+revoke all on function public.reserve_room_model_call(text, uuid) from public, anon, authenticated;
+revoke all on function public.release_room_model_call(text, uuid) from public, anon, authenticated;
+grant execute on function public.reserve_room_model_call(text, uuid) to service_role;
+grant execute on function public.release_room_model_call(text, uuid) to service_role;
+
+-- ---------------------------------------------------------------------------
 -- Row level security
 -- ---------------------------------------------------------------------------
 --
@@ -1448,6 +1570,7 @@ drop policy if exists "owners delete their room key" on public.host_ai_keys;
 create policy "owners delete their room key"
   on public.host_ai_keys for delete
   using (auth.uid() = user_id);
+
 -- ==========================================================================
 -- VERIFICATION - these are the last statements. Read the output.
 -- ==========================================================================
@@ -1475,7 +1598,8 @@ where n.nspname = 'public'
     'reserve_ai_request', 'finalize_ai_request', 'release_ai_request',
     'issue_mcp_token', 'resolve_mcp_token', 'read_mcp_summaries',
     'reserve_search_request',
-    'room_role', 'room_is_open'
+    'room_role', 'room_is_open',
+    'reserve_room_model_call', 'release_room_model_call'
   )
 order by p.proname;
 

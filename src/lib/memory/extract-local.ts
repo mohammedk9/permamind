@@ -93,6 +93,15 @@ const RULES: Rule[] = [
   { kind: "decision", pattern: /(?:^|\s)(?:لن\s+)?نستخدم\s+(.{4,})/iu, group: 1, confidence: "low" },
   { kind: "decision", pattern: /(?:^|\s)سنقوم\s+ب\s*(.{4,})/iu, group: 1, confidence: "low" },
   { kind: "decision", pattern: /(?:^|\s)سنبدا\s+(.{4,})/iu, group: 1, confidence: "low" },
+  // Arabic — further decision phrasings, so the local floor still catches the
+  // common ways a decision is stated when the model allowance is spent.
+  { kind: "decision", pattern: /(?:^|\s)اعتمدنا\s+(?:على\s+)?(.{4,})/iu, group: 1, confidence: "medium" },
+  { kind: "decision", pattern: /(?:^|\s)سنعتمد\s+(.{4,})/iu, group: 1, confidence: "low" },
+  { kind: "decision", pattern: /(?:^|\s)اخترت\s+(?:ان\s+)?(.{4,})/iu, group: 1, confidence: "low" },
+  { kind: "decision", pattern: /(?:^|\s)تحولنا\s+(?:الي|إلي)\s+(.{4,})/iu, group: 1, confidence: "medium" },
+  { kind: "decision", pattern: /(?:^|\s)استبدلنا\s+(.{4,})/iu, group: 1, confidence: "medium" },
+  { kind: "decision", pattern: /(?:^|\s)القرار\s+(?:هو\s+)?(?:ان\s+)?(.{4,})/iu, group: 1, confidence: "medium" },
+  { kind: "decision", pattern: /(?:^|\s)علينا\s+(?:ان\s+)?(.{4,})/iu, group: 1, confidence: "low" },
 
   // Arabic — preferences.
   { kind: "preference", pattern: /(?:^|\s)(?:انا\s+)?افضل\s+(?:ان\s+)?(.{3,})/iu, group: 1, confidence: "medium" },
@@ -125,6 +134,17 @@ const RULES: Rule[] = [
   { kind: "decision", pattern: /\bwe\s+wont\s+(.{4,})/i, group: 1, confidence: "low", negate: true },
   { kind: "decision", pattern: /\bwe\s+will\s+(?!not\b)(.{4,})/i, group: 1, confidence: "low" },
   { kind: "decision", pattern: /\bwe\s+should\s+(.{4,})/i, group: 1, confidence: "low" },
+
+  // English — further decision phrasings for the quota-free local floor.
+  // Apostrophes are stripped by `normalizeForRule` ("we'll" -> "well"), so the
+  // patterns match the stripped form: `(?:ll| will)`, `(?:ve| have)`, `(?:re| are)`.
+  { kind: "decision", pattern: /\bwe\s*(?:ll| will)\s+go\s+with\s+(.{4,})/i, group: 1, confidence: "low" },
+  { kind: "decision", pattern: /\bwe\s*(?:ve| have)\s+chosen\s+(.{4,})/i, group: 1, confidence: "medium" },
+  { kind: "decision", pattern: /\bwe\s+chose\s+(.{4,})/i, group: 1, confidence: "medium" },
+  { kind: "decision", pattern: /\bwe\s*(?:ve| have)\s+opted\s+for\s+(.{4,})/i, group: 1, confidence: "medium" },
+  { kind: "decision", pattern: /\bwe\s+opted\s+for\s+(.{4,})/i, group: 1, confidence: "medium" },
+  { kind: "decision", pattern: /\bthe\s+decision\s+is\s+(?:to\s+)?(.{4,})/i, group: 1, confidence: "medium" },
+  { kind: "decision", pattern: /\bwe\s*(?:re| are)\s+going\s+with\s+(.{4,})/i, group: 1, confidence: "low" },
 
   // English — preferences.
   { kind: "preference", pattern: /\bi\s+prefer\s+(.{3,})/i, group: 1, confidence: "medium" },

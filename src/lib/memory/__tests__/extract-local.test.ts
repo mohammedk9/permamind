@@ -81,6 +81,30 @@ describe("extractLocalMemory", () => {
     expect(extractLocalMemory("We've switched to a monorepo this quarter.")[0].kind).toBe("decision");
   });
 
+  it("reads the further decision phrasings the local floor was extended to cover", () => {
+    // These are the forms added so the quota-free pass keeps learning when the
+    // model allowance is spent. Each must resolve to a decision, not a question.
+    expect(extractLocalMemory("We chose the managed queue for now.")[0].kind).toBe("decision");
+    expect(extractLocalMemory("We've opted for a monorepo this quarter.")[0].kind).toBe("decision");
+    expect(extractLocalMemory("The decision is to delay the launch by a week.")[0].kind).toBe(
+      "decision",
+    );
+    expect(extractLocalMemory("We'll go with Postgres for the primary store.")[0].kind).toBe(
+      "decision",
+    );
+    expect(extractLocalMemory("اعتمدنا PostgreSQL بدلاً من MySQL في المشروع")[0].kind).toBe(
+      "decision",
+    );
+    expect(extractLocalMemory("تحولنا الى architecture microservices هذا العام")[0].kind).toBe(
+      "decision",
+    );
+  });
+
+  it("still never turns the extended phrasings into a question", () => {
+    // A question opener must win over any decision-like verb later in the sentence.
+    expect(extractLocalMemory("هل اخترنا الـ architecture الصحيحة للمشروع؟")).toEqual([]);
+  });
+
   it("keeps the negation in a decision against something", () => {
     const drafts = extractLocalMemory("We decided against a public launch this year.");
 
